@@ -26,14 +26,14 @@ jobs:
           uv sync
 
       - name: Run Black
-        run: black --check .
+        run: uv run black --check .
 
       - name: Run Ruff
-        run: ruff .
+        run: uv run ruff .
 
       - name: Run Pyright
-        run: pyright
+        run: uv run pyright
 
       - name: Run Tests
-        run: pytest
+        run: uv run pytest
 
