@@ -1,5 +1,3 @@
-
-
 """
 A class representing a Magic: The Gathering card.
 
@@ -19,6 +17,7 @@ Attributes:
 """
 
 from typing import List, Dict, Any
+
 
 class Card:
     """
@@ -54,15 +53,21 @@ class Card:
             image_uris (dict[str, str] | None): The image URIs of the card.
         """
         self.name: str = name  # The name of the card.
-        self.converted_mana_cost: float = converted_mana_cost  # The converted mana cost of the card.
+        self.converted_mana_cost: float = (
+            converted_mana_cost  # The converted mana cost of the card.
+        )
         self.type_line: str = type_line  # The type line of the card.
         self.oracle_text: str | None = oracle_text  # The oracle text of the card.
         self.colors: list[str] | None = colors  # The colors of the card.
-        self.color_identity: list[str] | None = color_identity  # The color identity of the card.
+        self.color_identity: list[str] | None = (
+            color_identity  # The color identity of the card.
+        )
         self.power: str | None = power  # The power of the card.
         self.toughness: str | None = toughness  # The toughness of the card.
         self.loyalty: str | None = loyalty  # The loyalty of the card.
-        self.image_uris: dict[str, str] | None = image_uris  # The image URIs of the card.
+        self.image_uris: dict[str, str] | None = (
+            image_uris  # The image URIs of the card.
+        )
 
     def __repr__(self) -> str:
         """
@@ -72,4 +77,3 @@ class Card:
             str: A string representation of the Card instance.
         """
         return f"Card(name={self.name}, cmc={self.converted_mana_cost})"
-

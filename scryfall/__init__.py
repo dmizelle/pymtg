@@ -1,6 +1,3 @@
-
-
-
 """
 A client for interacting with the Scryfall API.
 
@@ -11,11 +8,14 @@ import aiohttp
 from typing import Any
 from ..card import Card
 
+
 class CardNotFoundError(Exception):
     """
     Exception raised when a card is not found.
     """
+
     pass
+
 
 class ScryfallClient:
     """
@@ -26,7 +26,9 @@ class ScryfallClient:
         """
         Initialize a new ScryfallClient instance.
         """
-        self.base_url: str = "https://api.scryfall.com"  # The base URL for the Scryfall API.
+        self.base_url: str = (
+            "https://api.scryfall.com"  # The base URL for the Scryfall API.
+        )
 
     async def fetch_card(self, card_name: str) -> Card | None:
         """
@@ -61,5 +63,3 @@ class ScryfallClient:
                     loyalty=data.get("loyalty"),
                     image_uris=data.get("image_uris"),
                 )
-
-

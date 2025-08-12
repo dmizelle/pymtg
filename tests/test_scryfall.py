@@ -1,6 +1,3 @@
-
-
-
 """
 Tests for the ScryfallClient class.
 
@@ -9,6 +6,7 @@ This module contains tests for the ScryfallClient class to ensure it fetches car
 
 import pytest
 from pymtg.scryfall import ScryfallClient, CardNotFoundError
+
 
 @pytest.mark.asyncio
 async def test_fetch_card():
@@ -21,6 +19,7 @@ async def test_fetch_card():
     card = await client.fetch_card("Black Lotus")
     assert card.name == "Black Lotus"
 
+
 @pytest.mark.asyncio
 async def test_fetch_nonexistent_card():
     """
@@ -31,5 +30,3 @@ async def test_fetch_nonexistent_card():
     client = ScryfallClient()
     with pytest.raises(CardNotFoundError):
         await client.fetch_card("Nonexistent Card")
-
-

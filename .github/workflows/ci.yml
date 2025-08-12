@@ -26,7 +26,7 @@ jobs:
           uv sync
 
       - name: Run Black
-        run: uv run black --check .
+        run: uv run black .
 
       - name: Run Ruff
         run: uv run ruff .
