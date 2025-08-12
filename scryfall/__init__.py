@@ -1,19 +1,48 @@
 
 
+
+"""
+A client for interacting with the Scryfall API.
+
+This module provides a client to fetch Magic: The Gathering card data from the Scryfall API.
+"""
+
 import aiohttp
-from typing import Optional
+from typing import Any
 from ..card import Card
 
 class CardNotFoundError(Exception):
+    """
+    Exception raised when a card is not found.
+    """
     pass
 
 class ScryfallClient:
-    def __init__(self):
-        self.base_url = "https://api.scryfall.com"
+    """
+    A client for interacting with the Scryfall API.
+    """
 
-    async def fetch_card(self, card_name: str) -> Optional[Card]:
+    def __init__(self):
+        """
+        Initialize a new ScryfallClient instance.
+        """
+        self.base_url: str = "https://api.scryfall.com"  # The base URL for the Scryfall API.
+
+    async def fetch_card(self, card_name: str) -> Card | None:
+        """
+        Fetch a card by its name.
+
+        Args:
+            card_name (str): The name of the card to fetch.
+
+        Returns:
+            Card | None: The card data if found, otherwise None.
+
+        Raises:
+            CardNotFoundError: If the card is not found.
+        """
         async with aiohttp.ClientSession() as session:
-            url = f"{self.base_url}/cards/named?exact={card_name}"
+            url: str = f"{self.base_url}/cards/named?exact={card_name}"
             async with session.get(url) as response:
                 if response.status == 404:
                     raise CardNotFoundError(f"Card '{card_name}' not found.")
@@ -32,4 +61,5 @@ class ScryfallClient:
                     loyalty=data.get("loyalty"),
                     image_uris=data.get("image_uris"),
                 )
+
 
