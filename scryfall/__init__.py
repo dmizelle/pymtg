@@ -5,7 +5,7 @@ This module provides a client to fetch Magic: The Gathering card data from the S
 """
 
 import aiohttp
-from typing import Any
+
 from ..card import Card
 
 

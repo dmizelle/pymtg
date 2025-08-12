@@ -16,8 +16,6 @@ Attributes:
     image_uris (dict[str, str] | None): The image URIs of the card.
 """
 
-from typing import List, Dict, Any
-
 
 class Card:
     """
