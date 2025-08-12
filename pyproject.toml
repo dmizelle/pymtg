@@ -1,0 +1,32 @@
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pymtg"
+version = "0.1.0"
+authors = [
+    { name = "Devon Mizelle", email = "devon.mizelle@example.com" },
+]
+description = "A Python module for interacting with Magic: The Gathering APIs."
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/dmizelle/pymtg"
+"Bug Tracker" = "https://github.com/dmizelle/pymtg/issues"
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.20.0",
+    "black>=23.0",
+    "pyright>=1.1",
+    "ruff>=0.0",
+]
