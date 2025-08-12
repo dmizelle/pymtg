@@ -29,7 +29,7 @@ jobs:
         run: uv run black .
 
       - name: Run Ruff
-        run: uv run ruff .
+        run: uv run ruff check .
 
       - name: Run Pyright
         run: uv run pyright
