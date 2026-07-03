@@ -35,7 +35,7 @@ class TCGPlayerPricing(PyMTGBaseModel):
     """Pricing information from TCGPlayer.
 
     TCGPlayer provides various pricing metrics including market price,
-    mid price, low/high prices, and direct low price.
+    mid price, low/high prices, direct low price, and condition-specific prices.
 
     Attributes:
         market: Market price.
@@ -43,6 +43,12 @@ class TCGPlayerPricing(PyMTGBaseModel):
         low: Low price.
         high: High price.
         direct_low: Direct low price.
+        near_mint: Price for Near Mint condition.
+        good: Price for Good condition.
+        excellent: Price for Excellent condition.
+        very_good: Price for Very Good condition.
+        fair: Price for Fair condition.
+        poor: Price for Poor condition.
     """
 
     market: float | None = None
@@ -50,6 +56,12 @@ class TCGPlayerPricing(PyMTGBaseModel):
     low: float | None = None
     high: float | None = None
     direct_low: float | None = None
+    near_mint: float | None = None
+    good: float | None = None
+    excellent: float | None = None
+    very_good: float | None = None
+    fair: float | None = None
+    poor: float | None = None
 
 
 class CardmarketPricing(PyMTGBaseModel):

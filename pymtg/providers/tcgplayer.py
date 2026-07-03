@@ -300,7 +300,8 @@ class TCGPlayer(BaseProvider):
 
         Args:
             query: Search query string in TCGPlayer syntax.
-            **kwargs: Additional search parameters (limit, offset, sort, etc.).
+            limit: Maximum number of results to return (default: 20).
+            **kwargs: Additional search parameters (offset, sort, etc.).
 
         Returns:
             List of Card objects matching the query.
@@ -316,7 +317,6 @@ class TCGPlayer(BaseProvider):
         params: dict[str, Any] = {"search": query}
 
         # Add standard pagination and sorting
-        limit = kwargs.get("limit", 20)
         page = kwargs.get("page", 1)
         params["limit"] = limit
         params["offset"] = (page - 1) * limit

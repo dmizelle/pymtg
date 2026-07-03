@@ -151,8 +151,8 @@ class TestTCGPlayerGetCard(unittest.TestCase):
         self.tcgplayer.auth_handler._authenticated = True
         self.tcgplayer.auth_handler.access_token = "test_token"
 
-    @patch("requests.Session.request")
-    def test_get_card_success(self, mock_request):
+    @patch("requests.Session.get")
+    def test_get_card_success(self, mock_get):
         """Test successful card retrieval by product ID."""
         # Mock response
         mock_response = MagicMock()
@@ -172,21 +172,15 @@ class TestTCGPlayerGetCard(unittest.TestCase):
             "artist": "Christopher Rush",
             "flavorText": "",
         }
-        mock_request.return_value = mock_response
+        mock_get.return_value = mock_response
 
-        with patch.object(self.tcgplayer.http_client, "session", MagicMock()):
-            with patch.object(
-                self.tcgplayer.http_client.session,
-                "request",
-                return_value=mock_response,
-            ):
-                card = self.tcgplayer.get_card(card_id="12345")
+        card = self.tcgplayer.get_card(card_id="12345")
 
-                self.assertIsInstance(card, Card)
-                self.assertEqual(card.name, "Black Lotus")
+        self.assertIsInstance(card, Card)
+        self.assertEqual(card.name, "Black Lotus")
 
-    @patch("requests.Session.request")
-    def test_get_card_with_pricing(self, mock_request):
+    @patch("requests.Session.get")
+    def test_get_card_with_pricing(self, mock_get):
         """Test card retrieval with pricing data included."""
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -205,18 +199,12 @@ class TestTCGPlayerGetCard(unittest.TestCase):
                 },
             ],
         }
-        mock_request.return_value = mock_response
+        mock_get.return_value = mock_response
 
-        with patch.object(self.tcgplayer.http_client, "session", MagicMock()):
-            with patch.object(
-                self.tcgplayer.http_client.session,
-                "request",
-                return_value=mock_response,
-            ):
-                card = self.tcgplayer.get_card(card_id="12345", include="pricing")
+        card = self.tcgplayer.get_card(card_id="12345", include="pricing")
 
-                self.assertIsInstance(card, Card)
-                self.assertEqual(card.name, "Black Lotus")
+        self.assertIsInstance(card, Card)
+        self.assertEqual(card.name, "Black Lotus")
 
     @patch("requests.Session.request")
     def test_get_card_product_id_required(self, mock_request):
@@ -224,8 +212,8 @@ class TestTCGPlayerGetCard(unittest.TestCase):
         with self.assertRaises(InvalidQueryError):
             self.tcgplayer.get_card(card_id=None)  # type: ignore  # Intentional None argument
 
-    @patch("requests.Session.request")
-    def test_get_card_not_found(self, mock_request):
+    @patch("requests.Session.get")
+    def test_get_card_not_found(self, mock_get):
         """Test that NotFoundError is raised when card doesn't exist."""
         mock_response = MagicMock()
         mock_response.status_code = 404
@@ -233,16 +221,10 @@ class TestTCGPlayerGetCard(unittest.TestCase):
         mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
             "Not Found", response=mock_response
         )
-        mock_request.return_value = mock_response
+        mock_get.return_value = mock_response
 
-        with patch.object(self.tcgplayer.http_client, "session", MagicMock()):
-            with patch.object(
-                self.tcgplayer.http_client.session,
-                "request",
-                return_value=mock_response,
-            ):
-                with self.assertRaises(NotFoundError):
-                    self.tcgplayer.get_card(card_id="99999")
+        with self.assertRaises(NotFoundError):
+            self.tcgplayer.get_card(card_id="99999")
 
 
 class TestTCGPlayerSearch(unittest.TestCase):
@@ -257,8 +239,8 @@ class TestTCGPlayerSearch(unittest.TestCase):
         self.tcgplayer.auth_handler._authenticated = True
         self.tcgplayer.auth_handler.access_token = "test_token"
 
-    @patch("requests.Session.request")
-    def test_search_success(self, mock_request):
+    @patch("requests.Session.get")
+    def test_search_success(self, mock_get):
         """Test successful card search."""
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -280,22 +262,16 @@ class TestTCGPlayerSearch(unittest.TestCase):
                 },
             ]
         }
-        mock_request.return_value = mock_response
+        mock_get.return_value = mock_response
 
-        with patch.object(self.tcgplayer.http_client, "session", MagicMock()):
-            with patch.object(
-                self.tcgplayer.http_client.session,
-                "request",
-                return_value=mock_response,
-            ):
-                cards = self.tcgplayer.search(name="Black Lotus", limit=2)
+        cards = self.tcgplayer.search(name="Black Lotus", limit=2)
 
-                self.assertIsInstance(cards, list)
-                self.assertEqual(len(cards), 2)
-                self.assertEqual(cards[0].name, "Black Lotus")
+        self.assertIsInstance(cards, list)
+        self.assertEqual(len(cards), 2)
+        self.assertEqual(cards[0].name, "Black Lotus")
 
-    @patch("requests.Session.request")
-    def test_search_with_color_filter(self, mock_request):
+    @patch("requests.Session.get")
+    def test_search_with_color_filter(self, mock_get):
         """Test search with color filters."""
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -308,59 +284,39 @@ class TestTCGPlayerSearch(unittest.TestCase):
                 }
             ]
         }
-        mock_request.return_value = mock_response
+        mock_get.return_value = mock_response
 
-        with patch.object(self.tcgplayer.http_client, "session", MagicMock()):
-            with patch.object(
-                self.tcgplayer.http_client.session,
-                "request",
-                return_value=mock_response,
-            ):
-                cards = self.tcgplayer.search(colors=[Color.BLUE], limit=1)
+        cards = self.tcgplayer.search(colors=[Color.BLUE], limit=1)
 
-                self.assertEqual(len(cards), 1)
+        self.assertEqual(len(cards), 1)
 
-    @patch("requests.Session.request")
-    def test_search_with_pagination(self, mock_request):
+    @patch("requests.Session.get")
+    def test_search_with_pagination(self, mock_get):
         """Test search with pagination parameters."""
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {"results": []}
-        mock_request.return_value = mock_response
+        mock_get.return_value = mock_response
 
-        with patch.object(self.tcgplayer.http_client, "session", MagicMock()):
-            with patch.object(
-                self.tcgplayer.http_client.session,
-                "request",
-                return_value=mock_response,
-            ):
-                # Test page 2 with limit 20
-                self.tcgplayer.search(name="test", limit=20, page=2)
+        # Test page 2 with limit 20
+        self.tcgplayer.search(name="test", limit=20, page=2)
 
-                # Verify offset was calculated correctly
-                call_args = self.tcgplayer.http_client.session.request.call_args  # type: ignore  # Mock access
-                self.assertEqual(call_args[1]["params"]["offset"], 20)
+        # Verify offset was calculated correctly
+        call_args = mock_get.call_args
+        self.assertEqual(call_args[1]["params"]["offset"], 20)
 
-    @patch("requests.Session.request")
-    def test_search_with_order(self, mock_request):
+    @patch("requests.Session.get")
+    def test_search_with_order(self, mock_get):
         """Test search with sorting order."""
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {"results": []}
-        mock_request.return_value = mock_response
+        mock_get.return_value = mock_response
 
-        with patch.object(self.tcgplayer.http_client, "session", MagicMock()):
-            with patch.object(
-                self.tcgplayer.http_client.session,
-                "request",
-                return_value=mock_response,
-            ):
-                self.tcgplayer.search(name="test", order="name_asc")
+        self.tcgplayer.search(name="test", order="name_asc")
 
-                call_args = self.tcgplayer.http_client.session.request.call_args  # type: ignore  # Mock access
-                self.assertEqual(
-                    call_args[1]["params"]["sort"], "ProductName Ascending"
-                )
+        call_args = mock_get.call_args
+        self.assertEqual(call_args[1]["params"]["sort"], "ProductName Ascending")
 
 
 class TestTCGPlayerSearchSyntax(unittest.TestCase):
@@ -375,8 +331,8 @@ class TestTCGPlayerSearchSyntax(unittest.TestCase):
         self.tcgplayer.auth_handler._authenticated = True
         self.tcgplayer.auth_handler.access_token = "test_token"
 
-    @patch("requests.Session.request")
-    def test_search_syntax_success(self, mock_request):
+    @patch("requests.Session.get")
+    def test_search_syntax_success(self, mock_get):
         """Test successful syntax search."""
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -388,38 +344,26 @@ class TestTCGPlayerSearchSyntax(unittest.TestCase):
                 }
             ]
         }
-        mock_request.return_value = mock_response
+        mock_get.return_value = mock_response
 
-        with patch.object(self.tcgplayer.http_client, "session", MagicMock()):
-            with patch.object(
-                self.tcgplayer.http_client.session,
-                "request",
-                return_value=mock_response,
-            ):
-                cards = self.tcgplayer.search_syntax("name:Black Lotus")
+        cards = self.tcgplayer.search_syntax("name:Black Lotus")
 
-                self.assertEqual(len(cards), 1)
-                self.assertEqual(cards[0].name, "Black Lotus")
+        self.assertEqual(len(cards), 1)
+        self.assertEqual(cards[0].name, "Black Lotus")
 
-    @patch("requests.Session.request")
-    def test_search_syntax_with_parameters(self, mock_request):
+    @patch("requests.Session.get")
+    def test_search_syntax_with_parameters(self, mock_get):
         """Test syntax search with additional parameters."""
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {"results": []}
-        mock_request.return_value = mock_response
+        mock_get.return_value = mock_response
 
-        with patch.object(self.tcgplayer.http_client, "session", MagicMock()):
-            with patch.object(
-                self.tcgplayer.http_client.session,
-                "request",
-                return_value=mock_response,
-            ):
-                self.tcgplayer.search_syntax("name:Island", limit=10, order="price_asc")
+        self.tcgplayer.search_syntax("name:Island", limit=10, order="price_asc")
 
-                call_args = self.tcgplayer.http_client.session.request.call_args  # type: ignore  # Mock access
-                self.assertEqual(call_args[1]["params"]["search"], "name:Island")
-                self.assertEqual(call_args[1]["params"]["limit"], 10)
+        call_args = mock_get.call_args
+        self.assertEqual(call_args[1]["params"]["search"], "name:Island")
+        self.assertEqual(call_args[1]["params"]["limit"], 10)
 
 
 class TestTCGPlayerPricing(unittest.TestCase):
@@ -434,8 +378,8 @@ class TestTCGPlayerPricing(unittest.TestCase):
         self.tcgplayer.auth_handler._authenticated = True
         self.tcgplayer.auth_handler.access_token = "test_token"
 
-    @patch("requests.Session.request")
-    def test_get_pricing_success(self, mock_request):
+    @patch("requests.Session.get")
+    def test_get_pricing_success(self, mock_get):
         """Test successful pricing retrieval."""
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -455,22 +399,15 @@ class TestTCGPlayerPricing(unittest.TestCase):
                 },
             ]
         }
-        mock_request.return_value = mock_response
+        mock_get.return_value = mock_response
 
-        with patch.object(self.tcgplayer.http_client, "session", MagicMock()):
-            with patch.object(
-                self.tcgplayer.http_client.session,
-                "request",
-                return_value=mock_response,
-            ):
-                pricing = self.tcgplayer.get_pricing(product_id=12345)
+        pricing = self.tcgplayer.get_pricing(product_id=12345)
 
-                self.assertIsInstance(pricing, Pricing)
-                self.assertIsNotNone(pricing.tcgplayer)
-                self.assertIsNotNone(pricing.tcgplayer)
+        self.assertIsInstance(pricing, Pricing)
+        self.assertIsNotNone(pricing.tcgplayer)
+        self.assertIsNotNone(pricing.tcgplayer)
 
-    @patch("requests.Session.request")
-    def test_get_pricing_product_id_required(self, mock_request):
+    def test_get_pricing_product_id_required(self):
         """Test that InvalidQueryError is raised when product_id is not provided."""
         with self.assertRaises(InvalidQueryError):
             self.tcgplayer.get_pricing(product_id=None)  # type: ignore  # Intentional None argument
@@ -488,8 +425,8 @@ class TestTCGPlayerAutocomplete(unittest.TestCase):
         self.tcgplayer.auth_handler._authenticated = True
         self.tcgplayer.auth_handler.access_token = "test_token"
 
-    @patch("requests.Session.request")
-    def test_autocomplete_success(self, mock_request):
+    @patch("requests.Session.get")
+    def test_autocomplete_success(self, mock_get):
         """Test successful autocomplete."""
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -500,19 +437,13 @@ class TestTCGPlayerAutocomplete(unittest.TestCase):
                 {"name": "Lotus Bloom"},
             ]
         }
-        mock_request.return_value = mock_response
+        mock_get.return_value = mock_response
 
-        with patch.object(self.tcgplayer.http_client, "session", MagicMock()):
-            with patch.object(
-                self.tcgplayer.http_client.session,
-                "request",
-                return_value=mock_response,
-            ):
-                suggestions = self.tcgplayer.autocomplete("Lotus")
+        suggestions = self.tcgplayer.autocomplete("Lotus")
 
-                self.assertIsInstance(suggestions, list)
-                self.assertEqual(len(suggestions), 3)
-                self.assertIn("Black Lotus", suggestions)
+        self.assertIsInstance(suggestions, list)
+        self.assertEqual(len(suggestions), 3)
+        self.assertIn("Black Lotus", suggestions)
 
 
 class TestTCGPlayerDeckMethods(unittest.TestCase):
@@ -603,8 +534,8 @@ class TestTCGPlayerErrorHandling(unittest.TestCase):
         self.tcgplayer.auth_handler._authenticated = True
         self.tcgplayer.auth_handler.access_token = "test_token"
 
-    @patch("requests.Session.request")
-    def test_rate_limit_error(self, mock_request):
+    @patch("requests.Session.get")
+    def test_rate_limit_error(self, mock_get):
         """Test that RateLimitError is raised on rate limit exceeded."""
         mock_response = MagicMock()
         mock_response.status_code = 429
@@ -613,19 +544,13 @@ class TestTCGPlayerErrorHandling(unittest.TestCase):
         mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
             "Rate Limit Exceeded", response=mock_response
         )
-        mock_request.return_value = mock_response
+        mock_get.return_value = mock_response
 
-        with patch.object(self.tcgplayer.http_client, "session", MagicMock()):
-            with patch.object(
-                self.tcgplayer.http_client.session,
-                "request",
-                return_value=mock_response,
-            ):
-                with self.assertRaises(RateLimitError):
-                    self.tcgplayer.search(name="test")
+        with self.assertRaises(RateLimitError):
+            self.tcgplayer.search(name="test")
 
-    @patch("requests.Session.request")
-    def test_authentication_error(self, mock_request):
+    @patch("requests.Session.get")
+    def test_authentication_error(self, mock_get):
         """Test that AuthenticationError is raised on authentication failure."""
         mock_response = MagicMock()
         mock_response.status_code = 401
@@ -633,19 +558,19 @@ class TestTCGPlayerErrorHandling(unittest.TestCase):
         mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
             "Unauthorized", response=mock_response
         )
-        mock_request.return_value = mock_response
+        mock_get.return_value = mock_response
 
         with patch.object(self.tcgplayer.http_client, "session", MagicMock()):
             with patch.object(
                 self.tcgplayer.http_client.session,
-                "request",
+                "get",
                 return_value=mock_response,
             ):
                 with self.assertRaises(AuthenticationError):
                     self.tcgplayer.search(name="test")
 
-    @patch("requests.Session.request")
-    def test_api_error(self, mock_request):
+    @patch("requests.Session.get")
+    def test_api_error(self, mock_get):
         """Test that APIError is raised on generic API errors."""
         mock_response = MagicMock()
         mock_response.status_code = 500
@@ -653,29 +578,27 @@ class TestTCGPlayerErrorHandling(unittest.TestCase):
         mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
             "Internal Server Error", response=mock_response
         )
-        mock_request.return_value = mock_response
+        mock_get.return_value = mock_response
 
         with patch.object(self.tcgplayer.http_client, "session", MagicMock()):
             with patch.object(
                 self.tcgplayer.http_client.session,
-                "request",
+                "get",
                 return_value=mock_response,
             ):
                 with self.assertRaises(APIError):
                     self.tcgplayer.search(name="test")
 
-    @patch("requests.Session.request")
-    def test_network_error(self, mock_request):
+    @patch("requests.Session.get")
+    def test_network_error(self, mock_get):
         """Test that NetworkError is raised on network errors."""
-        mock_request.side_effect = requests.exceptions.ConnectionError(
-            "Connection failed"
-        )
+        mock_get.side_effect = requests.exceptions.ConnectionError("Connection failed")
 
         with patch.object(self.tcgplayer.http_client, "session", MagicMock()):
             with patch.object(
                 self.tcgplayer.http_client.session,
-                "request",
-                side_effect=mock_request.side_effect,
+                "get",
+                side_effect=mock_get.side_effect,
             ):
                 with self.assertRaises(NetworkError):
                     self.tcgplayer.search(name="test")

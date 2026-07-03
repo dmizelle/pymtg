@@ -46,7 +46,9 @@ class TestArchidektInitialization(unittest.TestCase):
             archidekt = Archidekt(username="test_user", password="test_pass")
 
             self.assertEqual(archidekt.name, "archidekt")
-            mock_auth.assert_called_once_with("test_user", "test_pass")
+            mock_auth.assert_called_once_with(
+                username="test_user", password="test_pass"
+            )
 
     def test_is_authenticated_without_creds(self):
         """Test that is_authenticated returns False without credentials."""

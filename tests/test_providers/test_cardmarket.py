@@ -174,7 +174,7 @@ class TestCardmarketSearch:
         with patch.object(
             cardmarket.http_client,
             "get",
-            return_value=MagicMock(json=lambda: mock_response_data),
+            return_value=MagicMock(status_code=200, json=lambda: mock_response_data),
         ):
             results = cardmarket.search(name="Black Lotus", limit=5)
 
@@ -195,7 +195,7 @@ class TestCardmarketSearch:
         with patch.object(
             cardmarket.http_client,
             "get",
-            return_value=MagicMock(json=lambda: {"results": []}),
+            return_value=MagicMock(status_code=200, json=lambda: {"results": []}),
         ):
             results = cardmarket.search(name="Non-existent Card")
 
@@ -262,7 +262,7 @@ class TestCardmarketGetCard:
         with patch.object(
             cardmarket.http_client,
             "get",
-            return_value=MagicMock(json=lambda: mock_response_data),
+            return_value=MagicMock(status_code=200, json=lambda: mock_response_data),
         ):
             card = cardmarket.get_card(card_id="12345")
 
@@ -281,7 +281,7 @@ class TestCardmarketGetCard:
         with patch.object(
             cardmarket.http_client,
             "get",
-            return_value=MagicMock(json=lambda: {"results": []}),
+            return_value=MagicMock(status_code=200, json=lambda: {"results": []}),
         ):
             with pytest.raises(NotFoundError) as exc_info:
                 cardmarket.get_card(card_id="99999")
@@ -321,7 +321,7 @@ class TestCardmarketSearchSyntax:
         with patch.object(
             cardmarket.http_client,
             "get",
-            return_value=MagicMock(json=lambda: mock_response_data),
+            return_value=MagicMock(status_code=200, json=lambda: mock_response_data),
         ):
             results = cardmarket.search_syntax(query="name:Black Lotus", limit=5)
 
@@ -367,7 +367,7 @@ class TestCardmarketPricing:
         with patch.object(
             cardmarket.http_client,
             "get",
-            return_value=MagicMock(json=lambda: mock_response_data),
+            return_value=MagicMock(status_code=200, json=lambda: mock_response_data),
         ):
             pricing = cardmarket.get_pricing(product_id=12345)
 
@@ -398,7 +398,9 @@ class TestCardmarketPricing:
         )
 
         with patch.object(
-            cardmarket.http_client, "get", return_value=MagicMock(json=lambda: {})
+            cardmarket.http_client,
+            "get",
+            return_value=MagicMock(status_code=200, json=lambda: {}),
         ):
             with pytest.raises(NotFoundError) as exc_info:
                 cardmarket.get_pricing(product_id=99999)

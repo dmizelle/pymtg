@@ -317,9 +317,12 @@ class Cardmarket(BaseProvider):
             if not data:
                 return []
 
+            # Parse card results - Cardmarket API wraps results in a "results" key
+            results = data.get("results", []) if isinstance(data, dict) else data
+
             # Parse card results
             cards = []
-            for card_data in data:
+            for card_data in results:
                 cards.append(self._parse_card(card_data))
 
             return cards
@@ -389,9 +392,12 @@ class Cardmarket(BaseProvider):
             if not data:
                 return []
 
+            # Parse card results - Cardmarket API wraps results in a "results" key
+            results = data.get("results", []) if isinstance(data, dict) else data
+
             # Parse card results
             cards = []
-            for card_data in data:
+            for card_data in results:
                 cards.append(self._parse_card(card_data))
 
             return cards
@@ -466,8 +472,11 @@ class Cardmarket(BaseProvider):
                     resource_type="card",
                 )
 
+            # Parse and return the first card from results - Cardmarket API wraps results in a "results" key
+            results = data.get("results", []) if isinstance(data, dict) else data
+
             # Parse and return the first card from results
-            cards = [self._parse_card(card_data) for card_data in data]
+            cards = [self._parse_card(card_data) for card_data in results]
             if cards:
                 return cards[0]
             else:
@@ -1031,6 +1040,7 @@ class Cardmarket(BaseProvider):
         status = super().get_rate_limit_status()
         status.update(
             {
+                "provider": self.name,
                 "provider_specific": {
                     "requests_per_day_min": 30000,
                     "requests_per_day_max": 100000,
