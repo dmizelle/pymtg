@@ -352,7 +352,7 @@ def test_function_behavior():
 
 Before any commit, agents MUST:
 
-1. **Lint:** Run `pylint` or equivalent linter
+1. **Lint:** Run `ruff` linter
 2. **Type check:** Run type checker (pyright)
 3. **Docstring verification:** Confirm all docstrings are present and accurate
 4. **Test:** Run all relevant tests

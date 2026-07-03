@@ -34,5 +34,5 @@ jobs:
       - name: Run pyright type checking
         run: uv run pyright pymtg/
 
-      - name: Run pylint
-        run: uv run pylint pymtg/ tests/ --disable=C0114,C0115,C0116
+      - name: Run ruff
+        run: uv run ruff check pymtg/ tests/

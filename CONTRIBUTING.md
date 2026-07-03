@@ -57,7 +57,7 @@ uv run pyright pymtg/
 ### Linting
 
 ```bash
-uv run pylint pymtg/
+uv run ruff check pymtg/
 ```
 
 ### Docstring Verification
