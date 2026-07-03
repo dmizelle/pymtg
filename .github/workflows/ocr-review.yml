@@ -66,6 +66,8 @@ on:
   # the diff and does not execute any code from the PR.
   pull_request_target:
     types: [opened]
+  issue_comment:
+    types: [created, edited]
 
 permissions:
   contents: read
@@ -76,12 +78,15 @@ jobs:
     runs-on: self-hosted
     container:
       image: node:24
-    if: github.event_name == 'pull_request_target'
+    if: |
+      github.event_name == 'pull_request_target' ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && startsWith(github.event.comment.body, '/ocr-code-review')) ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && startsWith(github.event.comment.body, '@ocr-code-review'))
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Full history needed for merge-base diff
+          fetch-depth: 0 # Full history needed for merge-base diff
           ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Mark repository as safe directory
