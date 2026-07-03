@@ -5,7 +5,7 @@ for making requests to MTG API providers.
 """
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 import requests
 
@@ -265,7 +265,7 @@ class HTTPClient:
         headers = dict(self.session.headers)
         if additional_headers:
             headers.update(additional_headers)
-        return headers
+        return cast(dict[str, str], headers)
 
     def close(self) -> None:
         """Close the HTTP client session."""
