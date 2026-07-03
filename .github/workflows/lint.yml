@@ -29,8 +29,8 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras
 
-      - name: Run mypy type checking
-        run: uv run mypy pymtg/ --ignore-missing-imports
+      - name: Run pyright type checking
+        run: uv run pyright pymtg/
 
       - name: Run pylint
         run: uv run pylint pymtg/ tests/ --disable=C0114,C0115,C0116

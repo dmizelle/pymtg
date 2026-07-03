@@ -50,4 +50,4 @@ jobs:
                       if not check_docstrings(filepath):
                           sys.exit(1)
           print('All docstrings present!')
-          " 2>&1 || echo "Docstring check failed"
+          "
