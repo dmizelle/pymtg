@@ -57,15 +57,13 @@
 name: OpenCodeReview PR Review
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.issue.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 on:
   # Use pull_request_target instead of pull_request so that secrets are
   # available even for PRs from forks. This is safe because OCR only reads
   # the diff and does not execute any code from the PR.
-  pull_request_target:
-    types: [opened]
   issue_comment:
     types: [created, edited]
 
@@ -79,20 +77,20 @@ jobs:
     container:
       image: node:24
     if: |
-      github.event_name == 'pull_request_target' ||
+      github.event.issue.pull_request &&
       (github.event_name == 'issue_comment' && github.event.issue.pull_request && startsWith(github.event.comment.body, '/code-review'))
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0 # Full history needed for merge-base diff
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.issue.pull_request.head.sha }}
 
       - name: Mark repository as safe directory
         run: git config --global --replace-all safe.directory '*'
 
       - name: Fetch PR head ref (ensures fork commits are available)
-        run: git fetch origin pull/${{ github.event.pull_request.number }}/head
+        run: git fetch origin pull/${{ github.event.issue.number }}/head
 
       - name: Install OpenCodeReview
         run: npm install -g @alibaba-group/open-code-review
@@ -109,8 +107,8 @@ jobs:
       - name: Run OpenCodeReview
         id: review
         run: |
-          BASE_REF="${{ github.event.pull_request.base.ref }}"
-          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          BASE_REF="${{ github.event.issue.pull_request.base.ref }}"
+          HEAD_SHA="${{ github.event.issue.pull_request.head.sha }}"
 
           echo "Reviewing PR: ${HEAD_SHA} against origin/${BASE_REF}"
 
@@ -185,7 +183,7 @@ jobs:
 
             // Prepare PR review with inline comments
             const prNumber = context.issue.number;
-            let commitSha = context.payload.pull_request.head.sha;
+            let commitSha = context.payload.issue.pull_request.head.sha;
 
             // Build review comments array for the PR review API
             // Only inline comments with line info can be posted via createReview
