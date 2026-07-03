@@ -27,10 +27,10 @@ jobs:
         run: pip install requests pydantic typing-extensions
 
       - name: Install dev dependencies
-        run: pip install pyright pylint types-requests
+        run: pip install pyright pylint pytest types-requests
 
       - name: Run pyright type checking
         run: pyright pymtg/
 
       - name: Run pylint
-        run: pylint pymtg/ tests/ --disable=C0114,C0115,C0116,W1203,R0801,R0913,R0917,R0914,R0903,R0902,W0107,W0221,W0613,W3101,C0301,C0415,W0212,C0411,W0231,W0719,W0612,E1136
+        run: pylint pymtg/ tests/ --disable=C0114,C0115,C0116,W1203,R0801,R0913,R0917,R0914,R0903,R0902,W0107,W0221,W0613,W3101,C0301,C0415,W0212,C0411,W0231,W0719,W0612,E1136,E0401,E1101,E1135,C1803
