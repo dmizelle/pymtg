@@ -28,7 +28,7 @@ jobs:
 
       - name: Check for missing docstrings
         run: |
-          uv run python -c "
+          python -c "
           import ast
           import sys
           
