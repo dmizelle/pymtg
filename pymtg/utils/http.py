@@ -253,7 +253,7 @@ class HTTPClient:
 
     def _merge_headers(
         self, additional_headers: dict[str, str] | None
-    ) -> dict[str, str]:
+    ) -> dict[str, str | bytes]:
         """Merge additional headers with default headers.
 
         Args:

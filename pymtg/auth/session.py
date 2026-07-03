@@ -168,7 +168,8 @@ class SessionAuthHandler(BaseAuthHandler):
         """
         if self.session_cookies:
             for name, value in self.session_cookies.items():
-                session.cookies.set(name, value)
+                if value is not None:
+                    session.cookies.set(name, value)
 
         # Also set CSRF token in headers if present
         if self.csrf_cookie in self.session_cookies:
