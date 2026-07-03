@@ -115,6 +115,7 @@ jobs:
 
       - name: Configure OCR
         run: |
+          mkdir -p ~/.opencodereview
           echo '${{ secrets.open_code_review_config }}' > ~/.opencodereview/config.json
 
       - name: Run OpenCodeReview
