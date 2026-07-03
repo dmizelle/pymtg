@@ -28,7 +28,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv lock --python-version ${{ matrix.python-version }}
+          uv lock --python ${{ matrix.python-version }}
           uv sync --all-extras
 
       - name: Run pyright type checking
