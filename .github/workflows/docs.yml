@@ -20,9 +20,12 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v1
+
       - name: Check for missing docstrings
         run: |
-          python -c "
+          uv run python -c "
           import ast
           import sys
           
