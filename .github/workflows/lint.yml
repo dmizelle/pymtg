@@ -27,10 +27,7 @@ jobs:
         uses: astral-sh/setup-uv@v1
 
       - name: Install dependencies
-        run: uv sync
-
-      - name: Install pyright and pylint
-        run: uv pip install pyright pylint
+        run: uv sync --all-extras
 
       - name: Run pyright type checking
         run: uv run pyright pymtg/
