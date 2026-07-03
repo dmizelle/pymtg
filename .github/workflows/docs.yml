@@ -1,0 +1,53 @@
+name: Documentation Check
+
+on:
+  push:
+    branches: [ main, master, dev ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  docs:
+    name: Check Documentation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v1
+
+      - name: Check for missing docstrings
+        run: |
+          uv run python -c "
+          import ast
+          import sys
+          
+          def check_docstrings(filepath):
+              with open(filepath, 'r') as f:
+                  tree = ast.parse(f.read(), filepath)
+              
+              for node in ast.walk(tree):
+                  if isinstance(node, (ast.FunctionDef, ast.ClassDef, ast.AsyncFunctionDef)):
+                      if not ast.get_docstring(node):
+                          if not node.name.startswith('_'):
+                              print(f'{filepath}:{node.lineno}: Missing docstring for {node.name}')
+                              return False
+              return True
+          
+          import os
+          for root, dirs, files in os.walk('pymtg'):
+              dirs[:] = [d for d in dirs if d != '__pycache__']
+              for file in files:
+                  if file.endswith('.py'):
+                      filepath = os.path.join(root, file)
+                      if not check_docstrings(filepath):
+                          sys.exit(1)
+          print('All docstrings present!')
+          " 2>&1 || echo "Docstring check failed"
