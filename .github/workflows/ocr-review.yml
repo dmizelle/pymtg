@@ -193,7 +193,12 @@ jobs:
 
             // Prepare PR review with inline comments
             const prNumber = context.issue.number;
-            let commitSha = ${{ steps.pr.outputs.head_sha }}
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+            });
+            let commitSha = pr.head.sha;
 
             // Build review comments array for the PR review API
             // Only inline comments with line info can be posted via createReview
