@@ -212,7 +212,7 @@ Users **MUST** have `uv` installed and accessible before requesting agent operat
 ```bash
 uv run python -c "import requests; print(requests.get('https://google.com/'))"
 uv run pytest tests/
-uv run mypy src/
+uv run pyright pymtg/
 uv run python my_script.py
 ```
 
@@ -220,7 +220,7 @@ uv run python my_script.py
 ```bash
 python -c "print(2*2)"
 pytest tests/
-mypy src/
+pyright pymtg/
 python my_script.py
 ```
 
@@ -353,7 +353,7 @@ def test_function_behavior():
 Before any commit, agents MUST:
 
 1. **Lint:** Run `pylint` or equivalent linter
-2. **Type check:** Run type checker (pytype, mypy, etc.)
+2. **Type check:** Run type checker (pyright)
 3. **Docstring verification:** Confirm all docstrings are present and accurate
 4. **Test:** Run all relevant tests
 5. **Manual review:** Review changes for compliance with this AGENTS.md

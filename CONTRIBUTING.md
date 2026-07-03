@@ -51,7 +51,7 @@ uv run pytest -v
 ### Type Checking
 
 ```bash
-uv run mypy pymtg/
+uv run pyright pymtg/
 ```
 
 ### Linting
