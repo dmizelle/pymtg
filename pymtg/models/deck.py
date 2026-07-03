@@ -1,0 +1,174 @@
+"""Deck model for Magic: The Gathering decks.
+
+This module provides the Deck model for representing Magic: The Gathering
+decks in a normalized format across all providers.
+"""
+
+from pymtg.models.base import PyMTGBaseModel
+from pymtg.models.card import DeckCard
+from pymtg.models.enums import Format
+
+
+class Deck(PyMTGBaseModel):
+    """Normalized Magic: The Gathering deck model.
+
+    This model represents a Magic: The Gathering deck in a normalized format
+    that is consistent across all supported providers. It includes all the
+    essential fields for representing decks from Archidekt, Moxfield, and
+    potentially other deckbuilding providers.
+
+    Attributes:
+        id: Provider-specific deck ID.
+        name: Deck name.
+        description: Deck description.
+        format: Deck format.
+        commander: List of commander card IDs.
+        cards: List of DeckCard objects representing the cards in the deck.
+        sideboard: List of DeckCard objects in the sideboard.
+        maybe_board: List of DeckCard objects in the maybe board.
+        source: Provider name that provided this deck data.
+        source_id: Provider-specific ID.
+        url: URL to the deck on the provider's site.
+        created_at: When the deck was created.
+        updated_at: When the deck was last updated.
+        views: Number of times the deck has been viewed.
+        upvotes: Number of upvotes.
+        downvotes: Number of downvotes.
+        tags: List of tags for the deck.
+        categories: List of categories for the deck.
+        privacy: Privacy setting (public, private, unlisted).
+        owner: Owner username or ID.
+        owner_id: Owner's provider-specific ID.
+        collapsed: Whether the deck is collapsed/folded.
+    """
+
+    id: str
+    name: str
+    description: str | None = None
+    format: Format | None = None
+    commander: list[str] | None = None
+    cards: list[DeckCard] | None = None
+    sideboard: list[DeckCard] | None = None
+    maybe_board: list[DeckCard] | None = None
+    source: str | None = None
+    source_id: str | None = None
+    url: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+    views: int | None = None
+    upvotes: int | None = None
+    downvotes: int | None = None
+    tags: list[str] | None = None
+    categories: list[str] | None = None
+    privacy: str | None = None
+    owner: str | None = None
+    owner_id: str | None = None
+    collapsed: bool | None = None
+
+    def get_main_deck_cards(self) -> list[DeckCard]:
+        """Get all cards in the main deck.
+
+        Returns:
+            List of DeckCard objects in the main deck.
+        """
+        if self.cards is None:
+            return []
+        return [card for card in self.cards if card.board != "sideboard"]
+
+    def get_sideboard_cards(self) -> list[DeckCard]:
+        """Get all cards in the sideboard.
+
+        Returns:
+            List of DeckCard objects in the sideboard.
+        """
+        if self.sideboard is not None:
+            return self.sideboard
+        if self.cards is None:
+            return []
+        return [card for card in self.cards if card.board == "sideboard"]
+
+    def get_maybeboard_cards(self) -> list[DeckCard]:
+        """Get all cards in the maybe board.
+
+        Returns:
+            List of DeckCard objects in the maybe board.
+        """
+        if self.maybe_board is not None:
+            return self.maybe_board
+        return []
+
+    def get_commander_cards(self) -> list[DeckCard]:
+        """Get all cards in the commander zone.
+
+        Returns:
+            List of DeckCard objects in the commander zone.
+        """
+        if self.cards is None:
+            return []
+        return [card for card in self.cards if card.board == "commander"]
+
+    def get_total_cards(self) -> int:
+        """Get the total number of cards in the deck.
+
+        Returns:
+            Total count of all cards in the main deck, sideboard, and maybe board.
+        """
+        total = 0
+        for card in self.get_main_deck_cards():
+            total += card.count
+        for card in self.get_sideboard_cards():
+            total += card.count
+        for card in self.get_maybeboard_cards():
+            total += card.count
+        return total
+
+    def get_card_count(self, card_name: str) -> int:
+        """Get the number of copies of a specific card in the deck.
+
+        Args:
+            card_name: The name of the card to count.
+
+        Returns:
+            The total number of copies of the card in the deck.
+        """
+        count = 0
+        for card in self.get_main_deck_cards():
+            if card.card.name.lower() == card_name.lower():
+                count += card.count
+        for card in self.get_sideboard_cards():
+            if card.card.name.lower() == card_name.lower():
+                count += card.count
+        for card in self.get_maybeboard_cards():
+            if card.card.name.lower() == card_name.lower():
+                count += card.count
+        return count
+
+    def get_unique_cards(self) -> list[DeckCard]:
+        """Get the list of unique cards in the deck.
+
+        Returns:
+            List of DeckCard objects with unique card names.
+        """
+        seen: dict[str, DeckCard] = {}
+        for card in self.get_main_deck_cards():
+            if card.card.name not in seen:
+                seen[card.card.name] = card
+        for card in self.get_sideboard_cards():
+            if card.card.name not in seen:
+                seen[card.card.name] = card
+        for card in self.get_maybeboard_cards():
+            if card.card.name not in seen:
+                seen[card.card.name] = card
+        return list(seen.values())
+
+    def is_valid_for_format(self) -> bool:
+        """Check if the deck is valid for its declared format.
+
+        Note: This is a placeholder for actual format validation logic.
+        Real validation would require knowledge of format-specific rules.
+
+        Returns:
+            True (placeholder - actual validation not implemented).
+        """
+        # TODO: Implement actual format validation
+        return True

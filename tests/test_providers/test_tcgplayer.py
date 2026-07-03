@@ -1,0 +1,694 @@
+"""Tests for the TCGPlayer provider.
+
+This module contains unit tests for the TCGPlayer provider implementation,
+covering all major functionality including authentication, card retrieval,
+search, and error handling.
+"""
+
+import unittest
+from unittest.mock import MagicMock, patch
+
+import requests
+
+from pymtg.auth.oauth2 import OAuth2ClientCredentialsHandler
+from pymtg.exceptions import (
+    APIError,
+    AuthenticationError,
+    InvalidQueryError,
+    NetworkError,
+    NotFoundError,
+    RateLimitError,
+)
+from pymtg.models.card import Card
+from pymtg.models.enums import Color, Rarity
+from pymtg.models.pricing import Pricing
+from pymtg.providers.tcgplayer import TCGPlayer
+
+
+class TestTCGPlayerInitialization(unittest.TestCase):
+    """Test TCGPlayer provider initialization."""
+
+    def test_default_initialization_no_auth(self):
+        """Test that TCGPlayer provider initializes without credentials."""
+        tcgplayer = TCGPlayer()
+        self.assertEqual(tcgplayer.name, "tcgplayer")
+        self.assertEqual(tcgplayer.base_url, "https://api.tcgplayer.com")
+        self.assertIsNotNone(tcgplayer.http_client)
+        self.assertIsNotNone(tcgplayer.config)
+        self.assertIsNotNone(tcgplayer.auth_handler)
+
+    def test_initialization_with_credentials(self):
+        """Test that TCGPlayer provider initializes with credentials."""
+        with patch.object(OAuth2ClientCredentialsHandler, "authenticate"):
+            with patch.object(OAuth2ClientCredentialsHandler, "apply_auth"):
+                tcgplayer = TCGPlayer(
+                    client_id="test_client_id", client_secret="test_client_secret"
+                )
+                self.assertEqual(tcgplayer.name, "tcgplayer")
+                self.assertEqual(tcgplayer.client_id, "test_client_id")
+                self.assertEqual(tcgplayer.client_secret, "test_client_secret")
+                # Authentication is lazy - not authenticated until first use or explicit call
+                self.assertFalse(tcgplayer.is_authenticated())
+
+    def test_is_authenticated_with_credentials(self):
+        """Test that is_authenticated returns True when authenticated."""
+        tcgplayer = TCGPlayer()
+        # Set authenticated flag directly
+        tcgplayer.auth_handler._authenticated = True
+        tcgplayer.auth_handler.access_token = "test_token"
+        self.assertTrue(tcgplayer.is_authenticated())
+
+    def test_is_authenticated_without_credentials(self):
+        """Test that is_authenticated returns False without credentials."""
+        tcgplayer = TCGPlayer()
+        self.assertFalse(tcgplayer.is_authenticated())
+
+    def test_rate_limit_status(self):
+        """Test that rate limit status returns correct information."""
+        tcgplayer = TCGPlayer()
+        status = tcgplayer.get_rate_limit_status()
+
+        self.assertIn("provider", status)
+        self.assertIn("rate_limit", status)
+        self.assertIn("authenticated", status)
+        self.assertEqual(status["provider"], "tcgplayer")
+        self.assertEqual(status["rate_limit"], {"requests_per_second": 10})
+
+    def test_authenticate_after_initialization(self):
+        """Test authenticating after provider initialization."""
+        tcgplayer = TCGPlayer()
+        self.assertFalse(tcgplayer.is_authenticated())
+
+        # Mock the authenticate method to set authenticated flag
+        tcgplayer.auth_handler._authenticated = False
+        with patch.object(tcgplayer.auth_handler, "authenticate"):
+            with patch.object(tcgplayer.auth_handler, "apply_auth"):
+                # Set the flag manually since we're mocking
+                tcgplayer.auth_handler._authenticated = True
+                tcgplayer.auth_handler.access_token = "test_token"
+                tcgplayer.authenticate(
+                    client_id="new_client_id", client_secret="new_client_secret"
+                )
+                self.assertEqual(tcgplayer.client_id, "new_client_id")
+                self.assertEqual(tcgplayer.client_secret, "new_client_secret")
+                self.assertTrue(tcgplayer.is_authenticated())
+
+    def test_repr(self):
+        """Test string representation of TCGPlayer provider."""
+        tcgplayer = TCGPlayer()
+        repr_str = repr(tcgplayer)
+        self.assertIn("TCGPlayer", repr_str)
+        self.assertIn("not authenticated", repr_str)
+
+
+class TestTCGPlayerAuthenticationRequired(unittest.TestCase):
+    """Test that TCGPlayer requires authentication for most operations."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.tcgplayer = TCGPlayer()
+
+    def test_search_requires_auth(self):
+        """Test that search raises AuthenticationError without auth."""
+        with self.assertRaises(AuthenticationError):
+            self.tcgplayer.search(name="Black Lotus")
+
+    def test_search_syntax_requires_auth(self):
+        """Test that search_syntax raises AuthenticationError without auth."""
+        with self.assertRaises(AuthenticationError):
+            self.tcgplayer.search_syntax("name:Black Lotus")
+
+    def test_get_card_requires_auth(self):
+        """Test that get_card raises AuthenticationError without auth."""
+        with self.assertRaises(AuthenticationError):
+            self.tcgplayer.get_card(card_id="12345")
+
+    def test_get_pricing_requires_auth(self):
+        """Test that get_pricing raises AuthenticationError without auth."""
+        with self.assertRaises(AuthenticationError):
+            self.tcgplayer.get_pricing(product_id=12345)
+
+    def test_autocomplete_requires_auth(self):
+        """Test that autocomplete raises AuthenticationError without auth."""
+        with self.assertRaises(AuthenticationError):
+            self.tcgplayer.autocomplete("Black")
+
+    def test_iter_search_requires_auth(self):
+        """Test that iter_search raises AuthenticationError without auth."""
+        with self.assertRaises(AuthenticationError):
+            list(self.tcgplayer.iter_search(name="Black Lotus"))
+
+
+class TestTCGPlayerGetCard(unittest.TestCase):
+    """Test TCGPlayer.get_card() method."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.tcgplayer = TCGPlayer(
+            client_id="test_client_id", client_secret="test_client_secret"
+        )
+        # Mock the auth_handler to be authenticated
+        self.tcgplayer.auth_handler._authenticated = True
+        self.tcgplayer.auth_handler.access_token = "test_token"
+
+    @patch("requests.Session.get")
+    def test_get_card_success(self, mock_get):
+        """Test successful card retrieval by product ID."""
+        # Mock response
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "productId": 12345,
+            "name": "Black Lotus",
+            "categoryName": "LEA",
+            "categoryGroupName": "Core Sets",
+            "rarity": "Mythic Rare",
+            "productType": "Magic: The Gathering - Single Card",
+            "color": "",
+            "colorIdentity": "",
+            "convertedManaCost": "0",
+            "number": "1",
+            "imageUrl": "https://example.com/image.jpg",
+            "artist": "Christopher Rush",
+            "flavorText": "",
+        }
+        mock_get.return_value = mock_response
+
+        card = self.tcgplayer.get_card(card_id="12345")
+
+        self.assertIsInstance(card, Card)
+        self.assertEqual(card.name, "Black Lotus")
+
+    @patch("requests.Session.get")
+    def test_get_card_with_pricing(self, mock_get):
+        """Test card retrieval with pricing data included."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "productId": 12345,
+            "name": "Black Lotus",
+            "categoryName": "LEA",
+            "extendedData": [
+                {
+                    "price": 5000.00,
+                    "conditionName": "Near Mint",
+                },
+                {
+                    "price": 3000.00,
+                    "conditionName": "Good",
+                },
+            ],
+        }
+        mock_get.return_value = mock_response
+
+        card = self.tcgplayer.get_card(card_id="12345", include="pricing")
+
+        self.assertIsInstance(card, Card)
+        self.assertEqual(card.name, "Black Lotus")
+
+    @patch("requests.Session.request")
+    def test_get_card_product_id_required(self, mock_request):
+        """Test that InvalidQueryError is raised when product_id is not provided."""
+        with self.assertRaises(InvalidQueryError):
+            self.tcgplayer.get_card(card_id=None)  # type: ignore  # Intentional None argument
+
+    @patch("requests.Session.get")
+    def test_get_card_not_found(self, mock_get):
+        """Test that NotFoundError is raised when card doesn't exist."""
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        mock_response.json.return_value = {"message": "Product not found"}
+        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
+            "Not Found", response=mock_response
+        )
+        mock_get.return_value = mock_response
+
+        with self.assertRaises(NotFoundError):
+            self.tcgplayer.get_card(card_id="99999")
+
+
+class TestTCGPlayerSearch(unittest.TestCase):
+    """Test TCGPlayer.search() method."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.tcgplayer = TCGPlayer(
+            client_id="test_client_id", client_secret="test_client_secret"
+        )
+        # Mock the auth_handler to be authenticated
+        self.tcgplayer.auth_handler._authenticated = True
+        self.tcgplayer.auth_handler.access_token = "test_token"
+
+    @patch("requests.Session.get")
+    def test_search_success(self, mock_get):
+        """Test successful card search."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "results": [
+                {
+                    "productId": 12345,
+                    "name": "Black Lotus",
+                    "categoryName": "LEA",
+                    "rarity": "Mythic Rare",
+                    "productType": "Magic: The Gathering - Single Card",
+                },
+                {
+                    "productId": 12346,
+                    "name": "Ancestral Recall",
+                    "categoryName": "LEA",
+                    "rarity": "Rare",
+                    "productType": "Magic: The Gathering - Single Card",
+                },
+            ]
+        }
+        mock_get.return_value = mock_response
+
+        cards = self.tcgplayer.search(name="Black Lotus", limit=2)
+
+        self.assertIsInstance(cards, list)
+        self.assertEqual(len(cards), 2)
+        self.assertEqual(cards[0].name, "Black Lotus")
+
+    @patch("requests.Session.get")
+    def test_search_with_color_filter(self, mock_get):
+        """Test search with color filters."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "results": [
+                {
+                    "productId": 12345,
+                    "name": "Island",
+                    "color": "U",
+                }
+            ]
+        }
+        mock_get.return_value = mock_response
+
+        cards = self.tcgplayer.search(colors=[Color.BLUE], limit=1)
+
+        self.assertEqual(len(cards), 1)
+
+    @patch("requests.Session.get")
+    def test_search_with_pagination(self, mock_get):
+        """Test search with pagination parameters."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"results": []}
+        mock_get.return_value = mock_response
+
+        # Test page 2 with limit 20
+        self.tcgplayer.search(name="test", limit=20, page=2)
+
+        # Verify offset was calculated correctly
+        call_args = mock_get.call_args
+        self.assertEqual(call_args[1]["params"]["offset"], 20)
+
+    @patch("requests.Session.get")
+    def test_search_with_order(self, mock_get):
+        """Test search with sorting order."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"results": []}
+        mock_get.return_value = mock_response
+
+        self.tcgplayer.search(name="test", order="name_asc")
+
+        call_args = mock_get.call_args
+        self.assertEqual(call_args[1]["params"]["sort"], "ProductName Ascending")
+
+
+class TestTCGPlayerSearchSyntax(unittest.TestCase):
+    """Test TCGPlayer.search_syntax() method."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.tcgplayer = TCGPlayer(
+            client_id="test_client_id", client_secret="test_client_secret"
+        )
+        # Mock the auth_handler to be authenticated
+        self.tcgplayer.auth_handler._authenticated = True
+        self.tcgplayer.auth_handler.access_token = "test_token"
+
+    @patch("requests.Session.get")
+    def test_search_syntax_success(self, mock_get):
+        """Test successful syntax search."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "results": [
+                {
+                    "productId": 12345,
+                    "name": "Black Lotus",
+                }
+            ]
+        }
+        mock_get.return_value = mock_response
+
+        cards = self.tcgplayer.search_syntax("name:Black Lotus")
+
+        self.assertEqual(len(cards), 1)
+        self.assertEqual(cards[0].name, "Black Lotus")
+
+    @patch("requests.Session.get")
+    def test_search_syntax_with_parameters(self, mock_get):
+        """Test syntax search with additional parameters."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"results": []}
+        mock_get.return_value = mock_response
+
+        self.tcgplayer.search_syntax("name:Island", limit=10, order="price_asc")
+
+        call_args = mock_get.call_args
+        self.assertEqual(call_args[1]["params"]["search"], "name:Island")
+        self.assertEqual(call_args[1]["params"]["limit"], 10)
+
+
+class TestTCGPlayerPricing(unittest.TestCase):
+    """Test TCGPlayer.get_pricing() method."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.tcgplayer = TCGPlayer(
+            client_id="test_client_id", client_secret="test_client_secret"
+        )
+        # Mock the auth_handler to be authenticated
+        self.tcgplayer.auth_handler._authenticated = True
+        self.tcgplayer.auth_handler.access_token = "test_token"
+
+    @patch("requests.Session.get")
+    def test_get_pricing_success(self, mock_get):
+        """Test successful pricing retrieval."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "results": [
+                {
+                    "skuId": 67890,
+                    "price": 100.00,
+                    "conditionId": 1,
+                    "conditionName": "Near Mint",
+                },
+                {
+                    "skuId": 67891,
+                    "price": 75.00,
+                    "conditionId": 2,
+                    "conditionName": "Good",
+                },
+            ]
+        }
+        mock_get.return_value = mock_response
+
+        pricing = self.tcgplayer.get_pricing(product_id=12345)
+
+        self.assertIsInstance(pricing, Pricing)
+        self.assertIsNotNone(pricing.tcgplayer)
+        self.assertIsNotNone(pricing.tcgplayer)
+
+    def test_get_pricing_product_id_required(self):
+        """Test that InvalidQueryError is raised when product_id is not provided."""
+        with self.assertRaises(InvalidQueryError):
+            self.tcgplayer.get_pricing(product_id=None)  # type: ignore  # Intentional None argument
+
+
+class TestTCGPlayerAutocomplete(unittest.TestCase):
+    """Test TCGPlayer.autocomplete() method."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.tcgplayer = TCGPlayer(
+            client_id="test_client_id", client_secret="test_client_secret"
+        )
+        # Mock the auth_handler to be authenticated
+        self.tcgplayer.auth_handler._authenticated = True
+        self.tcgplayer.auth_handler.access_token = "test_token"
+
+    @patch("requests.Session.get")
+    def test_autocomplete_success(self, mock_get):
+        """Test successful autocomplete."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "results": [
+                {"name": "Black Lotus"},
+                {"name": "Blacker Lotus"},
+                {"name": "Lotus Bloom"},
+            ]
+        }
+        mock_get.return_value = mock_response
+
+        suggestions = self.tcgplayer.autocomplete("Lotus")
+
+        self.assertIsInstance(suggestions, list)
+        self.assertEqual(len(suggestions), 3)
+        self.assertIn("Black Lotus", suggestions)
+
+
+class TestTCGPlayerDeckMethods(unittest.TestCase):
+    """Test TCGPlayer deck-related methods."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.tcgplayer = TCGPlayer(
+            client_id="test_client_id", client_secret="test_client_secret"
+        )
+        # Mock the auth_handler to be authenticated
+        self.tcgplayer.auth_handler._authenticated = True
+        self.tcgplayer.auth_handler.access_token = "test_token"
+
+    def test_get_deck_not_implemented(self):
+        """Test that get_deck raises NotImplementedError."""
+        with self.assertRaises(NotImplementedError):
+            self.tcgplayer.get_deck(deck_id=12345)
+
+    def test_get_user_decks_not_implemented(self):
+        """Test that get_user_decks raises NotImplementedError."""
+        with self.assertRaises(NotImplementedError):
+            self.tcgplayer.get_user_decks()
+
+
+class TestTCGPlayerIterSearch(unittest.TestCase):
+    """Test TCGPlayer.iter_search() method."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.tcgplayer = TCGPlayer(
+            client_id="test_client_id", client_secret="test_client_secret"
+        )
+        # Mock the auth_handler to be authenticated
+        self.tcgplayer.auth_handler._authenticated = True
+        self.tcgplayer.auth_handler.access_token = "test_token"
+
+    @patch.object(TCGPlayer, "search")
+    def test_iter_search_yields_pages(self, mock_search):
+        """Test that iter_search yields pages of results."""
+        # Mock search to return results for first page, then empty
+        mock_search.side_effect = [
+            [
+                Card(
+                    id="1",
+                    name="Card 1",
+                    set_code="SET",
+                    collector_number="1",
+                    mana_cost="",
+                    cmc=None,
+                    type_line="",
+                    rarity=None,
+                    colors=None,
+                    color_identity=None,
+                    oracle_text=None,
+                ),
+                Card(
+                    id="2",
+                    name="Card 2",
+                    set_code="SET",
+                    collector_number="2",
+                    mana_cost="",
+                    cmc=None,
+                    type_line="",
+                    rarity=None,
+                    colors=None,
+                    color_identity=None,
+                    oracle_text=None,
+                ),
+            ],
+            [],  # Empty list ends iteration
+        ]
+
+        pages = list(self.tcgplayer.iter_search(name="test"))
+
+        self.assertEqual(len(pages), 2)  # Should get 2 individual cards
+
+
+class TestTCGPlayerErrorHandling(unittest.TestCase):
+    """Test TCGPlayer error handling."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.tcgplayer = TCGPlayer(
+            client_id="test_client_id", client_secret="test_client_secret"
+        )
+        # Mock the auth_handler to be authenticated
+        self.tcgplayer.auth_handler._authenticated = True
+        self.tcgplayer.auth_handler.access_token = "test_token"
+
+    @patch("requests.Session.get")
+    def test_rate_limit_error(self, mock_get):
+        """Test that RateLimitError is raised on rate limit exceeded."""
+        mock_response = MagicMock()
+        mock_response.status_code = 429
+        mock_response.headers = {"Retry-After": "60"}
+        mock_response.json.return_value = {"message": "Rate limit exceeded"}
+        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
+            "Rate Limit Exceeded", response=mock_response
+        )
+        mock_get.return_value = mock_response
+
+        with self.assertRaises(RateLimitError):
+            self.tcgplayer.search(name="test")
+
+    @patch("requests.Session.get")
+    def test_authentication_error(self, mock_get):
+        """Test that AuthenticationError is raised on authentication failure."""
+        mock_response = MagicMock()
+        mock_response.status_code = 401
+        mock_response.json.return_value = {"message": "Invalid token"}
+        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
+            "Unauthorized", response=mock_response
+        )
+        mock_get.return_value = mock_response
+
+        with patch.object(self.tcgplayer.http_client, "session", MagicMock()):
+            with patch.object(
+                self.tcgplayer.http_client.session,
+                "get",
+                return_value=mock_response,
+            ):
+                with self.assertRaises(AuthenticationError):
+                    self.tcgplayer.search(name="test")
+
+    @patch("requests.Session.get")
+    def test_api_error(self, mock_get):
+        """Test that APIError is raised on generic API errors."""
+        mock_response = MagicMock()
+        mock_response.status_code = 500
+        mock_response.json.return_value = {"message": "Internal server error"}
+        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
+            "Internal Server Error", response=mock_response
+        )
+        mock_get.return_value = mock_response
+
+        with patch.object(self.tcgplayer.http_client, "session", MagicMock()):
+            with patch.object(
+                self.tcgplayer.http_client.session,
+                "get",
+                return_value=mock_response,
+            ):
+                with self.assertRaises(APIError):
+                    self.tcgplayer.search(name="test")
+
+    @patch("requests.Session.get")
+    def test_network_error(self, mock_get):
+        """Test that NetworkError is raised on network errors."""
+        mock_get.side_effect = requests.exceptions.ConnectionError("Connection failed")
+
+        with patch.object(self.tcgplayer.http_client, "session", MagicMock()):
+            with patch.object(
+                self.tcgplayer.http_client.session,
+                "get",
+                side_effect=mock_get.side_effect,
+            ):
+                with self.assertRaises(NetworkError):
+                    self.tcgplayer.search(name="test")
+
+
+class TestTCGPlayerResponseParsing(unittest.TestCase):
+    """Test TCGPlayer response parsing methods."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.tcgplayer = TCGPlayer(
+            client_id="test_client_id", client_secret="test_client_secret"
+        )
+        # Mock the auth_handler to be authenticated
+        self.tcgplayer.auth_handler._authenticated = True
+        self.tcgplayer.auth_handler.access_token = "test_token"
+
+    def test_parse_card_data_with_all_fields(self):
+        """Test parsing card data with all fields present."""
+        data = {
+            "productId": 12345,
+            "name": "Serra Angel",
+            "categoryName": "LEA",
+            "categoryGroupName": "Core Sets",
+            "rarity": "Rare",
+            "productType": "Creature - Angel",
+            "color": "W",
+            "colorIdentity": "W",
+            "convertedManaCost": "5",
+            "number": "1",
+            "power": "4",
+            "toughness": "4",
+            "imageUrl": "https://example.com/serra_angel.jpg",
+            "artist": "Doug Chaffee",
+            "flavorText": "Vigilance, Flying",
+        }
+
+        card = self.tcgplayer._parse_card_data(data)
+
+        self.assertIsInstance(card, Card)
+        self.assertEqual(card.name, "Serra Angel")
+        self.assertEqual(card.set_code, "LEA")
+        self.assertEqual(card.rarity, Rarity.RARE)
+        self.assertEqual(card.type_line, "Creature - Angel")
+        self.assertEqual(card.mana_cost, "5")
+        self.assertEqual(card.cmc, 5.0)
+        self.assertEqual(card.power, "4")
+        self.assertEqual(card.toughness, "4")
+        self.assertIsNotNone(card.colors)
+        colors = card.colors
+        assert colors is not None
+        self.assertEqual(len(colors), 1)
+        self.assertEqual(
+            colors[0], Color.WHITE
+        )  # Use enum instance, not class attribute
+
+    def test_parse_card_data_minimal(self):
+        """Test parsing card data with minimal fields."""
+        data = {
+            "productId": 12345,
+            "name": "Plains",
+            "categoryName": "LEA",
+        }
+
+        card = self.tcgplayer._parse_card_data(data)
+
+        self.assertIsInstance(card, Card)
+        self.assertEqual(card.name, "Plains")
+        self.assertEqual(card.set_code, "LEA")
+
+    def test_parse_color_string_single_char(self):
+        """Test parsing color string with single character codes."""
+        colors = self.tcgplayer._parse_tcgplayer_color_string("WU")
+        self.assertEqual(len(colors), 2)
+        self.assertIn(Color.WHITE, colors)
+        self.assertIn(Color.BLUE, colors)
+
+    def test_parse_color_string_names(self):
+        """Test parsing color string with color names."""
+        colors = self.tcgplayer._parse_tcgplayer_color_string("White,Blue,Black")
+        self.assertEqual(len(colors), 3)
+        self.assertIn(Color.WHITE, colors)
+        self.assertIn(Color.BLUE, colors)
+        self.assertIn(Color.BLACK, colors)
+
+    def test_parse_color_string_empty(self):
+        """Test parsing empty color string."""
+        colors = self.tcgplayer._parse_tcgplayer_color_string("")
+        self.assertEqual(len(colors), 0)
+
+
+if __name__ == "__main__":
+    unittest.main()
