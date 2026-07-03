@@ -75,13 +75,12 @@ permissions:
 
 jobs:
   code-review:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     container:
       image: node:24
     if: |
       github.event_name == 'pull_request_target' ||
-      (github.event_name == 'issue_comment' && github.event.issue.pull_request && startsWith(github.event.comment.body, '/ocr-code-review')) ||
-      (github.event_name == 'issue_comment' && github.event.issue.pull_request && startsWith(github.event.comment.body, '@ocr-code-review'))
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && startsWith(github.event.comment.body, '/code-review'))
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
