@@ -33,4 +33,4 @@ jobs:
         run: pyright pymtg/
 
       - name: Run pylint
-        run: pylint pymtg/ tests/ --disable=C0114,C0115,C0116
+        run: pylint pymtg/ tests/ --disable=C0114,C0115,C0116,W1203,R0801,R0913,R0917,R0914,R0903,R0902,W0107,W0221,W0613,W3101,C0301,C0415

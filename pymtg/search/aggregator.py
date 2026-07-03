@@ -288,6 +288,7 @@ class Aggregator:
         try:
             # Convert string colors to enum if needed
             def convert_colors(color_list: list[str] | None) -> list[Color] | None:
+                """Convert a list of color strings to Color enum values."""
                 if color_list is None:
                     return None
                 return [Color(c.upper()) for c in color_list]
