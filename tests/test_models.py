@@ -1392,6 +1392,44 @@ class TestPricing:
         assert "usd" in result
         assert "cad" in result
 
+    def test_price_fields_validation_rejects_non_price_field(self) -> None:
+        """Test that _PRICE_FIELDS with non-float field raises TypeError.
+
+        The __pydantic_init_subclass__ hook validates that entries in
+        _PRICE_FIELDS are float | None type, not just any model field.
+        """
+
+        with pytest.raises(TypeError, match="expected float | None"):
+
+            class BadPriceFields(TCGPlayerPricing):
+                """Test subclass with non-price field in _PRICE_FIELDS."""
+
+                metadata: str | None = None
+                _PRICE_FIELDS: ClassVar[tuple[str, ...]] = (
+                    "market",
+                    "metadata",
+                )
+
+    def test_validate_currency_consistency_empty_currencies_skipped(
+        self,
+    ) -> None:
+        """Test that providers with empty CURRENCIES are skipped.
+
+        If a provider's CURRENCIES is empty, validate_currency_consistency
+        should not add it to the result, since no currencies are declared.
+        """
+
+        class EmptyCurrenciesTCGPlayer(TCGPlayerPricing):
+            """Test subclass with empty CURRENCIES."""
+
+            CURRENCIES: ClassVar[tuple[str, ...]] = ()
+
+        pricing = Pricing(
+            tcgplayer=EmptyCurrenciesTCGPlayer(market=10.0)
+        )
+        result = pricing.validate_currency_consistency()
+        assert result == {}
+
 
 class TestPyMTGBaseModel:
     """Tests for the PyMTGBaseModel base class."""

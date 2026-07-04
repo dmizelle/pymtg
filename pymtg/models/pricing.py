@@ -82,6 +82,16 @@ class _ProviderPricingBase(PyMTGBaseModel):
                     f"unknown field {field!r}; must be one of "
                     f"{sorted(field_names)}"
                 )
+            # Validate that the field is a price field (float | None).
+            # Non-price fields (e.g., metadata) would cause has_prices()
+            # to return True for non-price data.
+            annotation = cls.model_fields[field].annotation
+            if annotation != float | None:
+                raise TypeError(
+                    f"{cls.__name__}._PRICE_FIELDS entry {field!r} "
+                    f"has type {annotation!r}; expected float | None "
+                    f"for price fields."
+                )
 
     def has_prices(self) -> bool:
         """Returns whether any price field is set.
@@ -336,8 +346,10 @@ class Pricing(PyMTGBaseModel):
         # rather than relying on has_prices() alone. The warnings below
         # alert maintainers if CURRENCIES grows beyond one entry.
         if self.tcgplayer is not None and self.tcgplayer.has_prices():
-            tcg_currencies = type(self.tcgplayer).CURRENCIES
-            if len(tcg_currencies) > 1:
+            tcg_currencies = self.tcgplayer.CURRENCIES
+            if not tcg_currencies:
+                pass  # No currencies declared; nothing to record.
+            elif len(tcg_currencies) > 1:
                 import warnings
 
                 warnings.warn(
@@ -348,11 +360,16 @@ class Pricing(PyMTGBaseModel):
                     f"individual currency fields.",
                     stacklevel=2,
                 )
-            for currency in tcg_currencies:
-                result.setdefault(currency, []).append("tcgplayer")
+                for currency in tcg_currencies:
+                    result.setdefault(currency, []).append("tcgplayer")
+            else:
+                for currency in tcg_currencies:
+                    result.setdefault(currency, []).append("tcgplayer")
         if self.cardmarket is not None and self.cardmarket.has_prices():
-            cm_currencies = type(self.cardmarket).CURRENCIES
-            if len(cm_currencies) > 1:
+            cm_currencies = self.cardmarket.CURRENCIES
+            if not cm_currencies:
+                pass  # No currencies declared; nothing to record.
+            elif len(cm_currencies) > 1:
                 import warnings
 
                 warnings.warn(
@@ -363,6 +380,9 @@ class Pricing(PyMTGBaseModel):
                     f"individual currency fields.",
                     stacklevel=2,
                 )
-            for currency in cm_currencies:
-                result.setdefault(currency, []).append("cardmarket")
+                for currency in cm_currencies:
+                    result.setdefault(currency, []).append("cardmarket")
+            else:
+                for currency in cm_currencies:
+                    result.setdefault(currency, []).append("cardmarket")
         return result
