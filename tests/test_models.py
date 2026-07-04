@@ -17,6 +17,7 @@ Tests cover:
 """
 
 import json
+from typing import ClassVar
 
 import pytest
 from pydantic import ValidationError
@@ -1141,6 +1142,288 @@ class TestPricing:
         assert pricing.scryfall == scryfall_data
         assert pricing.tcgplayer is None
         assert pricing.cardmarket is None
+
+    def test_scryfall_pricing_currencies_classvar(self) -> None:
+        """Test ScryfallPricing declares its CURRENCIES ClassVar."""
+        assert ScryfallPricing.CURRENCIES == ("usd", "eur", "tix")
+
+    def test_tcgplayer_pricing_currency_classvar(self) -> None:
+        """Test TCGPlayerPricing declares its CURRENCIES ClassVar as usd."""
+        assert TCGPlayerPricing.CURRENCIES == ("usd",)
+
+    def test_cardmarket_pricing_currency_classvar(self) -> None:
+        """Test CardmarketPricing declares its CURRENCIES ClassVar as eur."""
+        assert CardmarketPricing.CURRENCIES == ("eur",)
+
+    def test_scryfall_pricing_get_normal_print_currencies_all_set(self) -> None:
+        """Test get_normal_print_currencies returns all three currencies when set."""
+        pricing = ScryfallPricing(usd=10.0, eur=8.0, tix=5.0)
+        assert pricing.get_normal_print_currencies() == {
+            "usd": 10.0,
+            "eur": 8.0,
+            "tix": 5.0,
+        }
+
+    def test_scryfall_pricing_get_normal_print_currencies_none(self) -> None:
+        """Test get_normal_print_currencies returns None for unset currencies."""
+        pricing = ScryfallPricing()
+        assert pricing.get_normal_print_currencies() == {
+            "usd": None,
+            "eur": None,
+            "tix": None,
+        }
+
+    def test_scryfall_pricing_get_normal_print_currencies_partial(self) -> None:
+        """Test get_normal_print_currencies returns only set values, others None."""
+        pricing = ScryfallPricing(usd=10.0)
+        currencies = pricing.get_normal_print_currencies()
+        assert currencies["usd"] == 10.0
+        assert currencies["eur"] is None
+        assert currencies["tix"] is None
+
+    def test_tcgplayer_pricing_has_prices_true(self) -> None:
+        """Test has_prices returns True when at least one field is set."""
+        assert TCGPlayerPricing(market=10.0).has_prices() is True
+        assert TCGPlayerPricing(poor=0.50).has_prices() is True
+
+    def test_tcgplayer_pricing_has_prices_false(self) -> None:
+        """Test has_prices returns False when no fields are set."""
+        assert TCGPlayerPricing().has_prices() is False
+
+    def test_tcgplayer_pricing_has_prices_zero(self) -> None:
+        """Test has_prices returns True when a field is set to 0.
+
+        A price of 0.0 is a valid price (e.g., a free card), so it
+        should count as having a price set.
+        """
+        assert TCGPlayerPricing(market=0.0).has_prices() is True
+
+    def test_tcgplayer_pricing_has_prices_explicit_none(self) -> None:
+        """Test has_prices returns False when all fields are explicit None."""
+        pricing = TCGPlayerPricing(
+            market=None,
+            mid=None,
+            low=None,
+            high=None,
+            direct_low=None,
+        )
+        assert pricing.has_prices() is False
+
+    def test_cardmarket_pricing_has_prices_true(self) -> None:
+        """Test has_prices returns True when at least one field is set."""
+        assert CardmarketPricing(avg1=10.0).has_prices() is True
+        assert CardmarketPricing(trend=1.5).has_prices() is True
+
+    def test_cardmarket_pricing_has_prices_false(self) -> None:
+        """Test has_prices returns False when no fields are set."""
+        assert CardmarketPricing().has_prices() is False
+
+    def test_cardmarket_pricing_has_prices_zero(self) -> None:
+        """Test has_prices returns True when a field is set to 0.
+
+        A price of 0.0 is a valid price, so it should count as having
+        a price set.
+        """
+        assert CardmarketPricing(avg1=0.0).has_prices() is True
+
+    def test_cardmarket_pricing_has_prices_explicit_none(self) -> None:
+        """Test has_prices returns False when all fields are explicit None."""
+        pricing = CardmarketPricing(
+            avg1=None,
+            avg7=None,
+            avg30=None,
+            low=None,
+            low_ex=None,
+            trend=None,
+        )
+        assert pricing.has_prices() is False
+
+    def test_pricing_validate_currency_consistency_empty(self) -> None:
+        """Test validate_currency_consistency with no providers set."""
+        assert Pricing().validate_currency_consistency() == {}
+
+    def test_pricing_validate_currency_consistency_providers_no_prices(
+        self,
+    ) -> None:
+        """Test validate_currency_consistency omits providers with no prices."""
+        pricing = Pricing(
+            scryfall=ScryfallPricing(),
+            tcgplayer=TCGPlayerPricing(),
+            cardmarket=CardmarketPricing(),
+        )
+        assert pricing.validate_currency_consistency() == {}
+
+    def test_pricing_validate_currency_consistency_scryfall_only(self) -> None:
+        """Test validate_currency_consistency with only Scryfall populated."""
+        pricing = Pricing(scryfall=ScryfallPricing(usd=10.0, eur=8.0, tix=5.0))
+        result = pricing.validate_currency_consistency()
+        assert result == {
+            "usd": ["scryfall"],
+            "eur": ["scryfall"],
+            "tix": ["scryfall"],
+        }
+
+    def test_pricing_validate_currency_consistency_scryfall_partial(
+        self,
+    ) -> None:
+        """Test validate_currency_consistency omits unset Scryfall currencies."""
+        pricing = Pricing(scryfall=ScryfallPricing(usd=10.0))
+        result = pricing.validate_currency_consistency()
+        assert result == {"usd": ["scryfall"]}
+
+    def test_pricing_validate_currency_consistency_all_providers(self) -> None:
+        """Test validate_currency_consistency with all providers populated."""
+        pricing = Pricing(
+            scryfall=ScryfallPricing(usd=10.0, eur=8.0, tix=5.0),
+            tcgplayer=TCGPlayerPricing(market=10.00),
+            cardmarket=CardmarketPricing(avg1=10.25),
+        )
+        result = pricing.validate_currency_consistency()
+        assert result == {
+            "usd": ["scryfall", "tcgplayer"],
+            "eur": ["scryfall", "cardmarket"],
+            "tix": ["scryfall"],
+        }
+
+    def test_pricing_validate_currency_consistency_tcgplayer_only(self) -> None:
+        """Test validate_currency_consistency with only TCGPlayer populated."""
+        pricing = Pricing(tcgplayer=TCGPlayerPricing(market=10.00))
+        result = pricing.validate_currency_consistency()
+        assert result == {"usd": ["tcgplayer"]}
+
+    def test_pricing_validate_currency_consistency_cardmarket_only(
+        self,
+    ) -> None:
+        """Test validate_currency_consistency with only Cardmarket populated."""
+        pricing = Pricing(cardmarket=CardmarketPricing(avg1=10.25))
+        result = pricing.validate_currency_consistency()
+        assert result == {"eur": ["cardmarket"]}
+
+    def test_pricing_validate_currency_consistency_mixed_partial(self) -> None:
+        """Test validate_currency_consistency with mixed partial providers."""
+        pricing = Pricing(
+            scryfall=ScryfallPricing(usd=10.0),
+            tcgplayer=TCGPlayerPricing(),
+            cardmarket=CardmarketPricing(avg1=10.25),
+        )
+        result = pricing.validate_currency_consistency()
+        assert result == {
+            "usd": ["scryfall"],
+            "eur": ["cardmarket"],
+        }
+
+    def test_price_fields_validation_rejects_unknown_field(self) -> None:
+        """Test that _PRICE_FIELDS with unknown field raises TypeError.
+
+        The _ProviderPricingBase.__pydantic_init_subclass__ hook
+        validates that every entry in _PRICE_FIELDS is an actual model
+        field, catching typos at class definition time.
+        """
+
+        with pytest.raises(TypeError, match="unknown field 'nonexistent'"):
+
+            class BadPricing(TCGPlayerPricing):
+                """Test subclass with invalid _PRICE_FIELDS."""
+
+                _PRICE_FIELDS: ClassVar[tuple[str, ...]] = (
+                    "market",
+                    "nonexistent",
+                )
+
+    def test_price_fields_validation_accepts_valid_fields(self) -> None:
+        """Test that valid _PRICE_FIELDS does not raise."""
+
+        class GoodPricing(TCGPlayerPricing):
+            """Test subclass with valid _PRICE_FIELDS."""
+
+            _PRICE_FIELDS: ClassVar[tuple[str, ...]] = ("market", "mid")
+
+        # Should not raise; instantiation works
+        pricing = GoodPricing(market=10.0)
+        assert pricing.has_prices() is True
+
+    def test_price_fields_validation_rejects_empty_field_name(self) -> None:
+        """Test that _PRICE_FIELDS with empty string raises TypeError."""
+
+        with pytest.raises(TypeError, match="unknown field ''"):
+
+            class EmptyFieldPricing(TCGPlayerPricing):
+                """Test subclass with empty string in _PRICE_FIELDS."""
+
+                _PRICE_FIELDS: ClassVar[tuple[str, ...]] = ("market", "")
+
+    def test_scryfall_currencies_validation_rejects_unknown_field(
+        self,
+    ) -> None:
+        """Test ScryfallPricing CURRENCIES with unknown field raises.
+
+        ScryfallPricing validates that CURRENCIES entries are actual
+        model field names, since get_normal_print_currencies uses
+        getattr to fetch them.
+        """
+
+        with pytest.raises(TypeError, match="unknown field 'usdd'"):
+
+            class BadScryfall(ScryfallPricing):
+                """Test subclass with typo in CURRENCIES."""
+
+                CURRENCIES: ClassVar[tuple[str, ...]] = ("usd", "usdd")
+
+    def test_validate_currency_consistency_warns_multi_currency_tcgplayer(
+        self,
+    ) -> None:
+        """Test error when TCGPlayerPricing has multiple currencies.
+
+        validate_currency_consistency assumes single-currency providers;
+        if CURRENCIES grows beyond one entry, it raises
+        NotImplementedError to alert maintainers that the logic must
+        be updated to check individual currency fields.
+        """
+
+        class MultiCurrencyTCGPlayer(TCGPlayerPricing):
+            """Test subclass with multiple currencies."""
+
+            CURRENCIES: ClassVar[tuple[str, ...]] = ("usd", "cad")
+
+        pricing = Pricing(tcgplayer=MultiCurrencyTCGPlayer(market=10.0))
+        with pytest.raises(NotImplementedError, match="single-currency"):
+            pricing.validate_currency_consistency()
+
+    def test_price_fields_validation_rejects_non_price_field(self) -> None:
+        """Test that _PRICE_FIELDS with non-float field raises TypeError.
+
+        The __pydantic_init_subclass__ hook validates that entries in
+        _PRICE_FIELDS are float | None type, not just any model field.
+        """
+
+        with pytest.raises(TypeError, match="expected float | None"):
+
+            class BadPriceFields(TCGPlayerPricing):
+                """Test subclass with non-price field in _PRICE_FIELDS."""
+
+                metadata: str | None = None
+                _PRICE_FIELDS: ClassVar[tuple[str, ...]] = (
+                    "market",
+                    "metadata",
+                )
+
+    def test_validate_currency_consistency_empty_currencies_skipped(
+        self,
+    ) -> None:
+        """Test that providers with empty CURRENCIES are skipped.
+
+        If a provider's CURRENCIES is empty, validate_currency_consistency
+        should not add it to the result, since no currencies are declared.
+        """
+
+        class EmptyCurrenciesTCGPlayer(TCGPlayerPricing):
+            """Test subclass with empty CURRENCIES."""
+
+            CURRENCIES: ClassVar[tuple[str, ...]] = ()
+
+        pricing = Pricing(tcgplayer=EmptyCurrenciesTCGPlayer(market=10.0))
+        result = pricing.validate_currency_consistency()
+        assert result == {}
 
 
 class TestPyMTGBaseModel:
