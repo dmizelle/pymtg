@@ -13,6 +13,7 @@ across providers; it surfaces which currencies are actually populated
 across the aggregated providers.
 """
 
+import warnings
 from typing import ClassVar
 
 from pymtg.models.base import PyMTGBaseModel
@@ -175,6 +176,9 @@ class ScryfallPricing(_ProviderPricingBase):
             A dict mapping currency code to the normal-print price for
             that currency. Currencies with no price set map to None.
         """
+        # The default=None is safe because __pydantic_init_subclass__
+        # validates that every entry in CURRENCIES is an actual model
+        # field name on this class.
         return {currency: getattr(self, currency, None) for currency in self.CURRENCIES}
 
 
@@ -343,46 +347,44 @@ class Pricing(PyMTGBaseModel):
         # has_prices() is True, all their declared currencies are
         # populated. If they ever support multiple currencies, this
         # logic must be updated to check individual currency fields
-        # rather than relying on has_prices() alone. The warnings below
-        # alert maintainers if CURRENCIES grows beyond one entry.
+        # rather than relying on has_prices() alone. The helper below
+        # warns maintainers if CURRENCIES grows beyond one entry.
         if self.tcgplayer is not None and self.tcgplayer.has_prices():
-            tcg_currencies = self.tcgplayer.CURRENCIES
-            if not tcg_currencies:
-                pass  # No currencies declared; nothing to record.
-            elif len(tcg_currencies) > 1:
-                import warnings
-
-                warnings.warn(
-                    f"{type(self.tcgplayer).__name__}.CURRENCIES has "
-                    f"multiple entries; validate_currency_consistency "
-                    f"assumes single-currency providers and may report "
-                    f"false positives. Update this method to check "
-                    f"individual currency fields.",
-                    stacklevel=2,
-                )
-                for currency in tcg_currencies:
-                    result.setdefault(currency, []).append("tcgplayer")
-            else:
-                for currency in tcg_currencies:
-                    result.setdefault(currency, []).append("tcgplayer")
+            self._add_single_currency_provider(result, "tcgplayer", self.tcgplayer)
         if self.cardmarket is not None and self.cardmarket.has_prices():
-            cm_currencies = self.cardmarket.CURRENCIES
-            if not cm_currencies:
-                pass  # No currencies declared; nothing to record.
-            elif len(cm_currencies) > 1:
-                import warnings
-
-                warnings.warn(
-                    f"{type(self.cardmarket).__name__}.CURRENCIES has "
-                    f"multiple entries; validate_currency_consistency "
-                    f"assumes single-currency providers and may report "
-                    f"false positives. Update this method to check "
-                    f"individual currency fields.",
-                    stacklevel=2,
-                )
-                for currency in cm_currencies:
-                    result.setdefault(currency, []).append("cardmarket")
-            else:
-                for currency in cm_currencies:
-                    result.setdefault(currency, []).append("cardmarket")
+            self._add_single_currency_provider(result, "cardmarket", self.cardmarket)
         return result
+
+    @staticmethod
+    def _add_single_currency_provider(
+        result: dict[str, list[str]],
+        provider_name: str,
+        provider: _ProviderPricingBase,
+    ) -> None:
+        """Adds a single-currency provider's currencies to the result.
+
+        Warns if the provider's ``CURRENCIES`` has multiple entries,
+        since this method assumes single-currency providers. Skips
+        providers with empty ``CURRENCIES``.
+
+        Args:
+            result: The result dict being built by
+                ``validate_currency_consistency``.
+            provider_name: The name of the provider (e.g.,
+                ``"tcgplayer"``).
+            provider: The provider pricing instance.
+        """
+        currencies = provider.CURRENCIES
+        if not currencies:
+            return
+        if len(currencies) > 1:
+            warnings.warn(
+                f"{type(provider).__name__}.CURRENCIES has "
+                f"multiple entries; validate_currency_consistency "
+                f"assumes single-currency providers and may report "
+                f"false positives. Update this method to check "
+                f"individual currency fields.",
+                stacklevel=3,
+            )
+        for currency in currencies:
+            result.setdefault(currency, []).append(provider_name)

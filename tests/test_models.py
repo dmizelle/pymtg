@@ -1384,9 +1384,7 @@ class TestPricing:
 
             CURRENCIES: ClassVar[tuple[str, ...]] = ("usd", "cad")
 
-        pricing = Pricing(
-            tcgplayer=MultiCurrencyTCGPlayer(market=10.0)
-        )
+        pricing = Pricing(tcgplayer=MultiCurrencyTCGPlayer(market=10.0))
         with pytest.warns(UserWarning, match="multiple entries"):
             result = pricing.validate_currency_consistency()
         assert "usd" in result
@@ -1424,9 +1422,7 @@ class TestPricing:
 
             CURRENCIES: ClassVar[tuple[str, ...]] = ()
 
-        pricing = Pricing(
-            tcgplayer=EmptyCurrenciesTCGPlayer(market=10.0)
-        )
+        pricing = Pricing(tcgplayer=EmptyCurrenciesTCGPlayer(market=10.0))
         result = pricing.validate_currency_consistency()
         assert result == {}
 
