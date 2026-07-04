@@ -367,8 +367,8 @@ class Card(PyMTGBaseModel):
 
         mismatches: dict[str, tuple[Any, Any]] = {}
         for field in self._SHARED_FACE_FIELDS:
-            card_value = getattr(self, field)
-            face_value = getattr(main_face, field)
+            card_value = getattr(self, field, None)
+            face_value = getattr(main_face, field, None)
             if card_value != face_value:
                 mismatches[field] = (card_value, face_value)
         return mismatches
