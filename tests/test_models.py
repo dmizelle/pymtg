@@ -670,6 +670,26 @@ class TestCard:
         )
         assert card.validate_main_face_consistency() == {}
 
+    def test_card_validate_main_face_consistency_asymmetric_none(self) -> None:
+        """Test validate_main_face_consistency with asymmetric None values.
+
+        Verifies that the method correctly detects mismatches when one
+        side has None and the other has a value (e.g., card.power=None
+        vs face.power='2').
+        """
+        face = CardFace(name="Test Card", power="2", toughness="2")
+        card = Card(
+            id="test-id",
+            name="Test Card",
+            power=None,
+            toughness="2",
+            card_faces=[face],
+        )
+        mismatches = card.validate_main_face_consistency()
+        assert "power" in mismatches
+        assert mismatches["power"] == (None, "2")
+        assert "toughness" not in mismatches
+
     def test_card_validate_main_face_consistency_none_in_faces_raises(self) -> None:
         """Test that None values in card_faces are rejected by pydantic.
 
