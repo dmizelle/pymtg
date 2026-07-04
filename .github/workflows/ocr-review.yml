@@ -5,7 +5,8 @@
 #
 # Triggers:
 #   - PR opened (uses pull_request_target for fork secret access)
-#   - Comment on PR containing '/open-code-review' or '@open-code-review'
+#   - New commits pushed to PR (uses pull_requestTarget for fork secret access)
+#   - Comment on PR containing '/code-review'
 #
 # Required secrets:
 #   OCR_LLM_URL        - LLM API endpoint (e.g., https://api.openai.com/v1/chat/completions)
@@ -57,13 +58,15 @@
 name: OpenCodeReview PR Review
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.issue.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.issue.number || github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 on:
   # Use pull_request_target instead of pull_request so that secrets are
   # available even for PRs from forks. This is safe because OCR only reads
   # the diff and does not execute any code from the PR.
+  pull_request_target:
+    types: [opened, synchronize]
   issue_comment:
     types: [created, edited]
 
@@ -76,89 +79,143 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: node:24
-    if: |
-      github.event_name == 'issue_comment' && github.event.issue.pull_request && startsWith(github.event.comment.body, '/code-review')
+     if: |
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && startsWith(github.event.comment.body, '/code-review')) ||
+      (github.event_name == 'pull_request_target' && github.event.action == 'opened') ||
+      (github.event_name == 'pull_request_target' && github.event.action == 'synchronize' && github.event.pull_request.changed_files > 0)
     steps:
-      - name: Get PR info
-        id: pr
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const prNumber = context.payload.issue.number;
+       - name: Get PR info
+         id: pr
+         uses: actions/github-script@v7
+         with:
+           script: |
+             let prNumber;
+             if (context.eventName === 'issue_comment') {
+               prNumber = context.payload.issue.number;
+             } else if (context.eventName === 'pull_request_target') {
+               prNumber = context.payload.pull_request.number;
+             } else {
+               throw new Error('Unexpected event type');
+             }
 
-            const { data: pr } = await github.rest.pulls.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: prNumber,
-            });
+             const { data: pr } = await github.rest.pulls.get({
+               owner: context.repo.owner,
+               repo: context.repo.repo,
+               pull_number: prNumber,
+             });
 
-            core.setOutput('head_sha', pr.head.sha);
-            core.setOutput('base_ref', pr.base.ref);
+             // Skip if no files changed (empty commits or PR without code changes)
+             // For comment-triggered reviews, we only skip if there are no changed files
+             // and it's not an opened/synchronize event (which already handle this)
+             if (pr.changed_files === 0) {
+               console.log('Skipping review: no files changed in this PR');
+               core.setOutput('skip_review', 'true');
+               return;
+             }
 
-            console.log(`Head sha: ${pr.head.sha}`);
-            console.log(`Base ref: ${pr.base.ref}`);
+             core.setOutput('head_sha', pr.head.sha);
+             core.setOutput('base_ref', pr.base.ref);
+             core.setOutput('pr_number', prNumber);
 
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # Full history needed for merge-base diff
-          ref: ${{ steps.pr.outputs.head_sha }}
+             console.log(`Head sha: ${pr.head.sha}`);
+             console.log(`Base ref: ${pr.base.ref}`);
 
-      - name: Mark repository as safe directory
-        run: git config --global --replace-all safe.directory '*'
+       - name: Checkout repository
+         if: steps.pr.outputs.skip_review != 'true'
+         uses: actions/checkout@v4
+         with:
+           fetch-depth: 0 # Full history needed for merge-base diff
+           ref: ${{ steps.pr.outputs.head_sha }}
 
-      - name: Fetch PR head ref (ensures fork commits are available)
-        run: git fetch origin pull/${{ github.event.issue.number }}/head
+       - name: Mark repository as safe directory
+         if: steps.pr.outputs.skip_review != 'true'
+         run: git config --global --replace-all safe.directory '*'
 
-      - name: Install OpenCodeReview
-        run: npm install -g @alibaba-group/open-code-review
+       - name: Fetch PR head ref (ensures fork commits are available)
+         if: steps.pr.outputs.skip_review != 'true'
+         run: git fetch origin pull/${{ github.event.pull_request.number || github.event.issue.number }}/head
 
-      - name: Configure OCR
-        run: |
-          mkdir -p ~/.opencodereview
-          echo '${{ secrets.open_code_review_config }}' > ~/.opencodereview/config.json
+       - name: Install OpenCodeReview
+         if: steps.pr.outputs.skip_review != 'true'
+         run: npm install -g @alibaba-group/open-code-review
 
-      - name: Run OpenCodeReview
-        id: review
-        run: |
-          BASE_REF="${{ steps.pr.outputs.base_ref }}"
-          HEAD_SHA="${{ steps.pr.outputs.head_sha }}"
+       - name: Configure OCR
+         if: steps.pr.outputs.skip_review != 'true'
+         run: |
+           mkdir -p ~/.opencodereview
+           echo '${{ secrets.open_code_review_config }}' > ~/.opencodereview/config.json
 
-          echo "Reviewing PR: ${HEAD_SHA} against origin/${BASE_REF}"
+       - name: Run OpenCodeReview
+         if: steps.pr.outputs.skip_review != 'true'
+         id: review
+         run: |
+           BASE_REF="${{ steps.pr.outputs.base_ref }}"
+           HEAD_SHA="${{ steps.pr.outputs.head_sha }}"
 
-          # Run OCR in range mode with JSON output
-          ocr review \
-            --from "origin/${BASE_REF}" \
-            --to "${HEAD_SHA}" \
-            --format json \
-            > /tmp/ocr-result.json 2>/tmp/ocr-stderr.log || true
+           echo "Reviewing PR: ${HEAD_SHA} against origin/${BASE_REF}"
 
-          echo "OCR review completed. Output:"
-          cat /tmp/ocr-result.json
-          echo "OCR review completed. Error log:"
-          cat /tmp/ocr-stderr.log
+           # Run OCR in range mode with JSON output
+           ocr review \
+             --from "origin/${BASE_REF}" \
+             --to "${HEAD_SHA}" \
+             --format json \
+             > /tmp/ocr-result.json 2>/tmp/ocr-stderr.log || true
 
-      - name: Post review comments to PR
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const fs = require('fs');
-            const crypto = require('crypto');
-            const path = '/tmp/ocr-result.json';
+           echo "OCR review completed. Output:"
+           cat /tmp/ocr-result.json
+           echo "OCR review completed. Error log:"
+           cat /tmp/ocr-stderr.log
 
-            // Unique tag for this workflow run + attempt. Embedded in review/comment
-            // bodies as an HTML comment so the idempotency check can detect whether
-            // a batch createReview actually landed on the server before retrying.
-            // context.runId / context.runAttempt are numbers from @actions/github's
-            // Context (parsed from GITHUB_RUN_ID / GITHUB_RUN_ATTEMPT). Use
-            // Number.isFinite to guard against NaN when the env vars are missing,
-            // falling back to safe defaults.
-            const runId = Number.isFinite(context.runId) ? context.runId : 0;
-            const runAttempt = Number.isFinite(context.runAttempt) ? context.runAttempt : 1;
-            const RUN_TAG = `${runId}-${runAttempt}`;
-            const REVIEW_TAG = `<!-- ocr-review-run:${RUN_TAG} -->`;
-            const SUMMARY_TAG = `<!-- ocr-summary-run:${RUN_TAG} -->`;
+       - name: Notify when skipping due to no file changes
+         if: steps.pr.outputs.skip_review == 'true'
+         uses: actions/github-script@v7
+         with:
+           github-token: ${{ secrets.GITHUB_TOKEN }}
+           script: |
+             let prNumber;
+             let eventContext;
+             if (context.eventName === 'issue_comment') {
+               prNumber = context.payload.issue.number;
+               eventContext = 'via comment';
+             } else if (context.eventName === 'pull_request_target') {
+               prNumber = context.payload.pull_request.number;
+               eventContext = context.payload.action === 'opened' ? 'on PR open' : 'on push';
+             } else {
+               return; // Should not happen due to job condition
+             }
+
+             await github.rest.issues.createComment({
+               owner: context.repo.owner,
+               repo: context.repo.repo,
+               issue_number: prNumber,
+               body: '⏭️ **OpenCodeReview** skipped: No file changes detected to review.'
+             });
+
+       - name: Post review comments to PR
+         if: steps.pr.outputs.skip_review != 'true'
+         uses: actions/github-script@v7
+         with:
+           github-token: ${{ secrets.GITHUB_TOKEN }}
+           script: |
+             const fs = require('fs');
+             const crypto = require('crypto');
+             const path = '/tmp/ocr-result.json';
+
+             // Get PR number from the previous step
+             const prNumber = ${{ steps.pr.outputs.pr_number }};
+
+             // Unique tag for this workflow run + attempt. Embedded in review/comment
+             // bodies as an HTML comment so the idempotency check can detect whether
+             // a batch createReview actually landed on the server before retrying.
+             // context.runId / context.runAttempt are numbers from @actions/github's
+             // Context (parsed from GITHUB_RUN_ID / GITHUB_RUN_ATTEMPT). Use
+             // Number.isFinite to guard against NaN when the env vars are missing,
+             // falling back to safe defaults.
+             const runId = Number.isFinite(context.runId) ? context.runId : 0;
+             const runAttempt = Number.isFinite(context.runAttempt) ? context.runAttempt : 1;
+             const RUN_TAG = `${runId}-${runAttempt}`;
+             const REVIEW_TAG = `<!-- ocr-review-run:${RUN_TAG} -->`;
+             const SUMMARY_TAG = `<!-- ocr-summary-run:${RUN_TAG} -->`;
 
             // Read OCR output
             let result;
@@ -167,36 +224,35 @@ jobs:
               result = JSON.parse(raw);
             } catch (e) {
               console.log('Failed to parse OCR output:', e.message);
-              // Post a simple comment if parsing fails
-              const stderr = fs.readFileSync('/tmp/ocr-stderr.log', 'utf8').trim();
-              if (stderr) {
-                await github.rest.issues.createComment({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: context.issue.number,
-                  body: `⚠️ **OpenCodeReview** encountered an error:\n${fencedBlock(stderr)}`
-                });
-              }
+               // Post a simple comment if parsing fails
+               const stderr = fs.readFileSync('/tmp/ocr-stderr.log', 'utf8').trim();
+               if (stderr) {
+                 await github.rest.issues.createComment({
+                   owner: context.repo.owner,
+                   repo: context.repo.repo,
+                   issue_number: prNumber,
+                   body: `⚠️ **OpenCodeReview** encountered an error:\n${fencedBlock(stderr)}`
+                 });
+               }
               return;
             }
 
             const comments = result.comments || [];
             const warnings = result.warnings || [];
 
-            // If no comments, post a summary
-            if (comments.length === 0) {
-              const message = result.message || 'No comments generated. Looks good to me.';
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body: `✅ **OpenCodeReview**: ${message}`
-              });
-              return;
-            }
+             // If no comments, post a summary
+             if (comments.length === 0) {
+               const message = result.message || 'No comments generated. Looks good to me.';
+               await github.rest.issues.createComment({
+                 owner: context.repo.owner,
+                 repo: context.repo.repo,
+                 issue_number: prNumber,
+                 body: `✅ **OpenCodeReview**: ${message}`
+               });
+               return;
+             }
 
-            // Prepare PR review with inline comments
-            const prNumber = context.issue.number;
+             // Prepare PR review with inline comments
             const { data: pr } = await github.rest.pulls.get({
               owner: context.repo.owner,
               repo: context.repo.repo,
