@@ -17,6 +17,7 @@ Tests cover:
 """
 
 import json
+from typing import ClassVar
 
 import pytest
 from pydantic import ValidationError
@@ -1310,6 +1311,46 @@ class TestPricing:
             "usd": ["scryfall"],
             "eur": ["cardmarket"],
         }
+
+    def test_price_fields_validation_rejects_unknown_field(self) -> None:
+        """Test that _PRICE_FIELDS with unknown field raises TypeError.
+
+        The _ProviderPricingBase.__pydantic_init_subclass__ hook
+        validates that every entry in _PRICE_FIELDS is an actual model
+        field, catching typos at class definition time.
+        """
+
+        with pytest.raises(TypeError, match="unknown field 'nonexistent'"):
+
+            class BadPricing(TCGPlayerPricing):
+                """Test subclass with invalid _PRICE_FIELDS."""
+
+                _PRICE_FIELDS: ClassVar[tuple[str, ...]] = (
+                    "market",
+                    "nonexistent",
+                )
+
+    def test_price_fields_validation_accepts_valid_fields(self) -> None:
+        """Test that valid _PRICE_FIELDS does not raise."""
+
+        class GoodPricing(TCGPlayerPricing):
+            """Test subclass with valid _PRICE_FIELDS."""
+
+            _PRICE_FIELDS: ClassVar[tuple[str, ...]] = ("market", "mid")
+
+        # Should not raise; instantiation works
+        pricing = GoodPricing(market=10.0)
+        assert pricing.has_prices() is True
+
+    def test_price_fields_validation_rejects_empty_field_name(self) -> None:
+        """Test that _PRICE_FIELDS with empty string raises TypeError."""
+
+        with pytest.raises(TypeError, match="unknown field ''"):
+
+            class EmptyFieldPricing(TCGPlayerPricing):
+                """Test subclass with empty string in _PRICE_FIELDS."""
+
+                _PRICE_FIELDS: ClassVar[tuple[str, ...]] = ("market", "")
 
 
 class TestPyMTGBaseModel:

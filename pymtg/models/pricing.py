@@ -18,7 +18,80 @@ from typing import ClassVar
 from pymtg.models.base import PyMTGBaseModel
 
 
-class ScryfallPricing(PyMTGBaseModel):
+class _ProviderPricingBase(PyMTGBaseModel):
+    """Base class for provider pricing models.
+
+    Subclasses must declare ``CURRENCIES`` (currency codes that are also
+    model field names) and may declare ``_PRICE_FIELDS`` (fields checked
+    by ``has_prices()``). At class creation time, both are validated
+    against the subclass's model fields so typos or drift are caught
+    early rather than silently returning wrong results.
+
+    Attributes:
+        CURRENCIES: Currency codes supported by the provider. Each
+            entry must be the name of a model field on the subclass.
+        _PRICE_FIELDS: Fields checked by ``has_prices()``. Each entry
+            must be the name of a model field on the subclass.
+    """
+
+    CURRENCIES: ClassVar[tuple[str, ...]] = ()
+    _PRICE_FIELDS: ClassVar[tuple[str, ...]] = ()
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        """Forward kwargs to the parent __init_subclass__.
+
+        Args:
+            **kwargs: Forwarded to the parent ``__init_subclass__``.
+        """
+        super().__init_subclass__(**kwargs)  # type: ignore[misc]
+
+    @classmethod
+    def __pydantic_init_subclass__(cls, **kwargs: object) -> None:
+        """Validates _PRICE_FIELDS against model fields.
+
+        Ensures every entry in ``_PRICE_FIELDS`` corresponds to an
+        actual model field on the subclass, raising ``TypeError`` if
+        any entry is not a field. This catches typos and drift at
+        class definition time rather than silently returning wrong
+        results at runtime.
+
+        Note: ``CURRENCIES`` is not validated against model fields
+        because its semantics differ per subclass. For
+        ``ScryfallPricing`` each currency code is also a field name,
+        but for single-currency providers (TCGPlayer, Cardmarket) the
+        currency code describes all fields rather than naming one.
+
+        Args:
+            **kwargs: Forwarded by Pydantic.
+
+        Raises:
+            TypeError: If any entry in ``_PRICE_FIELDS`` is not a
+                model field on the subclass.
+        """
+        super().__pydantic_init_subclass__(**kwargs)  # type: ignore[misc]
+        field_names = set(cls.model_fields)
+        for field in cls._PRICE_FIELDS:
+            if field not in field_names:
+                raise TypeError(
+                    f"{cls.__name__}._PRICE_FIELDS references "
+                    f"unknown field {field!r}; must be one of "
+                    f"{sorted(field_names)}"
+                )
+
+    def has_prices(self) -> bool:
+        """Returns whether any price field is set.
+
+        Checks only the fields listed in ``_PRICE_FIELDS`` so that
+        non-price fields (if any are added in the future) do not
+        produce false positives.
+
+        Returns:
+            True if at least one price field is not None, False otherwise.
+        """
+        return any(getattr(self, field) is not None for field in self._PRICE_FIELDS)
+
+
+class ScryfallPricing(_ProviderPricingBase):
     """Pricing information from Scryfall.
 
     Scryfall provides pricing in multiple currencies and for different
@@ -61,7 +134,7 @@ class ScryfallPricing(PyMTGBaseModel):
         return {currency: getattr(self, currency, None) for currency in self.CURRENCIES}
 
 
-class TCGPlayerPricing(PyMTGBaseModel):
+class TCGPlayerPricing(_ProviderPricingBase):
     """Pricing information from TCGPlayer.
 
     TCGPlayer provides various pricing metrics including market price,
@@ -100,9 +173,9 @@ class TCGPlayerPricing(PyMTGBaseModel):
     fair: float | None = None
     poor: float | None = None
 
-    # Price fields checked by has_prices(). If new price fields are
-    # added to the model above without updating this tuple, has_prices()
-    # will not detect them. Keep this tuple in sync with the model fields.
+    # Price fields checked by has_prices(). Validated against model
+    # fields at class creation time by _ProviderPricingBase, so typos
+    # or drift raise TypeError immediately.
     _PRICE_FIELDS: ClassVar[tuple[str, ...]] = (
         "market",
         "mid",
@@ -117,20 +190,8 @@ class TCGPlayerPricing(PyMTGBaseModel):
         "poor",
     )
 
-    def has_prices(self) -> bool:
-        """Returns whether any price field is set.
 
-        Checks only the fields listed in ``_PRICE_FIELDS`` so that
-        non-price fields (if any are added in the future) do not
-        produce false positives.
-
-        Returns:
-            True if at least one price field is not None, False otherwise.
-        """
-        return any(getattr(self, field) is not None for field in self._PRICE_FIELDS)
-
-
-class CardmarketPricing(PyMTGBaseModel):
+class CardmarketPricing(_ProviderPricingBase):
     """Pricing information from Cardmarket.
 
     Cardmarket provides average prices over different time periods,
@@ -158,9 +219,9 @@ class CardmarketPricing(PyMTGBaseModel):
     low_ex: float | None = None
     trend: float | None = None
 
-    # Price fields checked by has_prices(). If new price fields are
-    # added to the model above without updating this tuple, has_prices()
-    # will not detect them. Keep this tuple in sync with the model fields.
+    # Price fields checked by has_prices(). Validated against model
+    # fields at class creation time by _ProviderPricingBase, so typos
+    # or drift raise TypeError immediately.
     _PRICE_FIELDS: ClassVar[tuple[str, ...]] = (
         "avg1",
         "avg7",
@@ -169,18 +230,6 @@ class CardmarketPricing(PyMTGBaseModel):
         "low_ex",
         "trend",
     )
-
-    def has_prices(self) -> bool:
-        """Returns whether any price field is set.
-
-        Checks only the fields listed in ``_PRICE_FIELDS`` so that
-        non-price fields (if any are added in the future) do not
-        produce false positives.
-
-        Returns:
-            True if at least one price field is not None, False otherwise.
-        """
-        return any(getattr(self, field) is not None for field in self._PRICE_FIELDS)
 
 
 class Pricing(PyMTGBaseModel):
