@@ -1369,6 +1369,29 @@ class TestPricing:
 
                 CURRENCIES: ClassVar[tuple[str, ...]] = ("usd", "usdd")
 
+    def test_validate_currency_consistency_warns_multi_currency_tcgplayer(
+        self,
+    ) -> None:
+        """Test warning when TCGPlayerPricing has multiple currencies.
+
+        validate_currency_consistency assumes single-currency providers;
+        if CURRENCIES grows beyond one entry, it warns to alert
+        maintainers that the logic may produce false positives.
+        """
+
+        class MultiCurrencyTCGPlayer(TCGPlayerPricing):
+            """Test subclass with multiple currencies."""
+
+            CURRENCIES: ClassVar[tuple[str, ...]] = ("usd", "cad")
+
+        pricing = Pricing(
+            tcgplayer=MultiCurrencyTCGPlayer(market=10.0)
+        )
+        with pytest.warns(UserWarning, match="multiple entries"):
+            result = pricing.validate_currency_consistency()
+        assert "usd" in result
+        assert "cad" in result
+
 
 class TestPyMTGBaseModel:
     """Tests for the PyMTGBaseModel base class."""

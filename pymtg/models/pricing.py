@@ -88,7 +88,9 @@ class _ProviderPricingBase(PyMTGBaseModel):
 
         Checks only the fields listed in ``_PRICE_FIELDS`` so that
         non-price fields (if any are added in the future) do not
-        produce false positives.
+        produce false positives. Note that this checks all price
+        fields, not just normal-print prices; callers needing
+        normal-print-only checks should inspect specific fields.
 
         Returns:
             True if at least one price field is not None, False otherwise.
@@ -189,8 +191,11 @@ class TCGPlayerPricing(_ProviderPricingBase):
         poor: Price for Poor condition in USD.
     """
 
-    # Currency codes supported by this provider's pricing model. If
-    # modified, update the class docstring and Attributes section to match.
+    # Currency code supported by this provider's pricing model. Unlike
+    # ScryfallPricing, this code does NOT correspond to a model field
+    # name (the fields are market, mid, etc.); it describes the currency
+    # of all fields. Therefore it is not validated against model_fields.
+    # If modified, update the class docstring and Attributes section.
     CURRENCIES: ClassVar[tuple[str, ...]] = ("usd",)
 
     market: float | None = None
@@ -240,8 +245,11 @@ class CardmarketPricing(_ProviderPricingBase):
         trend: Price trend in EUR.
     """
 
-    # Currency codes supported by this provider's pricing model. If
-    # modified, update the class docstring and Attributes section to match.
+    # Currency code supported by this provider's pricing model. Unlike
+    # ScryfallPricing, this code does NOT correspond to a model field
+    # name (the fields are avg1, avg7, etc.); it describes the currency
+    # of all fields. Therefore it is not validated against model_fields.
+    # If modified, update the class docstring and Attributes section.
     CURRENCIES: ClassVar[tuple[str, ...]] = ("eur",)
 
     avg1: float | None = None
@@ -321,15 +329,40 @@ class Pricing(PyMTGBaseModel):
             for currency, value in currencies.items():
                 if value is not None:
                     result.setdefault(currency, []).append("scryfall")
-        # TODO: TCGPlayer and Cardmarket are single-currency providers:
-        # if has_prices() is True, all their declared currencies are
+        # TCGPlayer and Cardmarket are single-currency providers: if
+        # has_prices() is True, all their declared currencies are
         # populated. If they ever support multiple currencies, this
         # logic must be updated to check individual currency fields
-        # rather than relying on has_prices() alone.
+        # rather than relying on has_prices() alone. The warnings below
+        # alert maintainers if CURRENCIES grows beyond one entry.
         if self.tcgplayer is not None and self.tcgplayer.has_prices():
-            for currency in TCGPlayerPricing.CURRENCIES:
+            tcg_currencies = type(self.tcgplayer).CURRENCIES
+            if len(tcg_currencies) > 1:
+                import warnings
+
+                warnings.warn(
+                    f"{type(self.tcgplayer).__name__}.CURRENCIES has "
+                    f"multiple entries; validate_currency_consistency "
+                    f"assumes single-currency providers and may report "
+                    f"false positives. Update this method to check "
+                    f"individual currency fields.",
+                    stacklevel=2,
+                )
+            for currency in tcg_currencies:
                 result.setdefault(currency, []).append("tcgplayer")
         if self.cardmarket is not None and self.cardmarket.has_prices():
-            for currency in CardmarketPricing.CURRENCIES:
+            cm_currencies = type(self.cardmarket).CURRENCIES
+            if len(cm_currencies) > 1:
+                import warnings
+
+                warnings.warn(
+                    f"{type(self.cardmarket).__name__}.CURRENCIES has "
+                    f"multiple entries; validate_currency_consistency "
+                    f"assumes single-currency providers and may report "
+                    f"false positives. Update this method to check "
+                    f"individual currency fields.",
+                    stacklevel=2,
+                )
+            for currency in cm_currencies:
                 result.setdefault(currency, []).append("cardmarket")
         return result
