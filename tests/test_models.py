@@ -1189,6 +1189,25 @@ class TestPricing:
         """Test has_prices returns False when no fields are set."""
         assert TCGPlayerPricing().has_prices() is False
 
+    def test_tcgplayer_pricing_has_prices_zero(self) -> None:
+        """Test has_prices returns True when a field is set to 0.
+
+        A price of 0.0 is a valid price (e.g., a free card), so it
+        should count as having a price set.
+        """
+        assert TCGPlayerPricing(market=0.0).has_prices() is True
+
+    def test_tcgplayer_pricing_has_prices_explicit_none(self) -> None:
+        """Test has_prices returns False when all fields are explicit None."""
+        pricing = TCGPlayerPricing(
+            market=None,
+            mid=None,
+            low=None,
+            high=None,
+            direct_low=None,
+        )
+        assert pricing.has_prices() is False
+
     def test_cardmarket_pricing_has_prices_true(self) -> None:
         """Test has_prices returns True when at least one field is set."""
         assert CardmarketPricing(avg1=10.0).has_prices() is True
@@ -1197,6 +1216,26 @@ class TestPricing:
     def test_cardmarket_pricing_has_prices_false(self) -> None:
         """Test has_prices returns False when no fields are set."""
         assert CardmarketPricing().has_prices() is False
+
+    def test_cardmarket_pricing_has_prices_zero(self) -> None:
+        """Test has_prices returns True when a field is set to 0.
+
+        A price of 0.0 is a valid price, so it should count as having
+        a price set.
+        """
+        assert CardmarketPricing(avg1=0.0).has_prices() is True
+
+    def test_cardmarket_pricing_has_prices_explicit_none(self) -> None:
+        """Test has_prices returns False when all fields are explicit None."""
+        pricing = CardmarketPricing(
+            avg1=None,
+            avg7=None,
+            avg30=None,
+            low=None,
+            low_ex=None,
+            trend=None,
+        )
+        assert pricing.has_prices() is False
 
     def test_pricing_validate_currency_consistency_empty(self) -> None:
         """Test validate_currency_consistency with no providers set."""

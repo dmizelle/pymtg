@@ -24,7 +24,10 @@ class ScryfallPricing(PyMTGBaseModel):
     """Pricing information from Scryfall.
 
     Scryfall provides pricing in multiple currencies and for different
-    print variations (normal, foil, etched).
+    print variations (normal, foil, etched). The ``CURRENCIES``
+    ClassVar declares the supported currency codes (usd, eur, tix).
+    Use ``get_currencies()`` to retrieve the normal-print prices for
+    these currencies.
 
     Attributes:
         usd: Price in USD for normal prints.
@@ -63,7 +66,9 @@ class TCGPlayerPricing(PyMTGBaseModel):
 
     TCGPlayer provides various pricing metrics including market price,
     mid price, low/high prices, direct low price, and condition-specific
-    prices. All prices are in US dollars.
+    prices. All prices are in US dollars. The ``CURRENCIES`` ClassVar
+    declares the supported currency code (usd). Use ``has_prices()``
+    to check if any price field is set.
 
     Attributes:
         market: Market price in USD.
@@ -126,6 +131,8 @@ class CardmarketPricing(PyMTGBaseModel):
 
     Cardmarket provides average prices over different time periods,
     as well as low prices and trend information. All prices are in Euros.
+    The ``CURRENCIES`` ClassVar declares the supported currency code
+    (eur). Use ``has_prices()`` to check if any price field is set.
 
     Attributes:
         avg1: 1-day average price in EUR.
@@ -203,6 +210,12 @@ class Pricing(PyMTGBaseModel):
         are omitted. This surfaces which currencies are actually
         populated so callers can avoid comparing prices across
         different currencies.
+
+        For Scryfall, each currency is included only if its
+        normal-print price is not None. For single-currency providers
+        (TCGPlayer and Cardmarket), the currency is included if
+        ``has_prices()`` returns True, rather than checking individual
+        currency fields.
 
         Returns:
             A dict mapping each currency code to the list of provider
