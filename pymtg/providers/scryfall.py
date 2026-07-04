@@ -597,7 +597,7 @@ class Scryfall(BaseProvider):
 
         return Card(
             id=scryfall_data.get("id", ""),
-            scryfall_id=scryfall_data.get("id"),
+            scryfall_id=scryfall_data.get("id", ""),
             oracle_id=scryfall_data.get("oracle_id"),
             name=name,
             printed_name=scryfall_data.get("printed_name"),
