@@ -1352,6 +1352,23 @@ class TestPricing:
 
                 _PRICE_FIELDS: ClassVar[tuple[str, ...]] = ("market", "")
 
+    def test_scryfall_currencies_validation_rejects_unknown_field(
+        self,
+    ) -> None:
+        """Test ScryfallPricing CURRENCIES with unknown field raises.
+
+        ScryfallPricing validates that CURRENCIES entries are actual
+        model field names, since get_normal_print_currencies uses
+        getattr to fetch them.
+        """
+
+        with pytest.raises(TypeError, match="unknown field 'usdd'"):
+
+            class BadScryfall(ScryfallPricing):
+                """Test subclass with typo in CURRENCIES."""
+
+                CURRENCIES: ClassVar[tuple[str, ...]] = ("usd", "usdd")
+
 
 class TestPyMTGBaseModel:
     """Tests for the PyMTGBaseModel base class."""

@@ -21,15 +21,20 @@ from pymtg.models.base import PyMTGBaseModel
 class _ProviderPricingBase(PyMTGBaseModel):
     """Base class for provider pricing models.
 
-    Subclasses must declare ``CURRENCIES`` (currency codes that are also
-    model field names) and may declare ``_PRICE_FIELDS`` (fields checked
-    by ``has_prices()``). At class creation time, both are validated
-    against the subclass's model fields so typos or drift are caught
-    early rather than silently returning wrong results.
+    Subclasses must declare ``CURRENCIES`` (currency codes supported by
+    the provider) and may declare ``_PRICE_FIELDS`` (fields checked by
+    ``has_prices()``). At class creation time, ``_PRICE_FIELDS`` is
+    validated against the subclass's model fields so typos or drift
+    are caught early rather than silently returning wrong results.
+
+    ``CURRENCIES`` is not validated against model fields because its
+    semantics differ per subclass: for ``ScryfallPricing`` each
+    currency code is also a field name, but for single-currency
+    providers (TCGPlayer, Cardmarket) the currency code describes all
+    fields rather than naming one.
 
     Attributes:
-        CURRENCIES: Currency codes supported by the provider. Each
-            entry must be the name of a model field on the subclass.
+        CURRENCIES: Currency codes supported by the provider.
         _PRICE_FIELDS: Fields checked by ``has_prices()``. Each entry
             must be the name of a model field on the subclass.
     """
@@ -119,6 +124,33 @@ class ScryfallPricing(_ProviderPricingBase):
     eur: float | None = None
     eur_foil: float | None = None
     tix: float | None = None
+
+    @classmethod
+    def __pydantic_init_subclass__(cls, **kwargs: object) -> None:
+        """Validates CURRENCIES entries are actual model fields.
+
+        For ScryfallPricing, each currency code in ``CURRENCIES`` is
+        also a model field name (e.g., ``usd``, ``eur``, ``tix``), so
+        typos would cause ``get_normal_print_currencies()`` to silently
+        return ``None``. This hook catches such typos at class
+        definition time.
+
+        Args:
+            **kwargs: Forwarded by Pydantic.
+
+        Raises:
+            TypeError: If any entry in ``CURRENCIES`` is not a model
+                field on the subclass.
+        """
+        super().__pydantic_init_subclass__(**kwargs)
+        field_names = set(cls.model_fields)
+        for currency in cls.CURRENCIES:
+            if currency not in field_names:
+                raise TypeError(
+                    f"{cls.__name__}.CURRENCIES references "
+                    f"unknown field {currency!r}; must be one of "
+                    f"{sorted(field_names)}"
+                )
 
     def get_normal_print_currencies(self) -> dict[str, float | None]:
         """Returns the currency codes and normal-print prices tracked.
@@ -279,7 +311,9 @@ class Pricing(PyMTGBaseModel):
             A dict mapping each currency code to the list of provider
             names that have at least one non-None price in that
             currency. Returns an empty dict if no providers are
-            present or none have prices set.
+            present or none have prices set; an empty result means
+            no currencies are populated, not that currencies are
+            consistent.
         """
         result: dict[str, list[str]] = {}
         if self.scryfall is not None:
