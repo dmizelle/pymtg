@@ -17,6 +17,9 @@ from typing import ClassVar, Literal
 
 from pymtg.models.base import PyMTGBaseModel
 
+# Type alias for provider names returned by validate_currency_consistency.
+# Defined at module level so it can be reused by callers that consume
+# the return type of that method.
 ProviderName = Literal["scryfall", "tcgplayer", "cardmarket"]
 
 
@@ -58,7 +61,7 @@ class ScryfallPricing(PyMTGBaseModel):
             A dict mapping currency code to the normal-print price for
             that currency. Currencies with no price set map to None.
         """
-        return {"usd": self.usd, "eur": self.eur, "tix": self.tix}
+        return {currency: getattr(self, currency, None) for currency in self.CURRENCIES}
 
 
 class TCGPlayerPricing(PyMTGBaseModel):
@@ -99,6 +102,8 @@ class TCGPlayerPricing(PyMTGBaseModel):
     fair: float | None = None
     poor: float | None = None
 
+    # Price fields checked by has_prices(). Must be kept in sync with
+    # the model fields above if new price fields are added.
     _PRICE_FIELDS: ClassVar[tuple[str, ...]] = (
         "market",
         "mid",
@@ -153,6 +158,8 @@ class CardmarketPricing(PyMTGBaseModel):
     low_ex: float | None = None
     trend: float | None = None
 
+    # Price fields checked by has_prices(). Must be kept in sync with
+    # the model fields above if new price fields are added.
     _PRICE_FIELDS: ClassVar[tuple[str, ...]] = (
         "avg1",
         "avg7",
@@ -228,6 +235,10 @@ class Pricing(PyMTGBaseModel):
             for currency, value in self.scryfall.get_currencies().items():
                 if value is not None:
                     result.setdefault(currency, []).append("scryfall")
+        # TCGPlayer and Cardmarket are single-currency providers: if
+        # has_prices() is True, all their declared currencies are
+        # populated. If they ever support multiple currencies, this
+        # logic should be updated to check individual currency fields.
         if self.tcgplayer is not None and self.tcgplayer.has_prices():
             for currency in TCGPlayerPricing.CURRENCIES:
                 result.setdefault(currency, []).append("tcgplayer")
