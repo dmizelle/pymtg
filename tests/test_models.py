@@ -566,9 +566,18 @@ class TestCard:
         """Test validate_main_face_consistency with no card_faces.
 
         Verifies that the method returns an empty dict when the card has
-        no card_faces populated.
+        no card_faces populated (card_faces defaults to None).
         """
         card = Card(id="test-id", name="Normal Card")
+        assert card.validate_main_face_consistency() == {}
+
+    def test_card_validate_main_face_consistency_explicit_none_faces(self) -> None:
+        """Test validate_main_face_consistency with card_faces=None.
+
+        Verifies that the method returns an empty dict when card_faces
+        is explicitly set to None.
+        """
+        card = Card(id="test-id", name="None Faces", card_faces=None)
         assert card.validate_main_face_consistency() == {}
 
     def test_card_validate_main_face_consistency_empty_faces(self) -> None:
@@ -592,6 +601,71 @@ class TestCard:
             name="Single Face",
             power="2",
             toughness="2",
+            card_faces=[face],
+        )
+        assert card.validate_main_face_consistency() == {}
+
+    def test_card_validate_main_face_consistency_all_shared_fields(self) -> None:
+        """Test validate_main_face_consistency with all shared fields matching.
+
+        Verifies that the method returns an empty dict when all 14 fields
+        shared between Card and CardFace are equal, including oracle_text,
+        colors, color_indicator, loyalty, defense, artist, artist_id,
+        illustration_id, and image_uris.
+        """
+        face = CardFace(
+            name="Test Card",
+            mana_cost="{1}{U}",
+            type_line="Creature — Human Wizard",
+            oracle_text="Test oracle text",
+            power="1",
+            toughness="1",
+            colors=[Color.BLUE],
+            color_indicator=[Color.BLUE],
+            artist="Test Artist",
+            artist_id="test-artist-id",
+            illustration_id="test-illustration-id",
+            image_uris={"small": "test-uri"},
+        )
+        card = Card(
+            id="test-id",
+            name="Test Card",
+            mana_cost="{1}{U}",
+            type_line="Creature — Human Wizard",
+            oracle_text="Test oracle text",
+            power="1",
+            toughness="1",
+            colors=[Color.BLUE],
+            color_indicator=[Color.BLUE],
+            artist="Test Artist",
+            artist_id="test-artist-id",
+            illustration_id="test-illustration-id",
+            image_uris={"small": "test-uri"},
+            card_faces=[face],
+        )
+        assert card.validate_main_face_consistency() == {}
+
+    def test_card_validate_main_face_consistency_none_face_fields(self) -> None:
+        """Test validate_main_face_consistency with None values in face fields.
+
+        Verifies that the method correctly handles None values for
+        individual face fields (e.g., power=None, toughness=None) using
+        the != comparison, which treats None == None as consistent.
+        """
+        face = CardFace(
+            name="Test Card",
+            mana_cost=None,
+            type_line=None,
+            power=None,
+            toughness=None,
+        )
+        card = Card(
+            id="test-id",
+            name="Test Card",
+            mana_cost=None,
+            type_line=None,
+            power=None,
+            toughness=None,
             card_faces=[face],
         )
         assert card.validate_main_face_consistency() == {}
