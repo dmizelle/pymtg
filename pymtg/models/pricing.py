@@ -74,7 +74,7 @@ class TCGPlayerPricing(PyMTGBaseModel):
         poor: Price for Poor condition in USD.
     """
 
-    CURRENCY: ClassVar[str] = "usd"
+    CURRENCIES: ClassVar[tuple[str, ...]] = ("usd",)
 
     market: float | None = None
     mid: float | None = None
@@ -126,7 +126,7 @@ class CardmarketPricing(PyMTGBaseModel):
         trend: Price trend in EUR.
     """
 
-    CURRENCY: ClassVar[str] = "eur"
+    CURRENCIES: ClassVar[tuple[str, ...]] = ("eur",)
 
     avg1: float | None = None
     avg7: float | None = None
@@ -199,7 +199,9 @@ class Pricing(PyMTGBaseModel):
                 if value is not None:
                     result.setdefault(currency, []).append("scryfall")
         if self.tcgplayer is not None and self.tcgplayer.has_prices():
-            result.setdefault(TCGPlayerPricing.CURRENCY, []).append("tcgplayer")
+            for currency in TCGPlayerPricing.CURRENCIES:
+                result.setdefault(currency, []).append("tcgplayer")
         if self.cardmarket is not None and self.cardmarket.has_prices():
-            result.setdefault(CardmarketPricing.CURRENCY, []).append("cardmarket")
+            for currency in CardmarketPricing.CURRENCIES:
+                result.setdefault(currency, []).append("cardmarket")
         return result

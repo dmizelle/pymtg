@@ -1147,12 +1147,12 @@ class TestPricing:
         assert ScryfallPricing.CURRENCIES == ("usd", "eur", "tix")
 
     def test_tcgplayer_pricing_currency_classvar(self) -> None:
-        """Test TCGPlayerPricing declares its CURRENCY ClassVar as usd."""
-        assert TCGPlayerPricing.CURRENCY == "usd"
+        """Test TCGPlayerPricing declares its CURRENCIES ClassVar as usd."""
+        assert TCGPlayerPricing.CURRENCIES == ("usd",)
 
     def test_cardmarket_pricing_currency_classvar(self) -> None:
-        """Test CardmarketPricing declares its CURRENCY ClassVar as eur."""
-        assert CardmarketPricing.CURRENCY == "eur"
+        """Test CardmarketPricing declares its CURRENCIES ClassVar as eur."""
+        assert CardmarketPricing.CURRENCIES == ("eur",)
 
     def test_scryfall_pricing_get_currencies_all_set(self) -> None:
         """Test get_currencies returns all three currencies when set."""
