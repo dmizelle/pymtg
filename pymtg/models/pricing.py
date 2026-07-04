@@ -23,12 +23,12 @@ class ScryfallPricing(PyMTGBaseModel):
     print variations (normal, foil, etched).
 
     Attributes:
-        usd: Price in US dollars for normal prints.
-        usd_foil: Price in US dollars for foil prints.
-        usd_etched: Price in US dollars for etched foil prints.
-        eur: Price in Euros for normal prints.
-        eur_foil: Price in Euros for foil prints.
-        tix: Price in MTGO tix.
+        usd: Price in USD for normal prints.
+        usd_foil: Price in USD for foil prints.
+        usd_etched: Price in USD for etched foil prints.
+        eur: Price in EUR for normal prints.
+        eur_foil: Price in EUR for foil prints.
+        tix: Price in MTGO tix for normal prints.
     """
 
     CURRENCIES: ClassVar[tuple[str, ...]] = ("usd", "eur", "tix")
@@ -88,27 +88,17 @@ class TCGPlayerPricing(PyMTGBaseModel):
     fair: float | None = None
     poor: float | None = None
 
-    _PRICE_FIELDS: ClassVar[tuple[str, ...]] = (
-        "market",
-        "mid",
-        "low",
-        "high",
-        "direct_low",
-        "near_mint",
-        "good",
-        "excellent",
-        "very_good",
-        "fair",
-        "poor",
-    )
-
     def has_prices(self) -> bool:
         """Returns whether any price field is set.
+
+        Dynamically inspects all model fields rather than relying on a
+        hardcoded field list, so new price fields are automatically
+        covered.
 
         Returns:
             True if at least one price field is not None, False otherwise.
         """
-        return any(getattr(self, field) is not None for field in self._PRICE_FIELDS)
+        return any(getattr(self, name) is not None for name in type(self).model_fields)
 
 
 class CardmarketPricing(PyMTGBaseModel):
@@ -135,22 +125,17 @@ class CardmarketPricing(PyMTGBaseModel):
     low_ex: float | None = None
     trend: float | None = None
 
-    _PRICE_FIELDS: ClassVar[tuple[str, ...]] = (
-        "avg1",
-        "avg7",
-        "avg30",
-        "low",
-        "low_ex",
-        "trend",
-    )
-
     def has_prices(self) -> bool:
         """Returns whether any price field is set.
+
+        Dynamically inspects all model fields rather than relying on a
+        hardcoded field list, so new price fields are automatically
+        covered.
 
         Returns:
             True if at least one price field is not None, False otherwise.
         """
-        return any(getattr(self, field) is not None for field in self._PRICE_FIELDS)
+        return any(getattr(self, name) is not None for name in type(self).model_fields)
 
 
 class Pricing(PyMTGBaseModel):
