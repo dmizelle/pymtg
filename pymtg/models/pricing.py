@@ -238,10 +238,11 @@ class Pricing(PyMTGBaseModel):
             for currency, value in currencies.items():
                 if value is not None:
                     result.setdefault(currency, []).append("scryfall")
-        # TCGPlayer and Cardmarket are single-currency providers: if
-        # has_prices() is True, all their declared currencies are
+        # TODO: TCGPlayer and Cardmarket are single-currency providers:
+        # if has_prices() is True, all their declared currencies are
         # populated. If they ever support multiple currencies, this
-        # logic should be updated to check individual currency fields.
+        # logic must be updated to check individual currency fields
+        # rather than relying on has_prices() alone.
         if self.tcgplayer is not None and self.tcgplayer.has_prices():
             for currency in TCGPlayerPricing.CURRENCIES:
                 result.setdefault(currency, []).append("tcgplayer")
