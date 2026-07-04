@@ -198,6 +198,15 @@ jobs:
                body: '⏭️ **OpenCodeReview** skipped: No file changes detected to review.'
              });
 
+       - name: Restore review script from base branch
+         if: steps.pr.outputs.skip_review != 'true'
+         # pull_request_target runs the workflow file from the base branch,
+         # but the Checkout step above checks out the PR head (head_sha).
+         # The post-review-comments.js script is workflow infrastructure
+         # (not PR code) and must come from the base branch so it is always
+         # present and cannot be modified by a PR to run with secrets access.
+         run: git checkout origin/${{ steps.pr.outputs.base_ref }} -- .github/scripts/post-review-comments.js
+
        - name: Post review comments to PR
          if: steps.pr.outputs.skip_review != 'true'
          uses: actions/github-script@v7
