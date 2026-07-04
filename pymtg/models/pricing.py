@@ -7,13 +7,17 @@ Each provider has its own pricing model with provider-specific fields.
 Each provider pricing model declares its currency (or currencies) as a
 ``ClassVar`` so callers can verify currency consistency before comparing
 or aggregating prices across providers. The unified ``Pricing`` model
-exposes ``validate_currency_consistency`` to surface which currencies are
-actually populated across the aggregated providers.
+exposes ``validate_currency_consistency`` as the primary method for
+ensuring currency consistency before comparing or aggregating prices
+across providers; it surfaces which currencies are actually populated
+across the aggregated providers.
 """
 
-from typing import ClassVar
+from typing import ClassVar, Literal
 
 from pymtg.models.base import PyMTGBaseModel
+
+ProviderName = Literal["scryfall", "tcgplayer", "cardmarket"]
 
 
 class ScryfallPricing(PyMTGBaseModel):
@@ -31,6 +35,7 @@ class ScryfallPricing(PyMTGBaseModel):
         tix: Price in MTGO tix for normal prints.
     """
 
+    # Currency codes supported by this provider's pricing model.
     CURRENCIES: ClassVar[tuple[str, ...]] = ("usd", "eur", "tix")
 
     usd: float | None = None
@@ -74,6 +79,7 @@ class TCGPlayerPricing(PyMTGBaseModel):
         poor: Price for Poor condition in USD.
     """
 
+    # Currency codes supported by this provider's pricing model.
     CURRENCIES: ClassVar[tuple[str, ...]] = ("usd",)
 
     market: float | None = None
@@ -88,21 +94,31 @@ class TCGPlayerPricing(PyMTGBaseModel):
     fair: float | None = None
     poor: float | None = None
 
+    _PRICE_FIELDS: ClassVar[tuple[str, ...]] = (
+        "market",
+        "mid",
+        "low",
+        "high",
+        "direct_low",
+        "near_mint",
+        "good",
+        "excellent",
+        "very_good",
+        "fair",
+        "poor",
+    )
+
     def has_prices(self) -> bool:
         """Returns whether any price field is set.
 
-        Dynamically inspects all model fields rather than relying on a
-        hardcoded field list, so new price fields are automatically
-        covered.
-
-        Note: This assumes all fields in the model are price fields. If
-        non-price fields are added in the future, they should be excluded
-        from this check to avoid false positives.
+        Checks only the fields listed in ``_PRICE_FIELDS`` so that
+        non-price fields (if any are added in the future) do not
+        produce false positives.
 
         Returns:
             True if at least one price field is not None, False otherwise.
         """
-        return any(getattr(self, name) is not None for name in type(self).model_fields)
+        return any(getattr(self, field) is not None for field in self._PRICE_FIELDS)
 
 
 class CardmarketPricing(PyMTGBaseModel):
@@ -120,6 +136,7 @@ class CardmarketPricing(PyMTGBaseModel):
         trend: Price trend in EUR.
     """
 
+    # Currency codes supported by this provider's pricing model.
     CURRENCIES: ClassVar[tuple[str, ...]] = ("eur",)
 
     avg1: float | None = None
@@ -129,21 +146,26 @@ class CardmarketPricing(PyMTGBaseModel):
     low_ex: float | None = None
     trend: float | None = None
 
+    _PRICE_FIELDS: ClassVar[tuple[str, ...]] = (
+        "avg1",
+        "avg7",
+        "avg30",
+        "low",
+        "low_ex",
+        "trend",
+    )
+
     def has_prices(self) -> bool:
         """Returns whether any price field is set.
 
-        Dynamically inspects all model fields rather than relying on a
-        hardcoded field list, so new price fields are automatically
-        covered.
-
-        Note: This assumes all fields in the model are price fields. If
-        non-price fields are added in the future, they should be excluded
-        from this check to avoid false positives.
+        Checks only the fields listed in ``_PRICE_FIELDS`` so that
+        non-price fields (if any are added in the future) do not
+        produce false positives.
 
         Returns:
             True if at least one price field is not None, False otherwise.
         """
-        return any(getattr(self, name) is not None for name in type(self).model_fields)
+        return any(getattr(self, field) is not None for field in self._PRICE_FIELDS)
 
 
 class Pricing(PyMTGBaseModel):
@@ -170,7 +192,9 @@ class Pricing(PyMTGBaseModel):
     tcgplayer: TCGPlayerPricing | None = None
     cardmarket: CardmarketPricing | None = None
 
-    def validate_currency_consistency(self) -> dict[str, list[str]]:
+    def validate_currency_consistency(
+        self,
+    ) -> dict[str, list[ProviderName]]:
         """Returns currencies populated across all provider pricings.
 
         Inspects each present provider pricing and maps each currency
@@ -186,7 +210,7 @@ class Pricing(PyMTGBaseModel):
             currency. Returns an empty dict if no providers are
             present or none have prices set.
         """
-        result: dict[str, list[str]] = {}
+        result: dict[str, list[ProviderName]] = {}
         if self.scryfall is not None:
             for currency, value in self.scryfall.get_currencies().items():
                 if value is not None:
