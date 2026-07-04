@@ -1372,11 +1372,12 @@ class TestPricing:
     def test_validate_currency_consistency_warns_multi_currency_tcgplayer(
         self,
     ) -> None:
-        """Test warning when TCGPlayerPricing has multiple currencies.
+        """Test error when TCGPlayerPricing has multiple currencies.
 
         validate_currency_consistency assumes single-currency providers;
-        if CURRENCIES grows beyond one entry, it warns to alert
-        maintainers that the logic may produce false positives.
+        if CURRENCIES grows beyond one entry, it raises
+        NotImplementedError to alert maintainers that the logic must
+        be updated to check individual currency fields.
         """
 
         class MultiCurrencyTCGPlayer(TCGPlayerPricing):
@@ -1385,10 +1386,8 @@ class TestPricing:
             CURRENCIES: ClassVar[tuple[str, ...]] = ("usd", "cad")
 
         pricing = Pricing(tcgplayer=MultiCurrencyTCGPlayer(market=10.0))
-        with pytest.warns(UserWarning, match="multiple entries"):
-            result = pricing.validate_currency_consistency()
-        assert "usd" in result
-        assert "cad" in result
+        with pytest.raises(NotImplementedError, match="single-currency"):
+            pricing.validate_currency_consistency()
 
     def test_price_fields_validation_rejects_non_price_field(self) -> None:
         """Test that _PRICE_FIELDS with non-float field raises TypeError.

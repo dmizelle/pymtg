@@ -13,7 +13,6 @@ across providers; it surfaces which currencies are actually populated
 across the aggregated providers.
 """
 
-import warnings
 from typing import ClassVar
 
 from pymtg.models.base import PyMTGBaseModel
@@ -42,14 +41,6 @@ class _ProviderPricingBase(PyMTGBaseModel):
 
     CURRENCIES: ClassVar[tuple[str, ...]] = ()
     _PRICE_FIELDS: ClassVar[tuple[str, ...]] = ()
-
-    def __init_subclass__(cls, **kwargs: object) -> None:
-        """Forward kwargs to the parent __init_subclass__.
-
-        Args:
-            **kwargs: Forwarded to the parent ``__init_subclass__``.
-        """
-        super().__init_subclass__(**kwargs)  # type: ignore[misc]
 
     @classmethod
     def __pydantic_init_subclass__(cls, **kwargs: object) -> None:
@@ -87,7 +78,9 @@ class _ProviderPricingBase(PyMTGBaseModel):
             # Non-price fields (e.g., metadata) would cause has_prices()
             # to return True for non-price data.
             annotation = cls.model_fields[field].annotation
-            if annotation != float | None:
+            # Parens make precedence explicit: | binds tighter than !=,
+            # so this is `annotation != (float | None)`.
+            if annotation != (float | None):
                 raise TypeError(
                     f"{cls.__name__}._PRICE_FIELDS entry {field!r} "
                     f"has type {annotation!r}; expected float | None "
@@ -176,10 +169,9 @@ class ScryfallPricing(_ProviderPricingBase):
             A dict mapping currency code to the normal-print price for
             that currency. Currencies with no price set map to None.
         """
-        # The default=None is safe because __pydantic_init_subclass__
-        # validates that every entry in CURRENCIES is an actual model
-        # field name on this class.
-        return {currency: getattr(self, currency, None) for currency in self.CURRENCIES}
+        # No default needed: __pydantic_init_subclass__ validates that
+        # every entry in CURRENCIES is an actual model field name.
+        return {currency: getattr(self, currency) for currency in self.CURRENCIES}
 
 
 class TCGPlayerPricing(_ProviderPricingBase):
@@ -378,13 +370,12 @@ class Pricing(PyMTGBaseModel):
         if not currencies:
             return
         if len(currencies) > 1:
-            warnings.warn(
+            raise NotImplementedError(
                 f"{type(provider).__name__}.CURRENCIES has "
-                f"multiple entries; validate_currency_consistency "
-                f"assumes single-currency providers and may report "
-                f"false positives. Update this method to check "
-                f"individual currency fields.",
-                stacklevel=3,
+                f"{len(currencies)} entries; validate_currency_consistency "
+                f"only supports single-currency providers. Update this "
+                f"method to check individual currency fields before "
+                f"adding multiple currencies to a provider."
             )
         for currency in currencies:
             result.setdefault(currency, []).append(provider_name)
