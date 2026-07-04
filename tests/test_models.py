@@ -696,6 +696,12 @@ class TestCard:
         Verifies that pydantic enforces the list[CardFace] type and
         rejects None values in card_faces, preventing the edge case
         where get_main_face would return None for a non-empty list.
+
+        Note:
+            The `# type: ignore` comment is used because passing None
+            as a list element is intentionally invalid input to test
+            pydantic's runtime validation, but static type checkers
+            would flag it as a type error.
         """
         with pytest.raises(ValidationError):
             Card(
