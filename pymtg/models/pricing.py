@@ -95,6 +95,10 @@ class TCGPlayerPricing(PyMTGBaseModel):
         hardcoded field list, so new price fields are automatically
         covered.
 
+        Note: This assumes all fields in the model are price fields. If
+        non-price fields are added in the future, they should be excluded
+        from this check to avoid false positives.
+
         Returns:
             True if at least one price field is not None, False otherwise.
         """
@@ -131,6 +135,10 @@ class CardmarketPricing(PyMTGBaseModel):
         Dynamically inspects all model fields rather than relying on a
         hardcoded field list, so new price fields are automatically
         covered.
+
+        Note: This assumes all fields in the model are price fields. If
+        non-price fields are added in the future, they should be excluded
+        from this check to avoid false positives.
 
         Returns:
             True if at least one price field is not None, False otherwise.
