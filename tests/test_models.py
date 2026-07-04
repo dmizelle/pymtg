@@ -580,6 +580,36 @@ class TestCard:
         card = Card(id="test-id", name="Empty Faces", card_faces=[])
         assert card.validate_main_face_consistency() == {}
 
+    def test_card_validate_main_face_consistency_single_face(self) -> None:
+        """Test validate_main_face_consistency with a single face.
+
+        Verifies that the method works correctly for single-faced cards
+        where all shared fields match between Card and card_faces[0].
+        """
+        face = CardFace(name="Single Face", power="2", toughness="2")
+        card = Card(
+            id="test-id",
+            name="Single Face",
+            power="2",
+            toughness="2",
+            card_faces=[face],
+        )
+        assert card.validate_main_face_consistency() == {}
+
+    def test_card_validate_main_face_consistency_none_in_faces_raises(self) -> None:
+        """Test that None values in card_faces are rejected by pydantic.
+
+        Verifies that pydantic enforces the list[CardFace] type and
+        rejects None values in card_faces, preventing the edge case
+        where get_main_face would return None for a non-empty list.
+        """
+        with pytest.raises(ValidationError):
+            Card(
+                id="test-id",
+                name="None Face",
+                card_faces=[None],  # type: ignore  # Intentional invalid list element
+            )
+
     def test_card_serialization(self) -> None:
         """Test Card serialization and deserialization."""
         card = Card(
