@@ -1142,6 +1142,136 @@ class TestPricing:
         assert pricing.tcgplayer is None
         assert pricing.cardmarket is None
 
+    def test_scryfall_pricing_currencies_classvar(self) -> None:
+        """Test ScryfallPricing declares its CURRENCIES ClassVar."""
+        assert ScryfallPricing.CURRENCIES == ("usd", "eur", "tix")
+
+    def test_tcgplayer_pricing_currency_classvar(self) -> None:
+        """Test TCGPlayerPricing declares its CURRENCY ClassVar as usd."""
+        assert TCGPlayerPricing.CURRENCY == "usd"
+
+    def test_cardmarket_pricing_currency_classvar(self) -> None:
+        """Test CardmarketPricing declares its CURRENCY ClassVar as eur."""
+        assert CardmarketPricing.CURRENCY == "eur"
+
+    def test_scryfall_pricing_get_currencies_all_set(self) -> None:
+        """Test get_currencies returns all three currencies when set."""
+        pricing = ScryfallPricing(usd=10.0, eur=8.0, tix=5.0)
+        assert pricing.get_currencies() == {
+            "usd": 10.0,
+            "eur": 8.0,
+            "tix": 5.0,
+        }
+
+    def test_scryfall_pricing_get_currencies_none(self) -> None:
+        """Test get_currencies returns None for unset currencies."""
+        pricing = ScryfallPricing()
+        assert pricing.get_currencies() == {
+            "usd": None,
+            "eur": None,
+            "tix": None,
+        }
+
+    def test_scryfall_pricing_get_currencies_partial(self) -> None:
+        """Test get_currencies returns only set values, others None."""
+        pricing = ScryfallPricing(usd=10.0)
+        currencies = pricing.get_currencies()
+        assert currencies["usd"] == 10.0
+        assert currencies["eur"] is None
+        assert currencies["tix"] is None
+
+    def test_tcgplayer_pricing_has_prices_true(self) -> None:
+        """Test has_prices returns True when at least one field is set."""
+        assert TCGPlayerPricing(market=10.0).has_prices() is True
+        assert TCGPlayerPricing(poor=0.50).has_prices() is True
+
+    def test_tcgplayer_pricing_has_prices_false(self) -> None:
+        """Test has_prices returns False when no fields are set."""
+        assert TCGPlayerPricing().has_prices() is False
+
+    def test_cardmarket_pricing_has_prices_true(self) -> None:
+        """Test has_prices returns True when at least one field is set."""
+        assert CardmarketPricing(avg1=10.0).has_prices() is True
+        assert CardmarketPricing(trend=1.5).has_prices() is True
+
+    def test_cardmarket_pricing_has_prices_false(self) -> None:
+        """Test has_prices returns False when no fields are set."""
+        assert CardmarketPricing().has_prices() is False
+
+    def test_pricing_validate_currency_consistency_empty(self) -> None:
+        """Test validate_currency_consistency with no providers set."""
+        assert Pricing().validate_currency_consistency() == {}
+
+    def test_pricing_validate_currency_consistency_providers_no_prices(
+        self,
+    ) -> None:
+        """Test validate_currency_consistency omits providers with no prices."""
+        pricing = Pricing(
+            scryfall=ScryfallPricing(),
+            tcgplayer=TCGPlayerPricing(),
+            cardmarket=CardmarketPricing(),
+        )
+        assert pricing.validate_currency_consistency() == {}
+
+    def test_pricing_validate_currency_consistency_scryfall_only(self) -> None:
+        """Test validate_currency_consistency with only Scryfall populated."""
+        pricing = Pricing(scryfall=ScryfallPricing(usd=10.0, eur=8.0, tix=5.0))
+        result = pricing.validate_currency_consistency()
+        assert result == {
+            "usd": ["scryfall"],
+            "eur": ["scryfall"],
+            "tix": ["scryfall"],
+        }
+
+    def test_pricing_validate_currency_consistency_scryfall_partial(
+        self,
+    ) -> None:
+        """Test validate_currency_consistency omits unset Scryfall currencies."""
+        pricing = Pricing(scryfall=ScryfallPricing(usd=10.0))
+        result = pricing.validate_currency_consistency()
+        assert result == {"usd": ["scryfall"]}
+
+    def test_pricing_validate_currency_consistency_all_providers(self) -> None:
+        """Test validate_currency_consistency with all providers populated."""
+        pricing = Pricing(
+            scryfall=ScryfallPricing(usd=10.0, eur=8.0, tix=5.0),
+            tcgplayer=TCGPlayerPricing(market=10.00),
+            cardmarket=CardmarketPricing(avg1=10.25),
+        )
+        result = pricing.validate_currency_consistency()
+        assert result == {
+            "usd": ["scryfall", "tcgplayer"],
+            "eur": ["scryfall", "cardmarket"],
+            "tix": ["scryfall"],
+        }
+
+    def test_pricing_validate_currency_consistency_tcgplayer_only(self) -> None:
+        """Test validate_currency_consistency with only TCGPlayer populated."""
+        pricing = Pricing(tcgplayer=TCGPlayerPricing(market=10.00))
+        result = pricing.validate_currency_consistency()
+        assert result == {"usd": ["tcgplayer"]}
+
+    def test_pricing_validate_currency_consistency_cardmarket_only(
+        self,
+    ) -> None:
+        """Test validate_currency_consistency with only Cardmarket populated."""
+        pricing = Pricing(cardmarket=CardmarketPricing(avg1=10.25))
+        result = pricing.validate_currency_consistency()
+        assert result == {"eur": ["cardmarket"]}
+
+    def test_pricing_validate_currency_consistency_mixed_partial(self) -> None:
+        """Test validate_currency_consistency with mixed partial providers."""
+        pricing = Pricing(
+            scryfall=ScryfallPricing(usd=10.0),
+            tcgplayer=TCGPlayerPricing(),
+            cardmarket=CardmarketPricing(avg1=10.25),
+        )
+        result = pricing.validate_currency_consistency()
+        assert result == {
+            "usd": ["scryfall"],
+            "eur": ["cardmarket"],
+        }
+
 
 class TestPyMTGBaseModel:
     """Tests for the PyMTGBaseModel base class."""

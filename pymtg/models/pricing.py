@@ -3,7 +3,15 @@
 This module provides normalized pricing models for different MTG API providers,
 allowing for consistent access to pricing information across all providers.
 Each provider has its own pricing model with provider-specific fields.
+
+Each provider pricing model declares its currency (or currencies) as a
+``ClassVar`` so callers can verify currency consistency before comparing
+or aggregating prices across providers. The unified ``Pricing`` model
+exposes ``validate_currency_consistency`` to surface which currencies are
+actually populated across the aggregated providers.
 """
+
+from typing import ClassVar
 
 from pymtg.models.base import PyMTGBaseModel
 
@@ -23,6 +31,8 @@ class ScryfallPricing(PyMTGBaseModel):
         tix: Price in MTGO tix.
     """
 
+    CURRENCIES: ClassVar[tuple[str, ...]] = ("usd", "eur", "tix")
+
     usd: float | None = None
     usd_foil: float | None = None
     usd_etched: float | None = None
@@ -30,26 +40,41 @@ class ScryfallPricing(PyMTGBaseModel):
     eur_foil: float | None = None
     tix: float | None = None
 
+    def get_currencies(self) -> dict[str, float | None]:
+        """Returns the currency codes and normal-print prices tracked.
+
+        Only normal-print prices are included; foil and etched variants
+        share the same currency as their normal-print counterpart.
+
+        Returns:
+            A dict mapping currency code to the normal-print price for
+            that currency. Currencies with no price set map to None.
+        """
+        return {"usd": self.usd, "eur": self.eur, "tix": self.tix}
+
 
 class TCGPlayerPricing(PyMTGBaseModel):
     """Pricing information from TCGPlayer.
 
     TCGPlayer provides various pricing metrics including market price,
-    mid price, low/high prices, direct low price, and condition-specific prices.
+    mid price, low/high prices, direct low price, and condition-specific
+    prices. All prices are in US dollars.
 
     Attributes:
-        market: Market price.
-        mid: Mid price.
-        low: Low price.
-        high: High price.
-        direct_low: Direct low price.
-        near_mint: Price for Near Mint condition.
-        good: Price for Good condition.
-        excellent: Price for Excellent condition.
-        very_good: Price for Very Good condition.
-        fair: Price for Fair condition.
-        poor: Price for Poor condition.
+        market: Market price in USD.
+        mid: Mid price in USD.
+        low: Low price in USD.
+        high: High price in USD.
+        direct_low: Direct low price in USD.
+        near_mint: Price for Near Mint condition in USD.
+        good: Price for Good condition in USD.
+        excellent: Price for Excellent condition in USD.
+        very_good: Price for Very Good condition in USD.
+        fair: Price for Fair condition in USD.
+        poor: Price for Poor condition in USD.
     """
+
+    CURRENCY: ClassVar[str] = "usd"
 
     market: float | None = None
     mid: float | None = None
@@ -63,21 +88,45 @@ class TCGPlayerPricing(PyMTGBaseModel):
     fair: float | None = None
     poor: float | None = None
 
+    _PRICE_FIELDS: ClassVar[tuple[str, ...]] = (
+        "market",
+        "mid",
+        "low",
+        "high",
+        "direct_low",
+        "near_mint",
+        "good",
+        "excellent",
+        "very_good",
+        "fair",
+        "poor",
+    )
+
+    def has_prices(self) -> bool:
+        """Returns whether any price field is set.
+
+        Returns:
+            True if at least one price field is not None, False otherwise.
+        """
+        return any(getattr(self, field) is not None for field in self._PRICE_FIELDS)
+
 
 class CardmarketPricing(PyMTGBaseModel):
     """Pricing information from Cardmarket.
 
     Cardmarket provides average prices over different time periods,
-    as well as low prices and trend information.
+    as well as low prices and trend information. All prices are in Euros.
 
     Attributes:
-        avg1: 1-day average price.
-        avg7: 7-day average price.
-        avg30: 30-day average price.
-        low: Lowest price.
-        low_ex: Lowest price for Excellent condition.
-        trend: Price trend.
+        avg1: 1-day average price in EUR.
+        avg7: 7-day average price in EUR.
+        avg30: 30-day average price in EUR.
+        low: Lowest price in EUR.
+        low_ex: Lowest price for Excellent condition in EUR.
+        trend: Price trend in EUR.
     """
+
+    CURRENCY: ClassVar[str] = "eur"
 
     avg1: float | None = None
     avg7: float | None = None
@@ -85,6 +134,23 @@ class CardmarketPricing(PyMTGBaseModel):
     low: float | None = None
     low_ex: float | None = None
     trend: float | None = None
+
+    _PRICE_FIELDS: ClassVar[tuple[str, ...]] = (
+        "avg1",
+        "avg7",
+        "avg30",
+        "low",
+        "low_ex",
+        "trend",
+    )
+
+    def has_prices(self) -> bool:
+        """Returns whether any price field is set.
+
+        Returns:
+            True if at least one price field is not None, False otherwise.
+        """
+        return any(getattr(self, field) is not None for field in self._PRICE_FIELDS)
 
 
 class Pricing(PyMTGBaseModel):
@@ -95,6 +161,12 @@ class Pricing(PyMTGBaseModel):
     interface. Each provider's pricing is optional and may be None if the
     provider doesn't return pricing information.
 
+    Because providers use different currencies (Scryfall tracks USD, EUR,
+    and tix; TCGPlayer is USD-only; Cardmarket is EUR-only), callers must
+    verify currency consistency before comparing or aggregating prices
+    across providers. Use ``validate_currency_consistency`` to surface
+    which currencies are actually populated.
+
     Attributes:
         scryfall: Pricing information from Scryfall.
         tcgplayer: Pricing information from TCGPlayer.
@@ -104,3 +176,30 @@ class Pricing(PyMTGBaseModel):
     scryfall: ScryfallPricing | None = None
     tcgplayer: TCGPlayerPricing | None = None
     cardmarket: CardmarketPricing | None = None
+
+    def validate_currency_consistency(self) -> dict[str, list[str]]:
+        """Returns currencies populated across all provider pricings.
+
+        Inspects each present provider pricing and maps each currency
+        code to the list of provider names that have at least one
+        non-None price in that currency. Providers with no prices set
+        are omitted. This surfaces which currencies are actually
+        populated so callers can avoid comparing prices across
+        different currencies.
+
+        Returns:
+            A dict mapping each currency code to the list of provider
+            names that have at least one non-None price in that
+            currency. Returns an empty dict if no providers are
+            present or none have prices set.
+        """
+        result: dict[str, list[str]] = {}
+        if self.scryfall is not None:
+            for currency, value in self.scryfall.get_currencies().items():
+                if value is not None:
+                    result.setdefault(currency, []).append("scryfall")
+        if self.tcgplayer is not None and self.tcgplayer.has_prices():
+            result.setdefault(TCGPlayerPricing.CURRENCY, []).append("tcgplayer")
+        if self.cardmarket is not None and self.cardmarket.has_prices():
+            result.setdefault(CardmarketPricing.CURRENCY, []).append("cardmarket")
+        return result
