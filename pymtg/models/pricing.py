@@ -13,14 +13,9 @@ across providers; it surfaces which currencies are actually populated
 across the aggregated providers.
 """
 
-from typing import ClassVar, Literal
+from typing import ClassVar
 
 from pymtg.models.base import PyMTGBaseModel
-
-# Type alias for provider names returned by validate_currency_consistency.
-# Defined at module level so it can be reused by callers that consume
-# the return type of that method.
-ProviderName = Literal["scryfall", "tcgplayer", "cardmarket"]
 
 
 class ScryfallPricing(PyMTGBaseModel):
@@ -29,8 +24,8 @@ class ScryfallPricing(PyMTGBaseModel):
     Scryfall provides pricing in multiple currencies and for different
     print variations (normal, foil, etched). The ``CURRENCIES``
     ClassVar declares the supported currency codes (usd, eur, tix).
-    Use ``get_currencies()`` to retrieve the normal-print prices for
-    these currencies.
+    Use ``get_normal_print_currencies()`` to retrieve the normal-print
+    prices for these currencies.
 
     Attributes:
         usd: Price in USD for normal prints.
@@ -41,7 +36,8 @@ class ScryfallPricing(PyMTGBaseModel):
         tix: Price in MTGO tix for normal prints.
     """
 
-    # Currency codes supported by this provider's pricing model.
+    # Currency codes supported by this provider's pricing model. If
+    # modified, update the class docstring and Attributes section to match.
     CURRENCIES: ClassVar[tuple[str, ...]] = ("usd", "eur", "tix")
 
     usd: float | None = None
@@ -51,11 +47,12 @@ class ScryfallPricing(PyMTGBaseModel):
     eur_foil: float | None = None
     tix: float | None = None
 
-    def get_currencies(self) -> dict[str, float | None]:
+    def get_normal_print_currencies(self) -> dict[str, float | None]:
         """Returns the currency codes and normal-print prices tracked.
 
         Only normal-print prices are included; foil and etched variants
-        share the same currency as their normal-print counterpart.
+        share the same currency as their normal-print counterpart but
+        are not returned by this method.
 
         Returns:
             A dict mapping currency code to the normal-print price for
@@ -87,7 +84,8 @@ class TCGPlayerPricing(PyMTGBaseModel):
         poor: Price for Poor condition in USD.
     """
 
-    # Currency codes supported by this provider's pricing model.
+    # Currency codes supported by this provider's pricing model. If
+    # modified, update the class docstring and Attributes section to match.
     CURRENCIES: ClassVar[tuple[str, ...]] = ("usd",)
 
     market: float | None = None
@@ -102,8 +100,9 @@ class TCGPlayerPricing(PyMTGBaseModel):
     fair: float | None = None
     poor: float | None = None
 
-    # Price fields checked by has_prices(). Must be kept in sync with
-    # the model fields above if new price fields are added.
+    # Price fields checked by has_prices(). If new price fields are
+    # added to the model above without updating this tuple, has_prices()
+    # will not detect them. Keep this tuple in sync with the model fields.
     _PRICE_FIELDS: ClassVar[tuple[str, ...]] = (
         "market",
         "mid",
@@ -148,7 +147,8 @@ class CardmarketPricing(PyMTGBaseModel):
         trend: Price trend in EUR.
     """
 
-    # Currency codes supported by this provider's pricing model.
+    # Currency codes supported by this provider's pricing model. If
+    # modified, update the class docstring and Attributes section to match.
     CURRENCIES: ClassVar[tuple[str, ...]] = ("eur",)
 
     avg1: float | None = None
@@ -158,8 +158,9 @@ class CardmarketPricing(PyMTGBaseModel):
     low_ex: float | None = None
     trend: float | None = None
 
-    # Price fields checked by has_prices(). Must be kept in sync with
-    # the model fields above if new price fields are added.
+    # Price fields checked by has_prices(). If new price fields are
+    # added to the model above without updating this tuple, has_prices()
+    # will not detect them. Keep this tuple in sync with the model fields.
     _PRICE_FIELDS: ClassVar[tuple[str, ...]] = (
         "avg1",
         "avg7",
@@ -206,9 +207,7 @@ class Pricing(PyMTGBaseModel):
     tcgplayer: TCGPlayerPricing | None = None
     cardmarket: CardmarketPricing | None = None
 
-    def validate_currency_consistency(
-        self,
-    ) -> dict[str, list[ProviderName]]:
+    def validate_currency_consistency(self) -> dict[str, list[str]]:
         """Returns currencies populated across all provider pricings.
 
         Inspects each present provider pricing and maps each currency
@@ -222,7 +221,10 @@ class Pricing(PyMTGBaseModel):
         normal-print price is not None. For single-currency providers
         (TCGPlayer and Cardmarket), the currency is included if
         ``has_prices()`` returns True, rather than checking individual
-        currency fields.
+        currency fields. This is correct because these providers
+        currently support only one currency each; if they ever support
+        multiple currencies, this logic must be updated to check
+        individual currency fields.
 
         Returns:
             A dict mapping each currency code to the list of provider
@@ -230,9 +232,10 @@ class Pricing(PyMTGBaseModel):
             currency. Returns an empty dict if no providers are
             present or none have prices set.
         """
-        result: dict[str, list[ProviderName]] = {}
+        result: dict[str, list[str]] = {}
         if self.scryfall is not None:
-            for currency, value in self.scryfall.get_currencies().items():
+            currencies = self.scryfall.get_normal_print_currencies()
+            for currency, value in currencies.items():
                 if value is not None:
                     result.setdefault(currency, []).append("scryfall")
         # TCGPlayer and Cardmarket are single-currency providers: if

@@ -1154,28 +1154,28 @@ class TestPricing:
         """Test CardmarketPricing declares its CURRENCIES ClassVar as eur."""
         assert CardmarketPricing.CURRENCIES == ("eur",)
 
-    def test_scryfall_pricing_get_currencies_all_set(self) -> None:
-        """Test get_currencies returns all three currencies when set."""
+    def test_scryfall_pricing_get_normal_print_currencies_all_set(self) -> None:
+        """Test get_normal_print_currencies returns all three currencies when set."""
         pricing = ScryfallPricing(usd=10.0, eur=8.0, tix=5.0)
-        assert pricing.get_currencies() == {
+        assert pricing.get_normal_print_currencies() == {
             "usd": 10.0,
             "eur": 8.0,
             "tix": 5.0,
         }
 
-    def test_scryfall_pricing_get_currencies_none(self) -> None:
-        """Test get_currencies returns None for unset currencies."""
+    def test_scryfall_pricing_get_normal_print_currencies_none(self) -> None:
+        """Test get_normal_print_currencies returns None for unset currencies."""
         pricing = ScryfallPricing()
-        assert pricing.get_currencies() == {
+        assert pricing.get_normal_print_currencies() == {
             "usd": None,
             "eur": None,
             "tix": None,
         }
 
-    def test_scryfall_pricing_get_currencies_partial(self) -> None:
-        """Test get_currencies returns only set values, others None."""
+    def test_scryfall_pricing_get_normal_print_currencies_partial(self) -> None:
+        """Test get_normal_print_currencies returns only set values, others None."""
         pricing = ScryfallPricing(usd=10.0)
-        currencies = pricing.get_currencies()
+        currencies = pricing.get_normal_print_currencies()
         assert currencies["usd"] == 10.0
         assert currencies["eur"] is None
         assert currencies["tix"] is None
