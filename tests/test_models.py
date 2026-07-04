@@ -511,6 +511,75 @@ class TestCard:
         card_empty_faces = Card(id="test-id", name="Empty Faces", card_faces=[])
         assert card_empty_faces.get_main_face() is None
 
+    def test_card_validate_main_face_consistency_consistent(self) -> None:
+        """Test validate_main_face_consistency with matching fields.
+
+        Verifies that when all shared fields between Card and its main face
+        (card_faces[0]) are equal, the method returns an empty dict.
+        """
+        face = CardFace(
+            name="Delver of Secrets",
+            mana_cost="{1}{U}",
+            type_line="Creature — Human Wizard",
+            power="1",
+            toughness="1",
+        )
+        card = Card(
+            id="test-id",
+            name="Delver of Secrets",
+            mana_cost="{1}{U}",
+            type_line="Creature — Human Wizard",
+            power="1",
+            toughness="1",
+            card_faces=[face, CardFace(name="Insectile Aberration")],
+        )
+        assert card.validate_main_face_consistency() == {}
+
+    def test_card_validate_main_face_consistency_mismatch(self) -> None:
+        """Test validate_main_face_consistency with mismatched fields.
+
+        Verifies that when shared fields between Card and its main face
+        differ, the method returns a dict mapping field names to
+        (card_value, face_value) tuples.
+        """
+        face = CardFace(
+            name="Front Face",
+            power="2",
+            toughness="2",
+        )
+        card = Card(
+            id="test-id",
+            name="Top-Level Name",
+            power="3",
+            toughness="3",
+            card_faces=[face],
+        )
+        mismatches = card.validate_main_face_consistency()
+        assert "name" in mismatches
+        assert mismatches["name"] == ("Top-Level Name", "Front Face")
+        assert "power" in mismatches
+        assert mismatches["power"] == ("3", "2")
+        assert "toughness" in mismatches
+        assert mismatches["toughness"] == ("3", "2")
+
+    def test_card_validate_main_face_consistency_no_faces(self) -> None:
+        """Test validate_main_face_consistency with no card_faces.
+
+        Verifies that the method returns an empty dict when the card has
+        no card_faces populated.
+        """
+        card = Card(id="test-id", name="Normal Card")
+        assert card.validate_main_face_consistency() == {}
+
+    def test_card_validate_main_face_consistency_empty_faces(self) -> None:
+        """Test validate_main_face_consistency with empty card_faces list.
+
+        Verifies that the method returns an empty dict when card_faces
+        is an empty list.
+        """
+        card = Card(id="test-id", name="Empty Faces", card_faces=[])
+        assert card.validate_main_face_consistency() == {}
+
     def test_card_serialization(self) -> None:
         """Test Card serialization and deserialization."""
         card = Card(

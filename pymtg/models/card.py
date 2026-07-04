@@ -5,6 +5,8 @@ for representing Magic: The Gathering cards in a normalized format across all
 providers.
 """
 
+from typing import Any, ClassVar
+
 from pymtg.models.base import PyMTGBaseModel
 from pymtg.models.enums import Color, Format, Rarity
 from pymtg.models.pricing import Pricing
@@ -121,6 +123,23 @@ class Card(PyMTGBaseModel):
         uri: URI to the card on the provider's site.
         source: Provider name that provided this card data.
     """
+
+    _SHARED_FACE_FIELDS: ClassVar[tuple[str, ...]] = (
+        "name",
+        "mana_cost",
+        "type_line",
+        "oracle_text",
+        "power",
+        "toughness",
+        "colors",
+        "color_indicator",
+        "loyalty",
+        "defense",
+        "artist",
+        "artist_id",
+        "illustration_id",
+        "image_uris",
+    )
 
     id: str
     scryfall_id: str | None = None
@@ -328,6 +347,31 @@ class Card(PyMTGBaseModel):
         if self.card_faces and len(self.card_faces) > 0:
             return self.card_faces[0]
         return None
+
+    def validate_main_face_consistency(self) -> dict[str, tuple[Any, Any]]:
+        """Validates that top-level Card fields match the main face's fields.
+
+        For multi-faced cards (transform, modal dual-faced, etc.), the
+        top-level Card fields should match the corresponding fields on the
+        main face (card_faces[0]). This method checks all fields shared
+        between Card and CardFace for consistency.
+
+        Returns:
+            A dict mapping mismatched field names to tuples of
+            (card_value, face_value). Returns an empty dict if all shared
+            fields are consistent or if the card has no faces.
+        """
+        main_face = self.get_main_face()
+        if main_face is None:
+            return {}
+
+        mismatches: dict[str, tuple[Any, Any]] = {}
+        for field in self._SHARED_FACE_FIELDS:
+            card_value = getattr(self, field)
+            face_value = getattr(main_face, field)
+            if card_value != face_value:
+                mismatches[field] = (card_value, face_value)
+        return mismatches
 
 
 class DeckCard(PyMTGBaseModel):
