@@ -78,7 +78,11 @@ class TestCardmarketAuthentication:
         assert cardmarket.is_authenticated()
 
     def test_authenticate_method_missing_consumer_key(self):
-        """Test authenticate method with missing consumer key."""
+        """Test authenticate method with missing consumer key.
+
+        Providing consumer_secret without consumer_key is a partial pair
+        update, which is rejected before any credentials are modified.
+        """
         cardmarket = Cardmarket()
 
         with pytest.raises(AuthenticationError) as exc_info:
@@ -88,10 +92,14 @@ class TestCardmarketAuthentication:
                 access_token_secret="test_access_token_secret",
             )
 
-        assert "Consumer key and consumer secret are required" in str(exc_info.value)
+        assert "must be provided together" in str(exc_info.value)
 
     def test_authenticate_method_missing_consumer_secret(self):
-        """Test authenticate method with missing consumer secret."""
+        """Test authenticate method with missing consumer secret.
+
+        Providing consumer_key without consumer_secret is a partial pair
+        update, which is rejected before any credentials are modified.
+        """
         cardmarket = Cardmarket()
 
         with pytest.raises(AuthenticationError) as exc_info:
@@ -101,7 +109,7 @@ class TestCardmarketAuthentication:
                 access_token_secret="test_access_token_secret",
             )
 
-        assert "Consumer key and consumer secret are required" in str(exc_info.value)
+        assert "must be provided together" in str(exc_info.value)
 
     def test_refresh_auth_raises_error(self):
         """Test that refresh_auth raises AuthenticationError for OAuth1."""
@@ -786,6 +794,132 @@ class TestOAuth1Handler:
                 access_token="test_access_token",
                 access_token_secret="test_access_token_secret",
             )
+
+    def test_oauth1_handler_authenticate_partial_consumer_pair_rejected(self):
+        """Test that providing consumer_key without consumer_secret fails.
+
+        Partial credential pair updates create inconsistent state where a
+        new consumer_key is paired with an old consumer_secret. This is
+        rejected before any credentials are modified.
+        """
+        handler = OAuth1Handler(
+            consumer_key="old_key",
+            consumer_secret="old_secret",
+            access_token="at",
+            access_token_secret="ats",
+        )
+
+        with pytest.raises(AuthenticationError) as exc_info:
+            handler.authenticate(consumer_key="new_key")
+
+        assert "must be provided together" in str(exc_info.value)
+        # Verify no credentials were modified
+        assert handler.consumer_key == "old_key"
+        assert handler.consumer_secret == "old_secret"
+
+    def test_oauth1_handler_authenticate_partial_consumer_secret_rejected(self):
+        """Test that providing consumer_secret without consumer_key fails."""
+        handler = OAuth1Handler(
+            consumer_key="old_key",
+            consumer_secret="old_secret",
+            access_token="at",
+            access_token_secret="ats",
+        )
+
+        with pytest.raises(AuthenticationError) as exc_info:
+            handler.authenticate(consumer_secret="new_secret")
+
+        assert "must be provided together" in str(exc_info.value)
+        assert handler.consumer_key == "old_key"
+        assert handler.consumer_secret == "old_secret"
+
+    def test_oauth1_handler_authenticate_partial_access_token_rejected(self):
+        """Test that providing access_token without secret fails.
+
+        Partial credential pair updates create inconsistent state where a
+        new access_token is paired with an old access_token_secret.
+        """
+        handler = OAuth1Handler(
+            consumer_key="ck",
+            consumer_secret="cs",
+            access_token="old_token",
+            access_token_secret="old_secret",
+        )
+
+        with pytest.raises(AuthenticationError) as exc_info:
+            handler.authenticate(access_token="new_token")
+
+        assert "must be provided together" in str(exc_info.value)
+        assert handler.access_token == "old_token"
+        assert handler.access_token_secret == "old_secret"
+
+    def test_oauth1_handler_authenticate_partial_access_secret_rejected(self):
+        """Test that providing access_token_secret without token fails."""
+        handler = OAuth1Handler(
+            consumer_key="ck",
+            consumer_secret="cs",
+            access_token="old_token",
+            access_token_secret="old_secret",
+        )
+
+        with pytest.raises(AuthenticationError) as exc_info:
+            handler.authenticate(access_token_secret="new_secret")
+
+        assert "must be provided together" in str(exc_info.value)
+        assert handler.access_token == "old_token"
+        assert handler.access_token_secret == "old_secret"
+
+    def test_oauth1_handler_authenticate_no_pairs_keeps_existing(self):
+        """Test that providing no new credentials keeps existing values.
+
+        When neither consumer nor access credential pairs are provided
+        (both None), the existing stored credentials are retained. This
+        is the valid 'neither' case for pair validation.
+        """
+        handler = OAuth1Handler(
+            consumer_key="ck",
+            consumer_secret="cs",
+            access_token="at",
+            access_token_secret="ats",
+        )
+
+        handler.authenticate()
+
+        assert handler.consumer_key == "ck"
+        assert handler.consumer_secret == "cs"
+        assert handler.access_token == "at"
+        assert handler.access_token_secret == "ats"
+        assert handler.is_authenticated()
+
+    def test_oauth1_handler_authenticate_empty_string_pair_passes_validation(self):
+        """Test that empty strings pass pair validation but keep existing.
+
+        Pair validation uses `is not None` checks, so empty strings count
+        as 'provided' and pass the pair check. However, the credential
+        update uses truthiness (`or`), so empty strings are treated as
+        falsy and the existing stored value is retained. This documents
+        the pre-existing `or`-based update behavior.
+        """
+        handler = OAuth1Handler(
+            consumer_key="ck",
+            consumer_secret="cs",
+            access_token="at",
+            access_token_secret="ats",
+        )
+
+        handler.authenticate(
+            consumer_key="",
+            consumer_secret="",
+            access_token="",
+            access_token_secret="",
+        )
+
+        # Empty strings are falsy, so `or` keeps existing values
+        assert handler.consumer_key == "ck"
+        assert handler.consumer_secret == "cs"
+        assert handler.access_token == "at"
+        assert handler.access_token_secret == "ats"
+        assert handler.is_authenticated()
 
     def test_oauth1_handler_is_authenticated(self):
         """Test OAuth1Handler is_authenticated method."""
