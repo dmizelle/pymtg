@@ -255,7 +255,9 @@ class Moxfield(BaseProvider):
             # Parse card results
             cards = []
             for card_data in data:
-                cards.append(self._parse_card(card_data))
+                card = self._parse_card(card_data)
+                if card is not None:
+                    cards.append(card)
 
             return cards
 
@@ -312,7 +314,9 @@ class Moxfield(BaseProvider):
             # Parse card results
             cards = []
             for card_data in data:
-                cards.append(self._parse_card(card_data))
+                card = self._parse_card(card_data)
+                if card is not None:
+                    cards.append(card)
 
             return cards
 
@@ -362,7 +366,15 @@ class Moxfield(BaseProvider):
                     resource_id=card_id,
                 )
 
-            return self._parse_card(data)
+            card = self._parse_card(data)
+            if card is None:
+                raise NotFoundError(
+                    "Card has missing required fields",
+                    provider=self.name,
+                    resource_type="card",
+                    resource_id=card_id,
+                )
+            return card
 
         except requests.exceptions.RequestException as e:
             logger.error(f"Network error during Moxfield get_card: {e}")
@@ -648,15 +660,29 @@ class Moxfield(BaseProvider):
 
         return " ".join(query_parts)
 
-    def _parse_card(self, data: dict[str, Any]) -> Card:
+    def _parse_card(self, data: dict[str, Any]) -> Card | None:
         """Parse Moxfield/Parse.bot card data into a normalized Card model.
 
         Args:
             data: Raw card data from Parse.bot's Moxfield API.
 
         Returns:
-            A normalized Card object.
+            A normalized Card object, or None if required fields are missing.
         """
+        # Validate required fields
+        card_id = data.get("scryfall_id") or data.get("id", "")
+        name = data.get("name", "")
+        missing_fields = []
+        if not card_id:
+            missing_fields.append("scryfall_id or id")
+        if not name:
+            missing_fields.append("name")
+        if missing_fields:
+            logger.warning(
+                f"Skipping card due to missing required fields: "
+                f"{', '.join(missing_fields)}"
+            )
+            return None
         # Handle card faces (for flip/transform cards)
         card_faces_data = data.get("card_faces", [])
         card_faces = None
@@ -887,6 +913,8 @@ class Moxfield(BaseProvider):
 
             # Parse card
             card = self._parse_card(card_info)
+            if card is None:
+                continue
 
             # Determine board - default to MAIN
             board = Board.MAIN
@@ -920,6 +948,8 @@ class Moxfield(BaseProvider):
             card_info = card_data.get("card", card_data)
 
             card = self._parse_card(card_info)
+            if card is None:
+                continue
 
             deck_card = DeckCard(
                 card=card,
@@ -934,6 +964,8 @@ class Moxfield(BaseProvider):
             card_info = card_data.get("card", card_data)
 
             card = self._parse_card(card_info)
+            if card is None:
+                continue
 
             deck_card = DeckCard(
                 card=card,
@@ -954,6 +986,8 @@ class Moxfield(BaseProvider):
             card_info = card_data.get("card", card_data)
 
             card = self._parse_card(card_info)
+            if card is None:
+                continue
 
             deck_card = DeckCard(
                 card=card,
