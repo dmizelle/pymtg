@@ -312,6 +312,12 @@ class TCGPlayer(BaseProvider):
             NetworkError: If there is a network error.
             APIError: If the API returns an error.
         """
+        if not query or not isinstance(query, str):
+            raise InvalidQueryError("Query must be a non-empty string")
+
+        if limit is not None and (not isinstance(limit, int) or limit < 1):
+            raise InvalidQueryError("limit must be a positive integer (>= 1)")
+
         self._check_authenticated()
 
         params: dict[str, Any] = {"search": query}
