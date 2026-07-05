@@ -24,6 +24,7 @@ from pymtg.config import PROVIDER_CONFIGS, ProviderConfig
 from pymtg.exceptions import (
     APIError,
     AuthenticationError,
+    InvalidQueryError,
     NetworkError,
     NotFoundError,
 )
@@ -72,6 +73,25 @@ class Moxfield(BaseProvider):
         for card in cards:
             print(card.name, card.set_name)
     """
+
+    # Valid Moxfield/Parse.bot search parameters
+    VALID_SEARCH_PARAMS: set[str] = {
+        "format",
+        "rarity",
+        "set",
+        "cmc",
+        "color",
+        "type",
+        "subtype",
+        "power",
+        "toughness",
+        "loyalty",
+        "textsearch",
+        "keyword",
+        "artist",
+        "release",
+        "set_type",
+    }
 
     def __init__(self, api_key: str | None = None, **kwargs: Any) -> None:
         """Initialize the Moxfield provider.
@@ -218,6 +238,17 @@ class Moxfield(BaseProvider):
             )
 
         try:
+            # Validate kwargs against allowed parameters
+            for key in kwargs:
+                if (
+                    not isinstance(key, str)
+                    or key.lower() not in self.VALID_SEARCH_PARAMS
+                ):
+                    raise InvalidQueryError(
+                        f"Invalid search parameter: {key}. "
+                        f"Valid parameters: {', '.join(sorted(self.VALID_SEARCH_PARAMS))}"
+                    )
+
             # Build query parameters
             params: dict[str, Any] = {}
 

@@ -23,7 +23,7 @@ from typing import Any
 import requests
 
 from pymtg.auth.session import SessionAuthHandler
-from pymtg.exceptions import NetworkError, NotFoundError
+from pymtg.exceptions import InvalidQueryError, NetworkError, NotFoundError
 from pymtg.models.card import Card, CardFace
 from pymtg.models.deck import Deck
 from pymtg.models.enums import Board, Color, Format, Rarity, SetType
@@ -71,6 +71,25 @@ class Archidekt(BaseProvider):
         for card in cards:
             print(card.name, card.set_name)
     """
+
+    # Valid Archidekt search parameters
+    VALID_SEARCH_PARAMS: set[str] = {
+        "format",
+        "rarity",
+        "set",
+        "cmc",
+        "color",
+        "type",
+        "subtype",
+        "power",
+        "toughness",
+        "loyalty",
+        "textsearch",
+        "keyword",
+        "artist",
+        "release",
+        "set_type",
+    }
 
     def __init__(
         self,
@@ -200,6 +219,17 @@ class Archidekt(BaseProvider):
             AuthenticationError: If authentication is required but not provided.
         """
         try:
+            # Validate kwargs against allowed parameters
+            for key in kwargs:
+                if (
+                    not isinstance(key, str)
+                    or key.lower() not in self.VALID_SEARCH_PARAMS
+                ):
+                    raise InvalidQueryError(
+                        f"Invalid search parameter: {key}. "
+                        f"Valid parameters: {', '.join(sorted(self.VALID_SEARCH_PARAMS))}"
+                    )
+
             # Build query parameters
             params: dict[str, Any] = {
                 "q": self._build_search_query(
