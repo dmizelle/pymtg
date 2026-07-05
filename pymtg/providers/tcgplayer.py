@@ -357,7 +357,7 @@ class TCGPlayer(BaseProvider):
         """Get a single card by its TCGPlayer product ID.
 
         Args:
-            product_id: TCGPlayer product ID for the card.
+            card_id: TCGPlayer product ID for the card.
             **kwargs: Additional parameters (e.g., include=pricing for additional data).
 
         Returns:
@@ -367,7 +367,7 @@ class TCGPlayer(BaseProvider):
             AuthenticationError: If not authenticated.
             NotFoundError: If the card is not found.
             NetworkError: If there is a network error.
-            InvalidQueryError: If product_id is not provided.
+            InvalidQueryError: If card_id is not provided.
         """
         self._check_authenticated()
 
