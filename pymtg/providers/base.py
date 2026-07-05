@@ -240,8 +240,8 @@ class BaseProvider(ABC):
         support authentication refresh.
 
         Raises:
-            AuthenticationError: If authentication refresh fails.
-            NotImplementedError: If the provider doesn't support authentication refresh.
+            NotImplementedError: If the provider doesn't support
+                authentication refresh.
         """
         raise NotImplementedError(
             f"{self.name} does not support authentication refresh"
