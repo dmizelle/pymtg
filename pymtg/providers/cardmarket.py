@@ -78,8 +78,27 @@ class Cardmarket(BaseProvider):
     Warning:
         New Cardmarket developer applications are currently closed. You must
         have pre-approved credentials to use this provider. See
-        https://api.cardmarket.com for more information.
+         https://api.cardmarket.com for more information.
     """
+
+    # Valid Cardmarket search parameters
+    VALID_SEARCH_PARAMS: set[str] = {
+        "category",
+        "game",
+        "format",
+        "rarity",
+        "color",
+        "type",
+        "subtype",
+        "power",
+        "toughness",
+        "cmc",
+        "textsearch",
+        "keyword",
+        "artist",
+        "release",
+        "set_type",
+    }
 
     def __init__(
         self,
@@ -278,6 +297,17 @@ class Cardmarket(BaseProvider):
                     provider=self.name,
                     auth_type="oauth1",
                 )
+
+            # Validate kwargs against allowed parameters
+            for key in kwargs:
+                if (
+                    not isinstance(key, str)
+                    or key.lower() not in self.VALID_SEARCH_PARAMS
+                ):
+                    raise InvalidQueryError(
+                        f"Invalid search parameter: {key}. "
+                        f"Valid parameters: {', '.join(sorted(self.VALID_SEARCH_PARAMS))}"
+                    )
 
             # Build query parameters for Cardmarket /products endpoint
             params: dict[str, Any] = {}

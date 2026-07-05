@@ -73,6 +73,25 @@ class TCGPlayer(BaseProvider):
         pricing = tcgplayer.get_pricing(product_id=12345)
     """
 
+    # Valid TCGPlayer search parameters
+    VALID_SEARCH_PARAMS: set[str] = {
+        "category",
+        "game",
+        "format",
+        "rarity",
+        "color",
+        "type",
+        "subtype",
+        "power",
+        "toughness",
+        "cmc",
+        "textsearch",
+        "keyword",
+        "artist",
+        "release",
+        "set_type",
+    }
+
     def __init__(
         self,
         client_id: str | None = None,
@@ -229,6 +248,14 @@ class TCGPlayer(BaseProvider):
             RateLimitError: If rate limit is exceeded.
         """
         self._check_authenticated()
+
+        # Validate kwargs against allowed parameters
+        for key in kwargs:
+            if not isinstance(key, str) or key.lower() not in self.VALID_SEARCH_PARAMS:
+                raise InvalidQueryError(
+                    f"Invalid search parameter: {key}. "
+                    f"Valid parameters: {', '.join(sorted(self.VALID_SEARCH_PARAMS))}"
+                )
 
         # Build search parameters
         params: dict[str, Any] = {
