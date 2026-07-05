@@ -556,11 +556,17 @@ class TCGPlayer(BaseProvider):
     ) -> Generator[Card, None, None]:
         """Iterate through search results page by page.
 
-        This is a generator that yields lists of Card objects, one page at a time.
-        It automatically handles pagination until all results are exhausted.
+        This is a generator that yields Card objects, automatically handling
+        pagination until all results are exhausted or the total limit is
+        reached.
 
         Args:
             name: Card name to search for.
+            colors: List of colors the card must include.
+            identity: List of colors the card's identity must include.
+            type_line: Type line the card must include.
+            limit: Maximum total number of results to return. Defaults to 100.
+            page_size: Number of results to request per page. Defaults to 50.
             **kwargs: Additional search parameters passed to search().
 
         Yields:
@@ -574,22 +580,30 @@ class TCGPlayer(BaseProvider):
         self._check_authenticated()
 
         page = 1
-        limit = kwargs.get("limit", 100)  # Use larger page size for iteration
+        yielded = 0
 
-        while True:
-            # Get one page of results
-            kwargs["limit"] = limit
+        while yielded < limit:
+            kwargs["limit"] = page_size
             kwargs["page"] = page
 
             try:
-                cards = self.search(name=name, **kwargs)
+                cards = self.search(
+                    name=name,
+                    colors=colors,
+                    identity=identity,
+                    type_line=type_line,
+                    **kwargs,
+                )
 
                 # Check if we got any results
                 if not cards:
                     break
 
                 for card in cards:
+                    if yielded >= limit:
+                        break
                     yield card
+                    yielded += 1
                 page += 1
 
             except (NetworkError, APIError) as e:

@@ -567,6 +567,153 @@ class TestTCGPlayerIterSearch(unittest.TestCase):
 
         self.assertEqual(len(pages), 2)  # Should get 2 individual cards
 
+    def _make_card(self, card_id: str) -> Card:
+        """Create a minimal Card object for testing.
+
+        Args:
+            card_id: The unique identifier for the test card.
+
+        Returns:
+            A minimal Card object with only required fields populated.
+        """
+        return Card(
+            id=card_id,
+            name=f"Card {card_id}",
+            set_code="SET",
+            collector_number=card_id,
+            mana_cost="",
+            cmc=None,
+            type_line="",
+            rarity=None,
+            colors=None,
+            color_identity=None,
+            oracle_text=None,
+        )
+
+    @patch.object(TCGPlayer, "search")
+    def test_iter_search_limit_caps_total_results(self, mock_search):
+        """Test that limit caps the total number of yielded results.
+
+        Verifies the fix for issue #197: the signature limit parameter is
+        used as the total cap, not overridden by kwargs.get('limit', 100).
+        """
+        # search returns 5 cards per page
+        mock_search.side_effect = [
+            [self._make_card(str(i)) for i in range(5)],
+            [self._make_card(str(i)) for i in range(5, 10)],
+            [self._make_card(str(i)) for i in range(10, 15)],
+        ]
+
+        results = list(self.tcgplayer.iter_search(name="test", limit=7))
+
+        self.assertEqual(len(results), 7)
+
+    @patch.object(TCGPlayer, "search")
+    def test_iter_search_page_size_passed_to_search(self, mock_search):
+        """Test that page_size is used as the per-page limit passed to search."""
+        mock_search.side_effect = [
+            [self._make_card("1")],
+            [],  # Empty ends iteration
+        ]
+
+        list(self.tcgplayer.iter_search(name="test", page_size=25))
+
+        # search should be called with limit=25 (the page_size)
+        _, kwargs = mock_search.call_args
+        self.assertEqual(kwargs["limit"], 25)
+
+    @patch.object(TCGPlayer, "search")
+    def test_iter_search_default_page_size(self, mock_search):
+        """Test that default page_size of 50 is passed to search."""
+        mock_search.side_effect = [
+            [self._make_card("1")],
+            [],
+        ]
+
+        list(self.tcgplayer.iter_search(name="test"))
+
+        _, kwargs = mock_search.call_args
+        self.assertEqual(kwargs["limit"], 50)
+
+    @patch.object(TCGPlayer, "search")
+    def test_iter_search_forwards_signature_params_to_search(self, mock_search):
+        """Test that colors, identity, and type_line are forwarded to search.
+
+        Previously iter_search only forwarded name to search(), ignoring
+        the colors, identity, and type_line signature parameters.
+        """
+        mock_search.side_effect = [
+            [self._make_card("1")],
+            [],
+        ]
+
+        test_colors = [Color.WHITE]
+        test_identity = [Color.WHITE]
+        list(
+            self.tcgplayer.iter_search(
+                name="test",
+                colors=test_colors,
+                identity=test_identity,
+                type_line="Creature",
+            )
+        )
+
+        args, kwargs = mock_search.call_args
+        self.assertEqual(args[0] if args else kwargs.get("name"), "test")
+        self.assertEqual(kwargs["colors"], test_colors)
+        self.assertEqual(kwargs["identity"], test_identity)
+        self.assertEqual(kwargs["type_line"], "Creature")
+
+    @patch.object(TCGPlayer, "search")
+    def test_iter_search_limit_not_overridden_by_kwargs(self, mock_search):
+        """Test that limit in kwargs does not override the signature parameter.
+
+        Verifies the fix for issue #197: previously kwargs.get('limit', 100)
+        ignored the signature limit parameter. Now the signature parameter
+        is used as the total cap. Also verifies kwargs['limit'] passed to
+        search() is page_size, not the limit from **kwargs.
+        """
+        # Each page returns 3 cards
+        page = [self._make_card(str(i)) for i in range(3)]
+        mock_search.side_effect = [page, page, page, []]
+
+        # limit=5 via kwargs splat binds to signature param (total cap = 5)
+        results = list(self.tcgplayer.iter_search(name="test", **{"limit": 5}))
+
+        self.assertEqual(len(results), 5)
+        # search() should receive page_size (default 50) as its limit, not 5
+        _, kwargs = mock_search.call_args
+        self.assertEqual(kwargs["limit"], 50)
+
+    @patch.object(TCGPlayer, "search")
+    def test_iter_search_limit_zero_yields_nothing(self, mock_search):
+        """Test that limit=0 yields no results.
+
+        An edge case where the total cap is zero, so no cards should be
+        yielded and search() should never be called.
+        """
+        results = list(self.tcgplayer.iter_search(name="test", limit=0))
+
+        self.assertEqual(len(results), 0)
+        mock_search.assert_not_called()
+
+    @patch.object(TCGPlayer, "search")
+    def test_iter_search_limit_one_yields_single_result(self, mock_search):
+        """Test that limit=1 yields exactly one result.
+
+        An edge case where the total cap is one, so only the first card
+        from the first page should be yielded.
+        """
+        mock_search.side_effect = [
+            [self._make_card("1"), self._make_card("2"), self._make_card("3")],
+            [],
+        ]
+
+        results = list(self.tcgplayer.iter_search(name="test", limit=1))
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0].id, "1")
+
 
 class TestTCGPlayerErrorHandling(unittest.TestCase):
     """Test TCGPlayer error handling."""
