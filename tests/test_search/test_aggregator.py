@@ -5,7 +5,9 @@ all major functionality including multi-provider search, error handling,
 and timing tracking.
 """
 
+import threading
 import unittest
+from unittest.mock import patch
 
 from pymtg.models.card import Card
 from pymtg.models.enums import Color
@@ -124,6 +126,21 @@ class TestAggregatorInitialization(unittest.TestCase):
         self.assertEqual(len(aggregator.provider_map), 2)
         self.assertIn("test1", aggregator.provider_map)
         self.assertIn("test2", aggregator.provider_map)
+
+    def test_initialization_creates_lock(self):
+        """Test that Aggregator initializes with a reentrant lock."""
+        aggregator = Aggregator()
+        self.assertTrue(hasattr(aggregator._lock, "acquire"))
+        self.assertTrue(hasattr(aggregator._lock, "release"))
+        self.assertTrue(callable(aggregator._lock.acquire))
+        self.assertTrue(callable(aggregator._lock.release))
+        # Verify the lock is reentrant (RLock, not Lock).
+        aggregator._lock.acquire()
+        try:
+            aggregator._lock.acquire()  # Should not block.
+            aggregator._lock.release()
+        finally:
+            aggregator._lock.release()
 
 
 class TestAggregatorProviderManagement(unittest.TestCase):
@@ -317,6 +334,130 @@ class TestAggregatorRepr(unittest.TestCase):
         repr_str = repr(aggregator)
         self.assertIn("providers=1", repr_str)
         self.assertIn("test", repr_str)
+
+
+class TestAggregatorThreadSafety(unittest.TestCase):
+    """Test Aggregator thread safety for provider_map access."""
+
+    def test_get_provider_acquires_lock(self):
+        """Test that get_provider acquires the lock before reading."""
+        aggregator = Aggregator()
+        aggregator.add_provider(MockProvider("test"))
+
+        with patch.object(aggregator, "_lock") as mock_lock:
+            aggregator.get_provider("test")
+            mock_lock.__enter__.assert_called_once()
+            mock_lock.__exit__.assert_called_once()
+
+    def test_add_provider_acquires_lock(self):
+        """Test that add_provider acquires the lock before modifying."""
+        aggregator = Aggregator()
+
+        with patch.object(aggregator, "_lock") as mock_lock:
+            aggregator.add_provider(MockProvider("test"))
+            mock_lock.__enter__.assert_called_once()
+            mock_lock.__exit__.assert_called_once()
+
+    def test_remove_provider_acquires_lock(self):
+        """Test that remove_provider acquires the lock before modifying."""
+        aggregator = Aggregator()
+        aggregator.add_provider(MockProvider("test"))
+
+        with patch.object(aggregator, "_lock") as mock_lock:
+            aggregator.remove_provider("test")
+            mock_lock.__enter__.assert_called_once()
+            mock_lock.__exit__.assert_called_once()
+
+    def test_clear_acquires_lock(self):
+        """Test that clear acquires the lock before modifying."""
+        aggregator = Aggregator()
+        aggregator.add_provider(MockProvider("test"))
+
+        with patch.object(aggregator, "_lock") as mock_lock:
+            aggregator.clear()
+            mock_lock.__enter__.assert_called_once()
+            mock_lock.__exit__.assert_called_once()
+
+    def test_get_available_providers_acquires_lock(self):
+        """Test that get_available_providers acquires the lock."""
+        aggregator = Aggregator()
+        aggregator.add_provider(MockProvider("test"))
+
+        with patch.object(aggregator, "_lock") as mock_lock:
+            aggregator.get_available_providers()
+            mock_lock.__enter__.assert_called_once()
+            mock_lock.__exit__.assert_called_once()
+
+    def test_repr_acquires_lock(self):
+        """Test that __repr__ acquires the lock before reading."""
+        aggregator = Aggregator()
+        aggregator.add_provider(MockProvider("test"))
+
+        with patch.object(aggregator, "_lock") as mock_lock:
+            repr(aggregator)
+            mock_lock.__enter__.assert_called_once()
+            mock_lock.__exit__.assert_called_once()
+
+    def test_concurrent_add_and_get_no_errors(self):
+        """Test that concurrent add and get operations don't raise errors."""
+        aggregator = Aggregator()
+        errors: list[Exception] = []
+
+        def add_providers() -> None:
+            for i in range(50):
+                try:
+                    aggregator.add_provider(MockProvider(f"provider-{i}"))
+                except (ValueError, Exception) as e:
+                    errors.append(e)
+
+        def get_providers() -> None:
+            for i in range(50):
+                try:
+                    aggregator.get_available_providers()
+                except Exception as e:
+                    errors.append(e)
+
+        threads = [
+            threading.Thread(target=add_providers),
+            threading.Thread(target=get_providers),
+            threading.Thread(target=get_providers),
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        self.assertEqual(len(errors), 0, f"Concurrent errors: {errors}")
+        self.assertEqual(len(aggregator.provider_map), 50)
+        # Verify providers list and map are consistent (no lost updates).
+        self.assertEqual(len(aggregator.providers), 50)
+        # Verify no duplicate names in the providers list.
+        names = [p.name for p in aggregator.providers]
+        self.assertEqual(len(names), len(set(names)))
+
+    def test_concurrent_add_and_remove_consistent(self):
+        """Test that concurrent add/remove leaves consistent state."""
+        aggregator = Aggregator()
+        errors: list[Exception] = []
+
+        def add_and_remove() -> None:
+            for i in range(20):
+                try:
+                    aggregator.add_provider(MockProvider(f"p-{i}"))
+                    aggregator.remove_provider(f"p-{i}")
+                except Exception as e:
+                    errors.append(e)
+
+        threads = [threading.Thread(target=add_and_remove) for _ in range(5)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        self.assertEqual(len(errors), 0, f"Concurrent errors: {errors}")
+        # Verify both providers list and map are empty and consistent.
+        self.assertEqual(len(aggregator.provider_map), 0)
+        self.assertEqual(len(aggregator.providers), 0)
 
 
 if __name__ == "__main__":

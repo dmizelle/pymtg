@@ -6,6 +6,7 @@ results keyed by provider name in a dictionary format.
 """
 
 import logging
+import threading
 import time
 from typing import Any
 
@@ -29,6 +30,11 @@ class Aggregator:
     - Capturing and including errors from failed providers
     - Respecting each provider's rate limits
 
+    All methods that read or modify the provider list or provider_map are
+    thread-safe, using an internal reentrant lock (RLock) to protect shared
+    state. Methods like search and search_syntax are thread-safe via
+    _get_providers_to_query, which acquires the lock and returns a snapshot.
+
     Typical usage example:
 
         from pymtg import Scryfall
@@ -48,6 +54,7 @@ class Aggregator:
     Attributes:
         providers: List of BaseProvider instances to query.
         provider_map: Dictionary mapping provider names to provider instances.
+        _lock: Reentrant lock protecting providers and provider_map access.
     """
 
     def __init__(self, providers: list[BaseProvider] | None = None) -> None:
@@ -60,6 +67,7 @@ class Aggregator:
         """
         self.providers: list[BaseProvider] = providers or []
         self.provider_map: dict[str, BaseProvider] = {p.name: p for p in self.providers}
+        self._lock = threading.RLock()
 
     def add_provider(self, provider: BaseProvider) -> None:
         """Add a provider to the aggregator.
@@ -69,14 +77,19 @@ class Aggregator:
 
         Raises:
             ValueError: If a provider with the same name already exists.
+
+        Note:
+            This method is thread-safe and acquires an internal lock.
         """
-        if provider.name in self.provider_map:
-            raise ValueError(
-                f"Provider with name '{provider.name}' already exists in aggregator"
-            )
-        self.providers.append(provider)
-        self.provider_map[provider.name] = provider
-        logger.info(f"Added provider: {provider.name}")
+        with self._lock:
+            if provider.name in self.provider_map:
+                raise ValueError(
+                    f"Provider with name '{provider.name}' already exists "
+                    f"in aggregator"
+                )
+            self.providers.append(provider)
+            self.provider_map[provider.name] = provider
+            logger.info(f"Added provider: {provider.name}")
 
     def remove_provider(self, provider_name: str) -> bool:
         """Remove a provider from the aggregator.
@@ -86,14 +99,18 @@ class Aggregator:
 
         Returns:
             True if the provider was found and removed, False otherwise.
-        """
-        if provider_name not in self.provider_map:
-            return False
 
-        provider = self.provider_map[provider_name]
-        self.providers.remove(provider)
-        del self.provider_map[provider_name]
-        logger.info(f"Removed provider: {provider_name}")
+        Note:
+            This method is thread-safe and acquires an internal lock.
+        """
+        with self._lock:
+            if provider_name not in self.provider_map:
+                return False
+
+            provider = self.provider_map[provider_name]
+            self.providers.remove(provider)
+            del self.provider_map[provider_name]
+            logger.info(f"Removed provider: {provider_name}")
         return True
 
     def get_provider(self, provider_name: str) -> BaseProvider:
@@ -107,10 +124,14 @@ class Aggregator:
 
         Raises:
             KeyError: If the provider name is not found.
+
+        Note:
+            This method is thread-safe and acquires an internal lock.
         """
-        if provider_name not in self.provider_map:
-            raise KeyError(f"Provider '{provider_name}' not found in aggregator")
-        return self.provider_map[provider_name]
+        with self._lock:
+            if provider_name not in self.provider_map:
+                raise KeyError(f"Provider '{provider_name}' not found in aggregator")
+            return self.provider_map[provider_name]
 
     def search(
         self,
@@ -163,6 +184,10 @@ class Aggregator:
             #         "timing": {"duration": 0.25, ...}
             #     }
             # }
+
+        Note:
+            This method is thread-safe. It uses a snapshot of the providers
+            list (via _get_providers_to_query) for consistent iteration.
         """
         result_dict: dict[str, dict[str, Any]] = {}
 
@@ -217,6 +242,10 @@ class Aggregator:
         Example:
             aggregator = Aggregator(providers=[Scryfall()])
             results = aggregator.search_syntax("c:U type:creature", limit=10)
+
+        Note:
+            This method is thread-safe. It uses a snapshot of the providers
+            list (via _get_providers_to_query) for consistent iteration.
         """
         result_dict: dict[str, dict[str, Any]] = {}
 
@@ -245,13 +274,19 @@ class Aggregator:
 
         Returns:
             List of BaseProvider instances to query.
-        """
-        if sources is None:
-            return list(self.providers)
 
-        return [
-            self.provider_map[name] for name in sources if name in self.provider_map
-        ]
+        Note:
+            This method is thread-safe and acquires an internal lock.
+            Returns a snapshot copy of the providers list, which is safe
+            to iterate over without holding the lock.
+        """
+        with self._lock:
+            if sources is None:
+                return list(self.providers)
+
+            return [
+                self.provider_map[name] for name in sources if name in self.provider_map
+            ]
 
     def _query_provider(
         self,
@@ -379,22 +414,36 @@ class Aggregator:
 
         Returns:
             List of provider names that are configured in the aggregator.
+
+        Note:
+            This method is thread-safe and acquires an internal lock.
         """
-        return list(self.provider_map.keys())
+        with self._lock:
+            return list(self.provider_map.keys())
 
     def clear(self) -> None:
-        """Clear all providers from the aggregator."""
-        self.providers.clear()
-        self.provider_map.clear()
-        logger.info("Cleared all providers from aggregator")
+        """Clear all providers from the aggregator.
+
+        Note:
+            This method is thread-safe and acquires an internal lock.
+        """
+        with self._lock:
+            self.providers.clear()
+            self.provider_map.clear()
+            logger.info("Cleared all providers from aggregator")
 
     def __repr__(self) -> str:
         """Return a string representation of the aggregator.
 
         Returns:
             A string representation suitable for debugging.
+
+        Note:
+            This method is thread-safe and acquires an internal lock.
+            It may block if another thread holds the lock.
         """
-        return (
-            f"Aggregator(providers={len(self.providers)}, "
-            f"provider_names={list(self.provider_map.keys())})"
-        )
+        with self._lock:
+            return (
+                f"Aggregator(providers={len(self.providers)}, "
+                f"provider_names={list(self.provider_map.keys())})"
+            )
