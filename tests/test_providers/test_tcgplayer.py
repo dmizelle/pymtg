@@ -158,8 +158,8 @@ class TestTCGPlayerGetCard(unittest.TestCase):
         self.tcgplayer.auth_handler._authenticated = True
         self.tcgplayer.auth_handler.access_token = "test_token"
 
-    def test_get_card_success(self):
-        """Test successful card retrieval by product ID."""
+    def test_get_card_returns_card(self):
+        """Tests that get_card returns a card by product ID."""
         # Mock response
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -245,8 +245,8 @@ class TestTCGPlayerSearch(unittest.TestCase):
         self.tcgplayer.auth_handler._authenticated = True
         self.tcgplayer.auth_handler.access_token = "test_token"
 
-    def test_search_success(self):
-        """Test successful card search."""
+    def test_search_returns_results(self):
+        """Tests that search returns results for a query."""
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
@@ -337,8 +337,8 @@ class TestTCGPlayerSearchSyntax(unittest.TestCase):
         self.tcgplayer.auth_handler._authenticated = True
         self.tcgplayer.auth_handler.access_token = "test_token"
 
-    def test_search_syntax_success(self):
-        """Test successful syntax search."""
+    def test_search_syntax_returns_results(self):
+        """Tests that search_syntax returns results for a query."""
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
@@ -384,8 +384,8 @@ class TestTCGPlayerPricing(unittest.TestCase):
         self.tcgplayer.auth_handler._authenticated = True
         self.tcgplayer.auth_handler.access_token = "test_token"
 
-    def test_get_pricing_success(self):
-        """Test successful pricing retrieval."""
+    def test_get_pricing_returns_pricing(self):
+        """Tests that get_pricing returns pricing for a product ID."""
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
@@ -430,8 +430,8 @@ class TestTCGPlayerAutocomplete(unittest.TestCase):
         self.tcgplayer.auth_handler._authenticated = True
         self.tcgplayer.auth_handler.access_token = "test_token"
 
-    def test_autocomplete_success(self):
-        """Test successful autocomplete."""
+    def test_autocomplete_returns_results(self):
+        """Tests that autocomplete returns results for a query."""
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {

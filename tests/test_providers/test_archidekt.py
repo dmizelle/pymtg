@@ -50,8 +50,8 @@ class TestArchidektInitialization(unittest.TestCase):
                 username="test_user", password="test_pass"
             )
 
-    def test_initialization_with_credentials_logs_auth_success(self):
-        """Test that init with credentials logs authentication success at info."""
+    def test_initialization_with_credentials_logs_auth_info(self):
+        """Tests that init with credentials logs authentication info."""
         with patch.object(SessionAuthHandler, "authenticate"):
             with self.assertLogs("pymtg.providers.archidekt", level="INFO") as cm:
                 Archidekt(username="test_user", password="test_pass")
@@ -98,16 +98,16 @@ class TestArchidektAuthentication(unittest.TestCase):
     """Test Archidekt authentication methods."""
 
     @patch.object(SessionAuthHandler, "authenticate")
-    def test_authenticate_success(self, mock_auth):
-        """Test successful authentication."""
+    def test_authenticate_with_valid_credentials(self, mock_auth):
+        """Tests that authenticate works with valid credentials."""
         archidekt = Archidekt()
         archidekt.authenticate("test_user", "test_pass")
 
         mock_auth.assert_called_once()
 
     @patch.object(SessionAuthHandler, "authenticate")
-    def test_authenticate_success_logs_info(self, mock_auth):
-        """Test that successful authentication logs an info message."""
+    def test_authenticate_logs_info_on_success(self, mock_auth):
+        """Tests that authenticate logs an info message on success."""
         archidekt = Archidekt()
         with self.assertLogs("pymtg.providers.archidekt", level="INFO") as cm:
             archidekt.authenticate("test_user", "test_pass")
@@ -128,16 +128,16 @@ class TestArchidektAuthentication(unittest.TestCase):
             archidekt.authenticate("test_user", "test_pass")
 
     @patch.object(SessionAuthHandler, "refresh")
-    def test_refresh_auth_success(self, mock_refresh):
-        """Test successful authentication refresh."""
+    def test_refresh_auth_with_valid_credentials(self, mock_refresh):
+        """Tests that refresh_auth works with valid credentials."""
         archidekt = Archidekt()
         archidekt.refresh_auth()
 
         mock_refresh.assert_called_once()
 
     @patch.object(SessionAuthHandler, "refresh")
-    def test_refresh_auth_success_logs_info(self, mock_refresh):
-        """Test that successful auth refresh logs an info message."""
+    def test_refresh_auth_logs_info_on_success(self, mock_refresh):
+        """Tests that refresh_auth logs an info message on success."""
         archidekt = Archidekt()
         with self.assertLogs("pymtg.providers.archidekt", level="INFO") as cm:
             archidekt.refresh_auth()
@@ -167,10 +167,10 @@ class TestArchidektGetCard(unittest.TestCase):
     @patch.object(Archidekt, "_handle_response")
     @patch.object(Archidekt, "http_client")
     @patch.object(Archidekt, "_parse_card")
-    def test_get_card_success(
+    def test_get_card_returns_card(
         self, mock_parse_card, mock_http_client, mock_handle_response
     ):
-        """Test successful card retrieval by ID."""
+        """Tests that get_card returns a card by ID."""
         # Mock the HTTP client
         mock_response = MagicMock()
         mock_http_client.get.return_value = mock_response
@@ -252,10 +252,10 @@ class TestArchidektGetDeck(unittest.TestCase):
     @patch.object(Archidekt, "_handle_response")
     @patch.object(Archidekt, "http_client")
     @patch.object(Archidekt, "_parse_deck")
-    def test_get_deck_success(
+    def test_get_deck_returns_deck(
         self, mock_parse_deck, mock_http_client, mock_handle_response
     ):
-        """Test successful deck retrieval by ID."""
+        """Tests that get_deck returns a deck by ID."""
         # Mock the HTTP client
         mock_response = MagicMock()
         mock_http_client.get.return_value = mock_response
@@ -429,10 +429,10 @@ class TestArchidektSearch(unittest.TestCase):
     @patch.object(Archidekt, "http_client")
     @patch.object(Archidekt, "_build_search_query")
     @patch.object(Archidekt, "_parse_card")
-    def test_search_success(
+    def test_search_returns_results(
         self, mock_parse_card, mock_build_query, mock_http_client, mock_handle_response
     ):
-        """Test successful search with generic parameters."""
+        """Tests that search returns results for a query."""
         # Mock query building
         mock_build_query.return_value = 'name:"Black Lotus"'
 
@@ -535,10 +535,10 @@ class TestArchidektSearchSyntax(unittest.TestCase):
     @patch.object(Archidekt, "_handle_response")
     @patch.object(Archidekt, "http_client")
     @patch.object(Archidekt, "_parse_card")
-    def test_search_syntax_success(
+    def test_search_syntax_returns_results(
         self, mock_parse_card, mock_http_client, mock_handle_response
     ):
-        """Test successful search with provider-specific query syntax."""
+        """Tests that search_syntax returns results for a query."""
         # Mock HTTP client
         mock_response = MagicMock()
         mock_http_client.get.return_value = mock_response
