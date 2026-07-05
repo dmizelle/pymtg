@@ -228,10 +228,17 @@ class BaseProvider(ABC):
     def is_authenticated(self) -> bool:
         """Check if the provider is currently authenticated.
 
+        This is an optional method that providers can override if they
+        support authentication.
+
         Returns:
             True if the provider is authenticated, False otherwise.
+
+        Raises:
+            NotImplementedError: If the provider doesn't support
+                authentication.
         """
-        return False
+        raise NotImplementedError(f"{self.name} does not support authentication")
 
     def refresh_auth(self) -> None:
         """Refresh the provider's authentication.
