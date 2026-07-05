@@ -440,8 +440,10 @@ def get_default_rate_limiter() -> RateLimiter:
             ),
             "cardmarket": RateLimitConfig(
                 requests_per_second=None,
-                requests_per_minute=None,
-                # Cardmarket has daily limits, not per-second/minute
+                requests_per_minute=10,
+                # Cardmarket: 600 req/min hard limit, daily limits vary
+                # (5K private, 100K commercial, 1M powerseller)
+                burst_size=5,
             ),
         }
     )
