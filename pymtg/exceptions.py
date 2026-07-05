@@ -3,6 +3,11 @@
 This module provides a comprehensive exception hierarchy that allows for
 consistent error handling across all providers. Each exception type
 provides specific information about the error that occurred.
+
+All ``__str__`` methods use a standardized format for additional
+information: string values are rendered with ``!r`` for clarity and
+to handle edge cases like empty strings or whitespace. Numeric and
+dict values use their default string representation.
 """
 
 from typing import Any
@@ -171,9 +176,9 @@ class NotFoundError(PyMTGError):
             A formatted string containing the error details.
         """
         base = super().__str__()
-        base += f" Resource: {self.resource_type}"
+        base += f" Resource: {self.resource_type!r}"
         if self.resource_id:
-            base += f" (id: {self.resource_id})"
+            base += f" (id: {self.resource_id!r})"
         return base
 
     def __repr__(self) -> str:
@@ -231,7 +236,7 @@ class AuthenticationError(PyMTGError):
         """
         base = super().__str__()
         if self.auth_type:
-            base += f" Auth type: {self.auth_type}"
+            base += f" Auth type: {self.auth_type!r}"
         return base
 
     def __repr__(self) -> str:
@@ -293,7 +298,7 @@ class InvalidQueryError(PyMTGError):
         if self.query:
             base += f" Query: {self.query!r}"
         if self.provider_specific_message:
-            base += f" Provider message: {self.provider_specific_message}"
+            base += f" Provider message: {self.provider_specific_message!r}"
         return base
 
     def __repr__(self) -> str:
@@ -362,8 +367,7 @@ class NetworkError(PyMTGError):
         """
         base = super().__str__()
         if self.original_exception:
-            orig_type = type(self.original_exception).__name__
-            base += f" Original: {orig_type}: {self.original_exception}"
+            base += f" Original: {self.original_exception!r}"
         return base
 
     def __repr__(self) -> str:
