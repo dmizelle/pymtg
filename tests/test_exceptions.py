@@ -84,6 +84,25 @@ class TestPyMTGError:
         assert "Details:" in str_repr
         assert "key" in str_repr
 
+    def test_pymtg_error_str_all_parameters(self) -> None:
+        """Test PyMTGError string representation with all parameters set.
+
+        Verifies the complete formatted output when message, provider,
+        status_code, and details are all provided simultaneously, ensuring
+        each component appears in the correct order and format.
+        """
+        error = PyMTGError(
+            message="Test error",
+            provider="scryfall",
+            status_code=404,
+            details={"key": "value"},
+        )
+        str_repr = str(error)
+        assert str_repr == (
+            "[scryfall] PyMTGError: Test error "
+            "(status code: 404) Details: {'key': 'value'}"
+        )
+
     def test_pymtg_error_repr(self) -> None:
         """Test PyMTGError repr representation."""
         error = PyMTGError(
@@ -137,6 +156,27 @@ class TestRateLimitError:
         error = RateLimitError("Rate limit exceeded")
         str_repr = str(error)
         assert "Retry after:" not in str_repr
+
+    def test_rate_limit_error_str_all_parameters(self) -> None:
+        """Test RateLimitError string representation with all parameters set.
+
+        Verifies the complete formatted output when message, provider,
+        status_code, details, and retry_after are all provided simultaneously,
+        ensuring each component appears in the correct order and format.
+        """
+        error = RateLimitError(
+            message="Rate limit exceeded",
+            provider="scryfall",
+            status_code=429,
+            details={"retry_after": "60"},
+            retry_after=60,
+        )
+        str_repr = str(error)
+        assert str_repr == (
+            "[scryfall] RateLimitError: Rate limit exceeded "
+            "(status code: 429) Details: {'retry_after': '60'} "
+            "Retry after: 60s"
+        )
 
     def test_rate_limit_error_repr(self) -> None:
         """Test RateLimitError repr representation."""
@@ -192,6 +232,29 @@ class TestNotFoundError:
         assert "Resource: card" in str_repr
         assert "(id:" not in str_repr
 
+    def test_not_found_error_str_all_parameters(self) -> None:
+        """Test NotFoundError string representation with all parameters set.
+
+        Verifies the complete formatted output when message, provider,
+        status_code, details, resource_type, and resource_id are all provided
+        simultaneously, ensuring each component appears in the correct order
+        and format.
+        """
+        error = NotFoundError(
+            message="Card not found",
+            provider="scryfall",
+            status_code=404,
+            details={"id": "123"},
+            resource_type="card",
+            resource_id="scryfall-card-123",
+        )
+        str_repr = str(error)
+        assert str_repr == (
+            "[scryfall] NotFoundError: Card not found "
+            "(status code: 404) Details: {'id': '123'} "
+            "Resource: card (id: scryfall-card-123)"
+        )
+
     def test_not_found_error_repr(self) -> None:
         """Test NotFoundError repr representation."""
         error = NotFoundError("Card not found", resource_type="card", resource_id="123")
@@ -237,6 +300,27 @@ class TestAuthenticationError:
         error = AuthenticationError("Invalid credentials")
         str_repr = str(error)
         assert "Auth type:" not in str_repr
+
+    def test_authentication_error_str_all_parameters(self) -> None:
+        """Test AuthenticationError string representation with all parameters.
+
+        Verifies the complete formatted output when message, provider,
+        status_code, details, and auth_type are all provided simultaneously,
+        ensuring each component appears in the correct order and format.
+        """
+        error = AuthenticationError(
+            message="Invalid credentials",
+            provider="archidekt",
+            status_code=401,
+            details={"error": "invalid_token"},
+            auth_type="oauth2",
+        )
+        str_repr = str(error)
+        assert str_repr == (
+            "[archidekt] AuthenticationError: Invalid credentials "
+            "(status code: 401) Details: {'error': 'invalid_token'} "
+            "Auth type: oauth2"
+        )
 
     def test_authentication_error_repr(self) -> None:
         """Test AuthenticationError repr representation."""
@@ -292,6 +376,30 @@ class TestInvalidQueryError:
         assert "Query:" not in str_repr
         assert "Provider message:" not in str_repr
 
+    def test_invalid_query_error_str_all_parameters(self) -> None:
+        """Test InvalidQueryError string representation with all parameters.
+
+        Verifies the complete formatted output when message, provider,
+        status_code, details, query, and provider_specific_message are all
+        provided simultaneously, ensuring each component appears in the
+        correct order and format.
+        """
+        error = InvalidQueryError(
+            message="Invalid query syntax",
+            provider="scryfall",
+            status_code=400,
+            details={"query": "invalid"},
+            query="invalid query",
+            provider_specific_message="Syntax error at position 5",
+        )
+        str_repr = str(error)
+        assert str_repr == (
+            "[scryfall] InvalidQueryError: Invalid query syntax "
+            "(status code: 400) Details: {'query': 'invalid'} "
+            "Query: 'invalid query' Provider message: Syntax error at "
+            "position 5"
+        )
+
     def test_invalid_query_error_repr(self) -> None:
         """Test InvalidQueryError repr representation."""
         error = InvalidQueryError(
@@ -324,6 +432,26 @@ class TestAPIError:
         assert "APIError: Generic API error" in str_repr
         assert "[test]" in str_repr
         assert "(status code: 500)" in str_repr
+
+    def test_api_error_str_all_parameters(self) -> None:
+        """Test APIError string representation with all parameters set.
+
+        Verifies the complete formatted output when message, provider,
+        status_code, and details are all provided simultaneously. APIError
+        inherits __str__ from PyMTGError without override, so the output
+        should match the base class format with the APIError class name.
+        """
+        error = APIError(
+            message="Generic API error",
+            provider="test",
+            status_code=500,
+            details={"code": "INTERNAL"},
+        )
+        str_repr = str(error)
+        assert str_repr == (
+            "[test] APIError: Generic API error "
+            "(status code: 500) Details: {'code': 'INTERNAL'}"
+        )
 
 
 class TestNetworkError:
@@ -364,6 +492,29 @@ class TestNetworkError:
         error = NetworkError("Connection failed")
         str_repr = str(error)
         assert "Original:" not in str_repr
+
+    def test_network_error_str_all_parameters(self) -> None:
+        """Test NetworkError string representation with all parameters set.
+
+        Verifies the complete formatted output when message, provider,
+        status_code, details, and original_exception are all provided
+        simultaneously, ensuring each component appears in the correct order
+        and format.
+        """
+        original_exc = ConnectionError("Connection refused")
+        error = NetworkError(
+            message="Connection failed",
+            provider="scryfall",
+            status_code=503,
+            details={"timeout": 30},
+            original_exception=original_exc,
+        )
+        str_repr = str(error)
+        assert str_repr == (
+            "[scryfall] NetworkError: Connection failed "
+            "(status code: 503) Details: {'timeout': 30} "
+            "Original: ConnectionError: Connection refused"
+        )
 
     def test_network_error_repr(self) -> None:
         """Test NetworkError repr representation."""
