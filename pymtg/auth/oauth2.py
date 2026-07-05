@@ -125,6 +125,14 @@ class OAuth2ClientCredentialsHandler(BaseAuthHandler):
             # Only once all fields are successfully parsed do we commit them to
             # instance attributes, making the update atomic.
             token_data = response.json()
+
+            # Validate required fields before updating state
+            if not token_data.get("access_token"):
+                raise AuthenticationError(
+                    "Missing access_token in token response",
+                    auth_type="oauth2",
+                )
+
             new_access_token = token_data.get("access_token")
             new_token_type = token_data.get("token_type", "Bearer")
 
