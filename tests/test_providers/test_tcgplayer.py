@@ -75,23 +75,30 @@ class TestTCGPlayerInitialization(unittest.TestCase):
         self.assertEqual(status["rate_limit"], {"requests_per_second": 10})
 
     def test_authenticate_after_initialization(self):
-        """Test authenticating after provider initialization."""
+        """Test authenticating after provider initialization.
+
+        Mocks the underlying HTTP token request so the real authenticate()
+        flow runs end-to-end, naturally setting the authenticated state via
+        the public API rather than directly manipulating private flags.
+        """
         tcgplayer = TCGPlayer()
         self.assertFalse(tcgplayer.is_authenticated())
 
-        # Mock the authenticate method to set authenticated flag
-        tcgplayer.auth_handler._authenticated = False
-        with patch.object(tcgplayer.auth_handler, "authenticate"):
-            with patch.object(tcgplayer.auth_handler, "apply_auth"):
-                # Set the flag manually since we're mocking
-                tcgplayer.auth_handler._authenticated = True
-                tcgplayer.auth_handler.access_token = "test_token"
-                tcgplayer.authenticate(
-                    client_id="new_client_id", client_secret="new_client_secret"
-                )
-                self.assertEqual(tcgplayer.client_id, "new_client_id")
-                self.assertEqual(tcgplayer.client_secret, "new_client_secret")
-                self.assertTrue(tcgplayer.is_authenticated())
+        # Mock the HTTP token request so the real authenticate() flow runs
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "access_token": "test_token",
+            "token_type": "Bearer",
+            "expires_in": 3600,
+        }
+        with patch("pymtg.auth.oauth2.requests.post", return_value=mock_response):
+            tcgplayer.authenticate(
+                client_id="new_client_id", client_secret="new_client_secret"
+            )
+        self.assertEqual(tcgplayer.client_id, "new_client_id")
+        self.assertEqual(tcgplayer.client_secret, "new_client_secret")
+        self.assertTrue(tcgplayer.is_authenticated())
 
     def test_repr(self):
         """Test string representation of TCGPlayer provider."""
