@@ -80,9 +80,8 @@ class TestArchidektInitialization(unittest.TestCase):
         archidekt = Archidekt()
         status = archidekt.get_rate_limit_status()
 
-        self.assertIn("rate_limit", status)
-        self.assertIn("requests_per_minute", status["rate_limit"])
-        self.assertEqual(status["rate_limit"]["requests_per_minute"], 60)
+        self.assertIn("requests_per_minute", status)
+        self.assertEqual(status["requests_per_minute"], 60)
 
     def test_repr(self):
         """Test string representation of Archidekt provider."""

@@ -253,7 +253,7 @@ class BaseProvider(ABC):
         Returns:
             A dictionary containing rate limit information.
         """
-        return {"rate_limit": self.rate_limit}
+        return self.rate_limit
 
     def iter_search(
         self,
