@@ -43,7 +43,7 @@ class BaseProvider(ABC):
     """
 
     name: str = ""
-    base_url: str = ""
+    base_url: str | None = None
     config: ProviderConfig = None  # type: ignore[assignment]
     http_client: HTTPClient = None  # type: ignore[assignment]
     rate_limit: dict[str, Any] = {}
@@ -59,7 +59,6 @@ class BaseProvider(ABC):
             self.name,
             ProviderConfig(
                 name=self.name,
-                base_url="",
             ),
         )
         self.base_url = self.config.base_url
@@ -68,7 +67,7 @@ class BaseProvider(ABC):
         # Initialize HTTP client (only if not already set by test patching)
         if not hasattr(self, "http_client") or self.http_client is None:
             self.http_client = HTTPClient(
-                base_url=self.base_url,
+                base_url=self.base_url or "",
                 timeout=self.config.timeout,
                 user_agent=self.config.user_agent,
             )
