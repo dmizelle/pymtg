@@ -431,7 +431,14 @@ class Cardmarket(BaseProvider):
             NetworkError: If there is a network error.
             APIError: If the API returns an error.
             AuthenticationError: If authentication is required but not provided.
+            InvalidQueryError: If card_id is not provided.
         """
+        if not card_id:
+            raise InvalidQueryError(
+                "card_id is required for Cardmarket.get_card()",
+                provider=self.name,
+            )
+
         try:
             # Validate authentication
             if not self.is_authenticated():

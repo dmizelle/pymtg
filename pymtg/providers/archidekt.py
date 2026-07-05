@@ -23,7 +23,7 @@ from typing import Any
 import requests
 
 from pymtg.auth.session import SessionAuthHandler
-from pymtg.exceptions import NetworkError, NotFoundError
+from pymtg.exceptions import InvalidQueryError, NetworkError, NotFoundError
 from pymtg.models.card import Card, CardFace
 from pymtg.models.deck import Deck
 from pymtg.models.enums import Board, Color, Format, Rarity, SetType
@@ -308,7 +308,14 @@ class Archidekt(BaseProvider):
             NotFoundError: If the card is not found.
             NetworkError: If there is a network error.
             APIError: If the API returns an error.
+            InvalidQueryError: If card_id is not provided.
         """
+        if not card_id:
+            raise InvalidQueryError(
+                "card_id is required for Archidekt.get_card()",
+                provider=self.name,
+            )
+
         try:
             response = self.http_client.get(f"/api/cards/{card_id}/")
             data = self._handle_response(response, "card")
