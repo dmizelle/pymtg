@@ -50,6 +50,17 @@ class TestArchidektInitialization(unittest.TestCase):
                 username="test_user", password="test_pass"
             )
 
+    def test_initialization_with_credentials_logs_auth_success(self):
+        """Test that init with credentials logs authentication success at info."""
+        with patch.object(SessionAuthHandler, "authenticate"):
+            with self.assertLogs("pymtg.providers.archidekt", level="INFO") as cm:
+                Archidekt(username="test_user", password="test_pass")
+
+        self.assertTrue(
+            any("Archidekt authentication successful" in msg for msg in cm.output),
+            f"Expected auth success log, got: {cm.output}",
+        )
+
     def test_is_authenticated_without_creds(self):
         """Test that is_authenticated returns False without credentials."""
         archidekt = Archidekt()
@@ -95,6 +106,18 @@ class TestArchidektAuthentication(unittest.TestCase):
         mock_auth.assert_called_once()
 
     @patch.object(SessionAuthHandler, "authenticate")
+    def test_authenticate_success_logs_info(self, mock_auth):
+        """Test that successful authentication logs an info message."""
+        archidekt = Archidekt()
+        with self.assertLogs("pymtg.providers.archidekt", level="INFO") as cm:
+            archidekt.authenticate("test_user", "test_pass")
+
+        self.assertTrue(
+            any("Archidekt authentication successful" in msg for msg in cm.output),
+            f"Expected auth success log, got: {cm.output}",
+        )
+
+    @patch.object(SessionAuthHandler, "authenticate")
     def test_authenticate_failure(self, mock_auth):
         """Test authentication failure raises AuthenticationError."""
         mock_auth.side_effect = AuthenticationError("Login failed")
@@ -111,6 +134,21 @@ class TestArchidektAuthentication(unittest.TestCase):
         archidekt.refresh_auth()
 
         mock_refresh.assert_called_once()
+
+    @patch.object(SessionAuthHandler, "refresh")
+    def test_refresh_auth_success_logs_info(self, mock_refresh):
+        """Test that successful auth refresh logs an info message."""
+        archidekt = Archidekt()
+        with self.assertLogs("pymtg.providers.archidekt", level="INFO") as cm:
+            archidekt.refresh_auth()
+
+        self.assertTrue(
+            any(
+                "Archidekt authentication refreshed successfully" in msg
+                for msg in cm.output
+            ),
+            f"Expected auth refresh log, got: {cm.output}",
+        )
 
     @patch.object(SessionAuthHandler, "refresh")
     def test_refresh_auth_failure(self, mock_refresh):
@@ -554,6 +592,20 @@ class TestArchidektAutocomplete(unittest.TestCase):
         self.assertIsInstance(suggestions, list)
         self.assertEqual(len(suggestions), 0)
 
+    def test_autocomplete_logs_warning(self):
+        """Test that autocomplete logs a warning about not being implemented."""
+        archidekt = Archidekt()
+        with self.assertLogs("pymtg.providers.archidekt", level="WARNING") as cm:
+            archidekt.autocomplete("black")
+
+        self.assertTrue(
+            any(
+                "Archidekt autocomplete not yet implemented" in msg for msg in cm.output
+            ),
+            f"Expected 'Archidekt autocomplete not yet implemented' warning, "
+            f"got: {cm.output}",
+        )
+
 
 class TestArchidektParseCard(unittest.TestCase):
     """Test Archidekt._parse_card() method."""
@@ -677,6 +729,50 @@ class TestArchidektParseCard(unittest.TestCase):
         self.assertEqual(card.oracle_text, "")
         self.assertIsNone(card.power)
         self.assertIsNone(card.toughness)
+
+    def test_parse_card_invalid_color_logs_debug(self):
+        """Test that invalid color strings are logged at debug, not warning."""
+        archidekt = Archidekt()
+
+        data = {
+            "id": "card-invalid-color",
+            "name": "Invalid Color Card",
+            "colors": ["X"],
+            "color_identity": ["Y"],
+            "color_indicator": ["Z"],
+        }
+
+        with self.assertLogs("pymtg.providers.archidekt", level="DEBUG") as cm:
+            card = archidekt._parse_card(data)
+
+        self.assertIsInstance(card, Card)
+        debug_msgs = [msg for msg in cm.output if "DEBUG" in msg]
+        self.assertTrue(
+            any("Unknown color: X" in msg for msg in debug_msgs),
+            f"Expected debug log 'Unknown color: X', got: {cm.output}",
+        )
+        self.assertTrue(
+            any("Unknown color in identity: Y" in msg for msg in debug_msgs),
+            f"Expected debug log 'Unknown color in identity: Y', got: {cm.output}",
+        )
+        self.assertTrue(
+            any("Unknown color in indicator: Z" in msg for msg in debug_msgs),
+            f"Expected debug log 'Unknown color in indicator: Z', got: {cm.output}",
+        )
+
+    def test_parse_card_invalid_color_no_warning(self):
+        """Test that invalid colors do not produce warning-level logs."""
+        archidekt = Archidekt()
+
+        data = {
+            "id": "card-invalid-color",
+            "name": "Invalid Color Card",
+            "colors": ["X"],
+        }
+
+        # assertNoLogs verifies no records at WARNING or above are emitted.
+        with self.assertNoLogs("pymtg.providers.archidekt", level="WARNING"):
+            archidekt._parse_card(data)
 
 
 class TestArchidektParseDeck(unittest.TestCase):

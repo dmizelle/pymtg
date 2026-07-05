@@ -110,6 +110,7 @@ class Archidekt(BaseProvider):
         if username and password:
             self.auth_handler.authenticate(username=username, password=password)
             self._apply_auth_to_http_client()
+            logger.info("Archidekt authentication successful")
 
     def _initialize(self, **kwargs: Any) -> None:
         """Archidekt-specific initialization.
@@ -144,6 +145,7 @@ class Archidekt(BaseProvider):
         """
         self.auth_handler.refresh()
         self._apply_auth_to_http_client()
+        logger.info("Archidekt authentication refreshed successfully")
 
     def authenticate(self, username: str, password: str) -> None:
         """Authenticate with Archidekt using username and password.
@@ -158,6 +160,7 @@ class Archidekt(BaseProvider):
         """
         self.auth_handler.authenticate(username=username, password=password)
         self._apply_auth_to_http_client()
+        logger.info("Archidekt authentication successful")
 
     def search(
         self,
@@ -562,7 +565,7 @@ class Archidekt(BaseProvider):
                     colors.append(Color(color_str.upper()))
                 except ValueError:
                     # Handle invalid color strings
-                    logger.warning(f"Invalid color: {color_str}")
+                    logger.debug(f"Unknown color: {color_str}")
 
         # Parse color identity
         color_identity_data = data.get("color_identity", [])
@@ -572,7 +575,7 @@ class Archidekt(BaseProvider):
                 try:
                     color_identity.append(Color(color_str.upper()))
                 except ValueError:
-                    logger.warning(f"Invalid color in identity: {color_str}")
+                    logger.debug(f"Unknown color in identity: {color_str}")
 
         # Parse color indicator
         color_indicator_data = data.get("color_indicator", [])
@@ -582,7 +585,7 @@ class Archidekt(BaseProvider):
                 try:
                     color_indicator.append(Color(color_str.upper()))
                 except ValueError:
-                    logger.warning(f"Invalid color in indicator: {color_str}")
+                    logger.debug(f"Unknown color in indicator: {color_str}")
 
         # Parse rarity
         rarity_str = data.get("rarity", "").upper()
