@@ -24,6 +24,10 @@ class HTTPClient:
     functionality across all providers, including User-Agent header
     handling, timeout management, and error handling.
 
+    Note:
+        The requests.Session used internally is not thread-safe.
+        Do not share HTTPClient instances across threads.
+
     Attributes:
         session: The requests Session instance used for making requests.
         base_url: The base URL for the API.
@@ -40,11 +44,21 @@ class HTTPClient:
         """Initialize an HTTPClient.
 
         Args:
-            base_url: The base URL for the API.
+            base_url: The base URL for the API. Must start with http:// or https://.
             timeout: Request timeout in seconds. Defaults to 30.
             user_agent: User-Agent string to use for requests.
                 Defaults to the pymtg default User-Agent.
+
+        Raises:
+            ValueError: If base_url is not a valid URL (must start with http:// or https://).
         """
+        if not isinstance(base_url, str):
+            raise ValueError("base_url must be a string")
+        base_url = base_url.strip()
+        if not base_url or not base_url.startswith(("http://", "https://")):
+            raise ValueError(
+                "base_url must be a valid URL starting with http:// or https://"
+            )
         self.session = requests.Session()
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
@@ -242,11 +256,19 @@ class HTTPClient:
         """Build a full URL from the base URL and endpoint.
 
         Args:
-            endpoint: The API endpoint.
+            endpoint: The API endpoint. Must be a non-empty string.
 
         Returns:
             The full URL.
+
+        Raises:
+            ValueError: If endpoint is empty.
         """
+        if not isinstance(endpoint, str):
+            raise ValueError("endpoint must be a string")
+        endpoint = endpoint.strip()
+        if not endpoint:
+            raise ValueError("endpoint must be a non-empty string")
         if endpoint.startswith(("http://", "https://")):
             return endpoint
         return f"{self.base_url}/{endpoint.lstrip('/')}"
