@@ -222,7 +222,11 @@ class TestMoxfieldSearch(unittest.TestCase):
     """Test Moxfield.search() method."""
 
     def test_search_returns_results(self):
-        """Tests that search returns card results."""
+        """Tests that search returns card results.
+
+        This test verifies that the correct endpoint and query parameters are
+        passed to the HTTP client, including the built query string and limit.
+        """
         moxfield = Moxfield(api_key="test-key")
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -235,20 +239,44 @@ class TestMoxfieldSearch(unittest.TestCase):
                 "rarity": "mythic",
             }
         ]
-        with patch.object(moxfield.http_client, "get", return_value=mock_response):
+        with patch.object(
+            moxfield.http_client, "get", return_value=mock_response
+        ) as mock_get:
             result = moxfield.search(name="Black Lotus", limit=5)
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0].name, "Black Lotus")
+        # Verify HTTP client was called with correct URL and params
+        mock_get.assert_called_once()
+        call_args = mock_get.call_args
+        self.assertEqual(call_args[0][0], "/cards/search")
+        self.assertEqual(
+            call_args[1]["params"],
+            {"query": '"Black Lotus"', "limit": 5},
+        )
 
     def test_search_empty_results(self):
-        """Test that search returns empty list when no results."""
+        """Tests that search returns empty list when no results.
+
+        This test verifies that the correct endpoint and query parameters are
+        passed to the HTTP client even when no results are returned.
+        """
         moxfield = Moxfield(api_key="test-key")
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = []
-        with patch.object(moxfield.http_client, "get", return_value=mock_response):
+        with patch.object(
+            moxfield.http_client, "get", return_value=mock_response
+        ) as mock_get:
             result = moxfield.search(name="Non-existent Card")
         self.assertEqual(result, [])
+        # Verify HTTP client was called with correct URL and params
+        mock_get.assert_called_once()
+        call_args = mock_get.call_args
+        self.assertEqual(call_args[0][0], "/cards/search")
+        self.assertEqual(
+            call_args[1]["params"],
+            {"query": '"Non-existent Card"', "limit": 20},
+        )
 
     def test_search_network_error(self):
         """Test that search raises NetworkError on network failure."""
@@ -309,7 +337,11 @@ class TestMoxfieldSearchSyntax(unittest.TestCase):
     """Test Moxfield.search_syntax() method."""
 
     def test_search_syntax_returns_results(self):
-        """Tests that search_syntax returns results for a syntax query."""
+        """Tests that search_syntax returns results for a syntax query.
+
+        This test verifies that the correct endpoint and query parameters are
+        passed to the HTTP client, including the raw query string and limit.
+        """
         moxfield = Moxfield(api_key="test-key")
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -322,10 +354,20 @@ class TestMoxfieldSearchSyntax(unittest.TestCase):
                 "rarity": "common",
             }
         ]
-        with patch.object(moxfield.http_client, "get", return_value=mock_response):
+        with patch.object(
+            moxfield.http_client, "get", return_value=mock_response
+        ) as mock_get:
             result = moxfield.search_syntax("t:Land", limit=10)
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0].name, "Island")
+        # Verify HTTP client was called with correct URL and params
+        mock_get.assert_called_once()
+        call_args = mock_get.call_args
+        self.assertEqual(call_args[0][0], "/cards/search")
+        self.assertEqual(
+            call_args[1]["params"],
+            {"query": "t:Land", "limit": 10},
+        )
 
     def test_search_syntax_requires_auth(self):
         """Test that search_syntax raises AuthenticationError without API key."""
