@@ -9,6 +9,13 @@ from typing import Any
 
 import requests
 
+from pymtg.exceptions import AuthenticationError  # noqa: F401
+
+# AuthenticationError is imported so it is available in this module's
+# namespace, matching the `Raises:` sections of the abstract method
+# docstrings below. Subclasses raise this exception and callers may
+# catch it by reference from either pymtg.auth.base or pymtg.exceptions.
+
 
 class BaseAuthHandler(ABC):
     """Abstract base class for authentication handlers.
