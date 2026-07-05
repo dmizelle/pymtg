@@ -205,6 +205,36 @@ def retry_on_rate_limit(
             for attempt in range(config.max_retries + 1):
                 try:
                     return func(*args, **kwargs)
+                except TimeoutError as e:
+                    # TimeoutError is handled before retry_exceptions to ensure
+                    # retry_on_timeout is respected even if a user includes
+                    # TimeoutError in retry_exceptions.
+                    if not config.retry_on_timeout:
+                        raise
+
+                    last_exception = e
+
+                    if attempt >= config.max_retries:
+                        logger.warning(
+                            f"Max retries ({config.max_retries}) exceeded "
+                            f"for {func.__name__}"
+                        )
+                        raise
+
+                    backoff = calculate_backoff(
+                        attempt=attempt,
+                        backoff_factor=config.backoff_factor,
+                        max_backoff=config.max_backoff,
+                        jitter=config.jitter,
+                    )
+
+                    logger.debug(
+                        f"{type(e).__name__} in {func.__name__}, "
+                        f"retrying in {backoff:.2f}s "
+                        f"(attempt {attempt + 1}/{config.max_retries + 1})"
+                    )
+                    time.sleep(backoff)
+
                 except config.retry_exceptions as e:
                     last_exception = e
 
@@ -233,34 +263,7 @@ def retry_on_rate_limit(
                             backoff = max(backoff, float(retry_after))
 
                     logger.debug(
-                        f"Rate limit error in {func.__name__}, "
-                        f"retrying in {backoff:.2f}s "
-                        f"(attempt {attempt + 1}/{config.max_retries + 1})"
-                    )
-                    time.sleep(backoff)
-
-                except TimeoutError as e:
-                    if not config.retry_on_timeout:
-                        raise
-
-                    last_exception = e
-
-                    if attempt >= config.max_retries:
-                        logger.warning(
-                            f"Max retries ({config.max_retries}) exceeded "
-                            f"for {func.__name__}"
-                        )
-                        raise
-
-                    backoff = calculate_backoff(
-                        attempt=attempt,
-                        backoff_factor=config.backoff_factor,
-                        max_backoff=config.max_backoff,
-                        jitter=config.jitter,
-                    )
-
-                    logger.debug(
-                        f"Timeout error in {func.__name__}, "
+                        f"{type(e).__name__} in {func.__name__}, "
                         f"retrying in {backoff:.2f}s "
                         f"(attempt {attempt + 1}/{config.max_retries + 1})"
                     )
@@ -314,6 +317,39 @@ def retry_with_config(
             for attempt in range(actual_config.max_retries + 1):
                 try:
                     return func(*args, **kwargs)
+                except TimeoutError as e:
+                    # TimeoutError is handled before retry_exceptions to ensure
+                    # retry_on_timeout is respected even if a user includes
+                    # TimeoutError in retry_exceptions.
+                    if not actual_config.retry_on_timeout:
+                        raise
+
+                    last_exception = e
+
+                    if attempt >= actual_config.max_retries:
+                        max_retries = actual_config.max_retries
+                        logger.warning(
+                            f"Max retries ({max_retries}) exceeded for "
+                            f"{func.__name__}"
+                        )
+                        raise
+
+                    backoff = calculate_backoff(
+                        attempt=attempt,
+                        backoff_factor=actual_config.backoff_factor,
+                        max_backoff=actual_config.max_backoff,
+                        jitter=actual_config.jitter,
+                    )
+
+                    max_retries = actual_config.max_retries
+                    func_name = func.__name__
+                    logger.debug(
+                        f"{type(e).__name__} in {func_name}, "
+                        f"retrying in {backoff:.2f}s "
+                        f"(attempt {attempt + 1}/{max_retries + 1})"
+                    )
+                    time.sleep(backoff)
+
                 except actual_config.retry_exceptions as e:
                     last_exception = e
 
@@ -342,36 +378,8 @@ def retry_with_config(
                     max_retries = actual_config.max_retries
                     func_name = func.__name__
                     logger.debug(
-                        f"Error in {func_name}, retrying in {backoff:.2f}s "
-                        f"(attempt {attempt + 1}/{max_retries + 1})"
-                    )
-                    time.sleep(backoff)
-
-                except TimeoutError as e:
-                    if not actual_config.retry_on_timeout:
-                        raise
-
-                    last_exception = e
-
-                    if attempt >= actual_config.max_retries:
-                        max_retries = actual_config.max_retries
-                        logger.warning(
-                            f"Max retries ({max_retries}) exceeded for "
-                            f"{func.__name__}"
-                        )
-                        raise
-
-                    backoff = calculate_backoff(
-                        attempt=attempt,
-                        backoff_factor=actual_config.backoff_factor,
-                        max_backoff=actual_config.max_backoff,
-                        jitter=actual_config.jitter,
-                    )
-
-                    max_retries = actual_config.max_retries
-                    func_name = func.__name__
-                    logger.debug(
-                        f"Timeout in {func_name}, retrying in {backoff:.2f}s "
+                        f"{type(e).__name__} in {func_name}, "
+                        f"retrying in {backoff:.2f}s "
                         f"(attempt {attempt + 1}/{max_retries + 1})"
                     )
                     time.sleep(backoff)
