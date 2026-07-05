@@ -93,8 +93,26 @@ class OAuth1Handler(BaseAuthHandler):
 
         Raises:
             AuthenticationError: If authentication fails
-                (missing required credentials).
+                (missing required credentials), or if partial credential
+                pairs are provided (e.g. consumer_key without
+                consumer_secret).
         """
+        # Validate credential pairs before any updates to prevent
+        # inconsistent state where one credential in a pair is updated
+        # while the other retains its previous value.
+        if (consumer_key is not None) != (consumer_secret is not None):
+            raise AuthenticationError(
+                "consumer_key and consumer_secret must be provided "
+                "together; partial updates are not allowed",
+                auth_type="oauth1",
+            )
+        if (access_token is not None) != (access_token_secret is not None):
+            raise AuthenticationError(
+                "access_token and access_token_secret must be provided "
+                "together; partial updates are not allowed",
+                auth_type="oauth1",
+            )
+
         # Update stored credentials
         self._consumer_key = consumer_key or self._consumer_key
         self._consumer_secret = consumer_secret or self._consumer_secret
