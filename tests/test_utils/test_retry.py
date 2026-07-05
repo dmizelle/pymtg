@@ -6,7 +6,7 @@ TimeoutError is included in retry_exceptions (issue #171).
 """
 
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from pymtg.exceptions import RateLimitError
 from pymtg.utils.retry import (
