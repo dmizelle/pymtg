@@ -149,19 +149,24 @@ class Deck(PyMTGBaseModel):
     def get_unique_cards(self) -> list[DeckCard]:
         """Get the list of unique cards in the deck.
 
+        Uses case-insensitive matching for consistency with get_card_count.
+
         Returns:
             List of DeckCard objects with unique card names.
         """
         seen: dict[str, DeckCard] = {}
         for card in self.get_main_deck_cards():
-            if card.card.name not in seen:
-                seen[card.card.name] = card
+            key = card.card.name.lower()
+            if key not in seen:
+                seen[key] = card
         for card in self.get_sideboard_cards():
-            if card.card.name not in seen:
-                seen[card.card.name] = card
+            key = card.card.name.lower()
+            if key not in seen:
+                seen[key] = card
         for card in self.get_maybeboard_cards():
-            if card.card.name not in seen:
-                seen[card.card.name] = card
+            key = card.card.name.lower()
+            if key not in seen:
+                seen[key] = card
         return list(seen.values())
 
     def is_valid_for_format(self) -> bool:
