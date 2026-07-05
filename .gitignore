@@ -87,17 +87,33 @@ ipython_config.py
 #   intended to run in multiple environments; otherwise, check them in:
 # .python-version
 
+# Lock files
+#   This project uses `uv` as its package manager and intentionally tracks
+#   `uv.lock` in version control to ensure reproducible builds across all
+#   environments. The `#uv.lock` entry below is intentionally commented out so
+#   that `uv.lock` is NOT ignored by git.
+#
+#   Lock file entries for other package managers (Pipfile.lock, poetry.lock,
+#   pdm.lock, pixi.lock) are kept commented out as reference. This project does
+#   not use those tools, so their lock files are not present and their ignore
+#   status is irrelevant. Do NOT uncomment these entries without first
+#   switching the project to that package manager; uncommenting them
+#   inconsistently risks divergent dependency resolution across environments.
+
 # pipenv
 #   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
 #   However, in case of collaboration, if having platform-specific dependencies or dependencies
 #   having no cross-platform support, pipenv may install dependencies that don't work, or not
 #   install all needed dependencies.
+#   This project does not use pipenv; entry kept as reference.
 #Pipfile.lock
 
 # UV
 #   Similar to Pipfile.lock, it is generally recommended to include uv.lock in version control.
 #   This is especially recommended for binary packages to ensure reproducibility, and is more
 #   commonly ignored for libraries.
+#   This project tracks uv.lock intentionally (see header comment above).
+#   Do NOT uncomment this entry; doing so would ignore the tracked lock file.
 #uv.lock
 
 # poetry
@@ -105,6 +121,7 @@ ipython_config.py
 #   This is especially recommended for binary packages to ensure reproducibility, and is more
 #   commonly ignored for libraries.
 #   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
+#   This project does not use poetry; entries kept as reference.
 #poetry.lock
 #poetry.toml
 
@@ -112,6 +129,7 @@ ipython_config.py
 #   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
 #   pdm recommends including project-wide configuration in pdm.toml, but excluding .pdm-python.
 #   https://pdm-project.org/en/latest/usage/project/#working-with-version-control
+#   This project does not use pdm; entries kept as reference.
 #pdm.lock
 #pdm.toml
 .pdm-python
@@ -119,6 +137,7 @@ ipython_config.py
 
 # pixi
 #   Similar to Pipfile.lock, it is generally recommended to include pixi.lock in version control.
+#   This project does not use pixi; entry kept as reference.
 #pixi.lock
 #   Pixi creates a virtual environment in the .pixi directory, just like venv module creates one
 #   in the .venv directory. It is recommended not to include this directory in version control.
