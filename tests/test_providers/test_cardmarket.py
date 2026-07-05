@@ -717,6 +717,50 @@ class TestOAuth1Handler:
         assert handler.access_token == "test_access_token"
         assert handler.access_token_secret == "test_access_token_secret"
 
+    def test_oauth1_handler_init_all_credentials_authenticated(self):
+        """Test that init with all 4 credentials sets _authenticated True."""
+        handler = OAuth1Handler(
+            consumer_key="ck",
+            consumer_secret="cs",
+            access_token="at",
+            access_token_secret="ats",
+        )
+        assert handler.is_authenticated()
+
+    def test_oauth1_handler_init_access_tokens_only_not_authenticated(self):
+        """Test that init with only access tokens does not authenticate.
+
+        Previously __init__ set _authenticated=True based only on access_token
+        and access_token_secret, but is_authenticated() checks all 4 credentials.
+        This verifies the inconsistency is fixed.
+        """
+        handler = OAuth1Handler(
+            access_token="at",
+            access_token_secret="ats",
+        )
+        assert not handler.is_authenticated()
+
+    def test_oauth1_handler_init_consumer_credentials_only_not_authenticated(self):
+        """Test that init with only consumer credentials does not authenticate."""
+        handler = OAuth1Handler(
+            consumer_key="ck",
+            consumer_secret="cs",
+        )
+        assert not handler.is_authenticated()
+
+    def test_oauth1_handler_init_no_credentials_not_authenticated(self):
+        """Test that init with no credentials does not authenticate."""
+        handler = OAuth1Handler()
+        assert not handler.is_authenticated()
+
+    def test_oauth1_handler_init_partial_credentials_not_authenticated(self):
+        """Test that init with partial credentials does not authenticate."""
+        handler = OAuth1Handler(
+            consumer_key="ck",
+            access_token="at",
+        )
+        assert not handler.is_authenticated()
+
     def test_oauth1_handler_authenticate(self):
         """Test OAuth1Handler authenticate method."""
         handler = OAuth1Handler(
