@@ -1277,6 +1277,30 @@ class TestDeck:
         # Should have 2 unique names: Lightning Bolt and Mountain
         assert len(unique_cards) == 2
 
+    def test_deck_get_unique_cards_case_insensitive(self) -> None:
+        """Test Deck get_unique_cards uses case-insensitive matching.
+
+        Verifies that cards with the same name but different casing are
+        deduplicated consistently with get_card_count behavior.
+        """
+        card1 = Card(id="card1", name="Lightning Bolt")
+        card2 = Card(id="card2", name="lightning bolt")  # Same name, different case
+        card3 = Card(id="card3", name="Mountain")
+
+        deck_card1 = DeckCard(card=card1, count=4)
+        deck_card2 = DeckCard(card=card2, count=2)
+        deck_card3 = DeckCard(card=card3, count=1)
+
+        deck = Deck(
+            id="deck-id",
+            name="Test Deck",
+            cards=[deck_card1, deck_card2, deck_card3],
+        )
+
+        unique_cards = deck.get_unique_cards()
+        # Should have 2 unique names (case-insensitive): Lightning Bolt and Mountain
+        assert len(unique_cards) == 2
+
     def test_deck_is_valid_for_format(self) -> None:
         """Test Deck is_valid_for_format method (placeholder)."""
         deck = Deck(id="deck-id", name="Test Deck")
