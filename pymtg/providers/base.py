@@ -15,6 +15,7 @@ from pymtg.config import PROVIDER_CONFIGS, ProviderConfig
 from pymtg.exceptions import (
     APIError,
     AuthenticationError,
+    InvalidQueryError,
     NotFoundError,
     RateLimitError,
 )
@@ -293,6 +294,11 @@ class BaseProvider(ABC):
             NetworkError: If there is a network error.
             APIError: If the API returns an error.
         """
+        if limit < 1:
+            raise InvalidQueryError("limit must be a positive integer (>= 1)")
+        if page_size < 1:
+            raise InvalidQueryError("page_size must be a positive integer (>= 1)")
+
         page = 1
         total_yielded = 0
 
