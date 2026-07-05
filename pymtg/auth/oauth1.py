@@ -61,7 +61,10 @@ class OAuth1Handler(BaseAuthHandler):
         self._access_token = access_token
         self._access_token_secret = access_token_secret
         self.signature_method = signature_method
-        self._authenticated = bool(access_token and access_token_secret)
+        # Validate all 4 credentials for consistency with is_authenticated()
+        self._authenticated = bool(
+            consumer_key and consumer_secret and access_token and access_token_secret
+        )
 
     def authenticate(
         self,
