@@ -156,6 +156,9 @@ class Scryfall(BaseProvider):
             )
         """
         try:
+            if limit < 1:
+                raise InvalidQueryError("limit must be a positive integer (>= 1)")
+
             # Build query parameters
             params: dict[str, Any] = {
                 "q": self._build_search_query(
@@ -323,6 +326,9 @@ class Scryfall(BaseProvider):
         try:
             if not query or not isinstance(query, str):
                 raise InvalidQueryError("Query must be a non-empty string")
+
+            if limit < 1:
+                raise InvalidQueryError("limit must be a positive integer (>= 1)")
 
             params: dict[str, Any] = {
                 "q": query,
