@@ -762,6 +762,113 @@ class TestTCGPlayerErrorHandling(unittest.TestCase):
                 with self.assertRaises(AuthenticationError):
                     self.tcgplayer.search(name="test")
 
+    def test_make_request_401_refresh_failure_preserves_context(self):
+        """Test that 401 context is preserved when token refresh fails.
+
+        When _make_request receives a 401 and refresh_auth() raises
+        AuthenticationError, the re-raised error should include the
+        original 401 context (status_code=401, provider, auth_type)
+        and chain the original refresh failure via __cause__.
+        """
+        mock_response = MagicMock()
+        mock_response.status_code = 401
+
+        refresh_error = AuthenticationError(
+            "Refresh token request failed",
+            provider="tcgplayer",
+            auth_type="oauth2",
+        )
+
+        with patch.object(self.tcgplayer.http_client, "session", MagicMock()):
+            with patch.object(
+                self.tcgplayer.http_client.session,
+                "get",
+                return_value=mock_response,
+            ):
+                with patch.object(
+                    self.tcgplayer, "refresh_auth", side_effect=refresh_error
+                ):
+                    with self.assertRaises(AuthenticationError) as cm:
+                        self.tcgplayer._make_request("GET", "/v2/catalog/products")
+
+        error = cm.exception
+        assert error.status_code == 401
+        assert error.provider == "tcgplayer"
+        assert error.auth_type == "oauth2"
+        assert "Token refresh failed" in error.message
+        assert error.details["refresh_error"] == "Refresh token request failed"
+        assert error.__cause__ is refresh_error
+
+    def test_make_request_401_refresh_success_retries_request(self):
+        """Test that _make_request retries after successful token refresh.
+
+        When a 401 is received and refresh_auth() succeeds, the request
+        should be retried with the new auth applied to the session. The
+        retry must use the same HTTP method, endpoint, and parameters as
+        the original request.
+        """
+        first_response = MagicMock()
+        first_response.status_code = 401
+
+        second_response = MagicMock()
+        second_response.status_code = 200
+        second_response.raise_for_status.return_value = None
+
+        mock_session = MagicMock()
+        with patch.object(self.tcgplayer.http_client, "session", mock_session):
+            with patch.object(
+                mock_session,
+                "get",
+                side_effect=[first_response, second_response],
+            ) as mock_get:
+                with patch.object(self.tcgplayer, "refresh_auth") as mock_refresh:
+                    with patch.object(
+                        self.tcgplayer.auth_handler, "apply_auth"
+                    ) as mock_apply:
+                        result = self.tcgplayer._make_request(
+                            "GET", "/v2/catalog/products"
+                        )
+
+        mock_refresh.assert_called_once()
+        mock_apply.assert_called_once_with(mock_session)
+        assert result is second_response
+        # Verify retry used same endpoint as original request
+        assert mock_get.call_count == 2
+        first_call = mock_get.call_args_list[0]
+        second_call = mock_get.call_args_list[1]
+        assert "/v2/catalog/products" in first_call.args[0]
+        assert "/v2/catalog/products" in second_call.args[0]
+
+    def test_make_request_401_refresh_failure_logs_info(self):
+        """Test that 401 detection is logged before attempting refresh.
+
+        The _make_request method should log an info message when a 401
+        is received, before attempting the token refresh.
+        """
+        mock_response = MagicMock()
+        mock_response.status_code = 401
+
+        refresh_error = AuthenticationError("Refresh failed", provider="tcgplayer")
+
+        with patch.object(self.tcgplayer.http_client, "session", MagicMock()):
+            with patch.object(
+                self.tcgplayer.http_client.session,
+                "get",
+                return_value=mock_response,
+            ):
+                with patch.object(
+                    self.tcgplayer, "refresh_auth", side_effect=refresh_error
+                ):
+                    with self.assertLogs(
+                        "pymtg.providers.tcgplayer", level="INFO"
+                    ) as cm:
+                        with self.assertRaises(AuthenticationError):
+                            self.tcgplayer._make_request("GET", "/v2/catalog/products")
+
+        assert any(
+            "Received 401" in msg for msg in cm.output
+        ), f"Expected 401 log message, got: {cm.output}"
+
     @patch("requests.Session.get")
     def test_api_error(self, mock_get):
         """Test that APIError is raised on generic API errors."""

@@ -666,6 +666,10 @@ class TCGPlayer(BaseProvider):
         Raises:
             requests.exceptions.HTTPError: If the response has a non-2xx status.
             requests.exceptions.RequestException: If there is a network error.
+            AuthenticationError: If not authenticated or if token refresh
+                fails after a 401 response. When refresh fails, the
+                AuthenticationError chains the refresh failure and includes
+                the original 401 context via the status_code and details.
         """
         # Check rate limiting before making request
         self._check_rate_limit()
@@ -693,7 +697,18 @@ class TCGPlayer(BaseProvider):
             if response.status_code == 401:
                 # Token might have expired, try to refresh
                 logger.info("Received 401, attempting to refresh token...")
-                self.refresh_auth()
+                try:
+                    self.refresh_auth()
+                except AuthenticationError as refresh_error:
+                    raise AuthenticationError(
+                        "Token refresh failed after receiving 401 response",
+                        provider=self.name,
+                        status_code=401,
+                        details={
+                            "refresh_error": refresh_error.message,
+                        },
+                        auth_type="oauth2",
+                    ) from refresh_error
                 # Apply new auth to session
                 self.auth_handler.apply_auth(self.http_client.session)
                 # Retry the request
