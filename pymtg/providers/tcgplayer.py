@@ -884,8 +884,13 @@ class TCGPlayer(BaseProvider):
         flavor_text = data.get("flavorText", "")
         flavors = [flavor_text] if flavor_text else None
 
-        # Extract card type
-        card_type = data.get("productType", "")
+        # Extract card type.
+        # TCGPlayer's productType field is overloaded: search results
+        # return a product category (e.g., "Magic: The Gathering -
+        # Single Card") while detailed card data returns the actual
+        # card type (e.g., "Creature - Angel"). Validate the value to
+        # avoid storing a product category as the card's type_line.
+        card_type = self._extract_type_line(data.get("productType", ""))
 
         # Extract power/toughness
         power = data.get("power", "") or None
@@ -936,6 +941,104 @@ class TCGPlayer(BaseProvider):
                 name=name,
                 source="tcgplayer",
             )
+
+    def _extract_type_line(self, product_type: str) -> str | None:
+        """Validates and extracts the card type_line from productType.
+
+        TCGPlayer's ``productType`` field is overloaded: search results
+        return a product category (e.g., "Magic: The Gathering - Single
+        Card") while detailed card data returns the actual card type
+        (e.g., "Creature - Angel"). This method distinguishes the two
+        by checking for product-category markers and known MTG card
+        type prefixes.
+
+        Args:
+            product_type: The raw ``productType`` value from TCGPlayer.
+                Non-string values (None, int, etc.) are handled
+                defensively and return None.
+
+        Returns:
+            The validated type_line string if it looks like an MTG card
+            type, or None if it is empty, non-string, or appears to be
+            a product category.
+        """
+        if not product_type:
+            return None
+
+        # Defensive: if the API returns a non-string (e.g., None from
+        # a missing field, or a number), bail out.
+        if not isinstance(product_type, str):
+            logger.debug(
+                "TCGPlayer productType is %s (value: %r), not str; " "skipping",
+                type(product_type).__name__,
+                product_type,
+            )
+            return None
+
+        # Strip whitespace so padded values (e.g., "  Creature  ")
+        # are validated correctly.
+        product_type = product_type.strip()
+        if not product_type:
+            return None
+        # Product categories contain these markers; they are not
+        # valid MTG card types.
+        product_markers = (
+            "magic: the gathering",
+            "single card",
+            "sealed product",
+            "sealed deck",
+            "booster box",
+            "booster pack",
+            "fat pack",
+            "gift box",
+            "commander deck",
+            "prerelease kit",
+            "intro pack",
+            "deck builder",
+            "bundle",
+        )
+        lowered = product_type.lower()
+        for marker in product_markers:
+            if marker in lowered:
+                logger.debug(
+                    "TCGPlayer productType %r contains product marker "
+                    "%r; not using as type_line",
+                    product_type,
+                    marker,
+                )
+                return None
+
+        # Known MTG card type prefixes (case-insensitive). If the
+        # value starts with one of these, it is a valid type_line.
+        mtg_type_prefixes = (
+            "artifact",
+            "battle",
+            "conspiracy",
+            "creature",
+            "enchantment",
+            "hero",
+            "instant",
+            "kindred",
+            "land",
+            "phenomenon",
+            "plane",
+            "planeswalker",
+            "scheme",
+            "sorcery",
+            "tribal",
+            "vanguard",
+        )
+        for prefix in mtg_type_prefixes:
+            if lowered.startswith(prefix):
+                return product_type
+
+        # Unknown value: return None rather than risking a wrong
+        # type_line. Callers can inspect the raw data if needed.
+        logger.debug(
+            "Unknown TCGPlayer productType %r; not using as type_line",
+            product_type,
+        )
+        return None
 
     def _parse_tcgplayer_color_string(self, color_str: str) -> list[Color]:
         """Parse a TCGPlayer color string into Color enum values.

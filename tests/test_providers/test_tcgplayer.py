@@ -689,6 +689,148 @@ class TestTCGPlayerResponseParsing(unittest.TestCase):
         colors = self.tcgplayer._parse_tcgplayer_color_string("")
         self.assertEqual(len(colors), 0)
 
+    def test_extract_type_line_valid_creature(self):
+        """Test _extract_type_line with a valid creature type.
+
+        Verifies that a productType value like "Creature - Angel"
+        (from detailed card data) is returned as-is.
+        """
+        result = self.tcgplayer._extract_type_line("Creature - Angel")
+        self.assertEqual(result, "Creature - Angel")
+
+    def test_extract_type_line_valid_instant(self):
+        """Test _extract_type_line with a valid instant type.
+
+        Verifies that a simple card type like "Instant" is returned
+        as-is.
+        """
+        result = self.tcgplayer._extract_type_line("Instant")
+        self.assertEqual(result, "Instant")
+
+    def test_extract_type_line_valid_land(self):
+        """Test _extract_type_line with a valid land type.
+
+        Verifies that "Land" is returned as-is.
+        """
+        result = self.tcgplayer._extract_type_line("Land")
+        self.assertEqual(result, "Land")
+
+    def test_extract_type_line_valid_planeswalker(self):
+        """Test _extract_type_line with a valid planeswalker type.
+
+        Verifies that "Planeswalker - Jace" is returned as-is.
+        """
+        result = self.tcgplayer._extract_type_line("Planeswalker - Jace")
+        self.assertEqual(result, "Planeswalker - Jace")
+
+    def test_extract_type_line_product_category_search(self):
+        """Test _extract_type_line with a search-result product category.
+
+        Verifies that "Magic: The Gathering - Single Card" (the
+        productType returned by search results) is rejected and
+        returns None instead of being used as type_line.
+        """
+        result = self.tcgplayer._extract_type_line("Magic: The Gathering - Single Card")
+        self.assertIsNone(result)
+
+    def test_extract_type_line_sealed_product(self):
+        """Test _extract_type_line with a sealed product category.
+
+        Verifies that sealed product markers are rejected.
+        """
+        result = self.tcgplayer._extract_type_line("Sealed Product")
+        self.assertIsNone(result)
+
+    def test_extract_type_line_empty(self):
+        """Test _extract_type_line with an empty string.
+
+        Verifies that an empty productType returns None.
+        """
+        result = self.tcgplayer._extract_type_line("")
+        self.assertIsNone(result)
+
+    def test_extract_type_line_unknown_value(self):
+        """Test _extract_type_line with an unknown value.
+
+        Verifies that a value that is neither a known MTG card type
+        nor a recognized product category returns None (conservative
+        behavior to avoid storing wrong data as type_line).
+        """
+        result = self.tcgplayer._extract_type_line("Some Unknown Type")
+        self.assertIsNone(result)
+
+    def test_extract_type_line_case_insensitive_creature(self):
+        """Test _extract_type_line is case-insensitive.
+
+        Verifies that "CREATURE - ANGEL" is recognized as a valid
+        creature type and returned as-is (preserving original case).
+        """
+        result = self.tcgplayer._extract_type_line("CREATURE - ANGEL")
+        self.assertEqual(result, "CREATURE - ANGEL")
+
+    def test_extract_type_line_mixed_case(self):
+        """Test _extract_type_line handles mixed-case input.
+
+        Verifies that "cReAtUrE - aNgEl" is recognized as a valid
+        creature type and returned as-is (preserving original case).
+        """
+        result = self.tcgplayer._extract_type_line("cReAtUrE - aNgEl")
+        self.assertEqual(result, "cReAtUrE - aNgEl")
+
+    def test_extract_type_line_non_string_none(self):
+        """Test _extract_type_line with None input.
+
+        Verifies that passing None (which can happen if the API
+        returns null for productType) returns None gracefully.
+        """
+        result = self.tcgplayer._extract_type_line(None)  # type: ignore[arg-type]
+        self.assertIsNone(result)
+
+    def test_extract_type_line_non_string_int(self):
+        """Test _extract_type_line with integer input.
+
+        Verifies that passing a non-string (e.g., an integer) returns
+        None gracefully rather than raising a TypeError.
+        """
+        result = self.tcgplayer._extract_type_line(12345)  # type: ignore[arg-type]
+        self.assertIsNone(result)
+
+    def test_extract_type_line_whitespace_padding(self):
+        """Test _extract_type_line with whitespace-padded input.
+
+        Verifies that leading/trailing whitespace is stripped before
+        validation, so "  Creature - Angel  " is recognized as a
+        valid creature type and returned without the padding.
+        """
+        result = self.tcgplayer._extract_type_line("  Creature - Angel  ")
+        self.assertEqual(result, "Creature - Angel")
+
+    def test_extract_type_line_only_whitespace(self):
+        """Test _extract_type_line with only whitespace.
+
+        Verifies that a string containing only whitespace returns
+        None (treated as empty after stripping).
+        """
+        result = self.tcgplayer._extract_type_line("   ")
+        self.assertIsNone(result)
+
+    def test_parse_card_data_product_category_type_line(self):
+        """Test that product category productType does not set type_line.
+
+        Verifies that when _parse_card_data receives a productType
+        containing a product category (as search results do), the
+        resulting Card has type_line=None rather than the product
+        category string.
+        """
+        data = {
+            "productId": 12345,
+            "name": "Serra Angel",
+            "categoryName": "LEA",
+            "productType": "Magic: The Gathering - Single Card",
+        }
+        card = self.tcgplayer._parse_card_data(data)
+        self.assertIsNone(card.type_line)
+
 
 if __name__ == "__main__":
     unittest.main()
