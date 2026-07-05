@@ -47,8 +47,8 @@ class Set(PyMTGBaseModel):
     block_code: str | None = None
     block_name: str | None = None
     parent_set_code: str | None = None
-    card_count: int | None = None
-    printed_size: int | None = None
+    card_count: int | None = Field(default=None, ge=0)
+    printed_size: int | None = Field(default=None, ge=0)
     digital: bool | None = None
     foil_only: bool | None = None
     nonfoil_only: bool | None = None
@@ -59,5 +59,5 @@ class Set(PyMTGBaseModel):
     source: str | None = None
     mtgo_code: str | None = None
     arena_code: str | None = None
-    tcgplayer_id: int | None = None
-    cardmarket_id: int | None = None
+    tcgplayer_id: int | None = Field(default=None, ge=0)
+    cardmarket_id: int | None = Field(default=None, ge=0)
