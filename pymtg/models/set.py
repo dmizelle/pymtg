@@ -4,7 +4,7 @@ This module provides the Set model for representing Magic: The Gathering
 sets in a normalized format across all providers.
 """
 
-from pydantic import Field
+from pydantic import AnyUrl, Field
 
 from pymtg.models.base import PyMTGBaseModel
 from pymtg.models.enums import SetType
@@ -52,10 +52,10 @@ class Set(PyMTGBaseModel):
     digital: bool | None = None
     foil_only: bool | None = None
     nonfoil_only: bool | None = None
-    icon_svg_uri: str | None = None
-    search_uri: str | None = None
-    scryfall_uri: str | None = None
-    uri: str | None = None
+    icon_svg_uri: AnyUrl | None = None
+    search_uri: AnyUrl | None = None
+    scryfall_uri: AnyUrl | None = None
+    uri: AnyUrl | None = None
     source: str | None = None
     mtgo_code: str | None = None
     arena_code: str | None = None
