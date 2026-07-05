@@ -707,6 +707,143 @@ class TestCardmarketParseCard:
         assert isinstance(pricing, Pricing)
         assert pricing.cardmarket is not None
 
+    @pytest.mark.parametrize(
+        ("rarity_str", "expected_rarity"),
+        [
+            ("Common", Rarity.COMMON),
+            ("Uncommon", Rarity.UNCOMMON),
+            ("Rare", Rarity.RARE),
+            ("Mythic Rare", Rarity.MYTHIC),
+            ("Mythic", Rarity.MYTHIC),
+            ("Special", Rarity.SPECIAL),
+            ("Bonus", Rarity.BONUS),
+            ("common", Rarity.COMMON),
+            ("uncommon", Rarity.UNCOMMON),
+            ("rare", Rarity.RARE),
+            ("mythic", Rarity.MYTHIC),
+            ("mythic rare", Rarity.MYTHIC),
+            ("special", Rarity.SPECIAL),
+            ("bonus", Rarity.BONUS),
+        ],
+    )
+    def test_parse_card_rarity_mapping(self, rarity_str, expected_rarity):
+        """Test that all Cardmarket rarity strings map to the correct enum.
+
+        Cardmarket's rarity_map covers 14 entries: 7 rarity names in both
+        Title Case and lowercase. This parametrized test exercises every
+        entry to ensure parsing edge cases are covered.
+        """
+        cardmarket = Cardmarket(
+            consumer_key="test_consumer_key",
+            consumer_secret="test_consumer_secret",
+            access_token="test_access_token",
+            access_token_secret="test_access_token_secret",
+        )
+
+        card_data = {
+            "idProduct": 12345,
+            "name": "Test Card",
+            "rarity": rarity_str,
+        }
+
+        card = cardmarket._parse_card(card_data)
+
+        assert card.rarity == expected_rarity
+
+    def test_parse_card_unknown_rarity_defaults_to_common(self):
+        """Test that an unrecognized rarity string defaults to COMMON.
+
+        The rarity_map uses .get() with Rarity.COMMON as the default, so
+        any value not in the map (e.g. a newly introduced rarity) should
+        fall back to COMMON rather than raising.
+        """
+        cardmarket = Cardmarket(
+            consumer_key="test_consumer_key",
+            consumer_secret="test_consumer_secret",
+            access_token="test_access_token",
+            access_token_secret="test_access_token_secret",
+        )
+
+        card_data = {
+            "idProduct": 12345,
+            "name": "Test Card",
+            "rarity": "Totally Unknown Rarity",
+        }
+
+        card = cardmarket._parse_card(card_data)
+
+        assert card.rarity == Rarity.COMMON
+
+    def test_parse_card_missing_rarity_defaults_to_common(self):
+        """Test that a missing rarity field defaults to COMMON.
+
+        The rarity lookup uses card_data.get("rarity", ...) which returns
+        an empty string when the key is absent; the empty string is not in
+        rarity_map, so the default COMMON is used.
+        """
+        cardmarket = Cardmarket(
+            consumer_key="test_consumer_key",
+            consumer_secret="test_consumer_secret",
+            access_token="test_access_token",
+            access_token_secret="test_access_token_secret",
+        )
+
+        card_data = {
+            "idProduct": 12345,
+            "name": "Test Card",
+        }
+
+        card = cardmarket._parse_card(card_data)
+
+        assert card.rarity == Rarity.COMMON
+
+    def test_parse_card_empty_rarity_defaults_to_common(self):
+        """Test that an empty rarity string defaults to COMMON.
+
+        An empty string is not a key in rarity_map, so the .get() default
+        of Rarity.COMMON applies.
+        """
+        cardmarket = Cardmarket(
+            consumer_key="test_consumer_key",
+            consumer_secret="test_consumer_secret",
+            access_token="test_access_token",
+            access_token_secret="test_access_token_secret",
+        )
+
+        card_data = {
+            "idProduct": 12345,
+            "name": "Test Card",
+            "rarity": "",
+        }
+
+        card = cardmarket._parse_card(card_data)
+
+        assert card.rarity == Rarity.COMMON
+
+    def test_parse_card_rarity_name_fallback(self):
+        """Test that rarityName is used when rarity is absent.
+
+        Cardmarket responses may use either 'rarity' or 'rarityName' for
+        the rarity field. The parser falls back to rarityName when rarity
+        is missing.
+        """
+        cardmarket = Cardmarket(
+            consumer_key="test_consumer_key",
+            consumer_secret="test_consumer_secret",
+            access_token="test_access_token",
+            access_token_secret="test_access_token_secret",
+        )
+
+        card_data = {
+            "idProduct": 12345,
+            "name": "Test Card",
+            "rarityName": "Rare",
+        }
+
+        card = cardmarket._parse_card(card_data)
+
+        assert card.rarity == Rarity.RARE
+
 
 class TestOAuth1Handler:
     """Tests for the OAuth1Handler used by Cardmarket."""
