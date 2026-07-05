@@ -60,6 +60,32 @@ class Scryfall(BaseProvider):
         blue_creatures = scryfall.search_syntax("c:U type:creature", limit=10)
     """
 
+    # Valid Scryfall search parameters for the /cards/search endpoint
+    VALID_SEARCH_PARAMS: set[str] = {
+        "set",
+        "rarity",
+        "cmc",
+        "power",
+        "toughness",
+        "loyalty",
+        "format",
+        "is_reserved",
+        "is_foil",
+        "is_nonfoil",
+        "include_extras",
+        "include_multilingual",
+        "include_variations",
+        "set_type",
+        "color",
+        "type",
+        "subtype",
+        "keyword",
+        "mana_value",
+        "textsearch",
+        "artist",
+        "release",
+    }
+
     def __init__(self, **kwargs: Any) -> None:
         """Initialize the Scryfall provider.
 
@@ -178,13 +204,16 @@ class Scryfall(BaseProvider):
 
             # Add additional kwargs as query parameters
             for key, value in kwargs.items():
-                if key not in ["name", "colors", "identity", "type_line"]:
+                if key.lower() in self.VALID_SEARCH_PARAMS:
+                    param_key = key.lower()
                     if isinstance(value, dict):
                         # Handle dict parameters like {"gte": 3, "lte": 5}
                         for subkey, subvalue in value.items():
-                            params[f"{key}_{subkey}"] = subvalue
+                            params[f"{param_key}_{subkey}"] = subvalue
                     else:
-                        params[key] = value
+                        params[param_key] = value
+                else:
+                    logger.warning(f"Ignoring unknown Scryfall search parameter: {key}")
 
             response = self.http_client.get("/cards/search", params=params)
             data = self._handle_response(response, "cards")
