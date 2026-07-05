@@ -29,24 +29,6 @@ class ProviderConfig(BaseModel):
     user_agent: str = Field(default="pymtg/0.1.0", description="User agent string")
 
 
-class RateLimitConfig(BaseModel):
-    """Rate limit configuration for a provider.
-
-    Attributes:
-        requests_per_second: Maximum requests per second.
-        requests_per_minute: Maximum requests per minute.
-        burst_size: Maximum burst size for rate limiting.
-    """
-
-    requests_per_second: float | None = Field(
-        default=None, description="Maximum requests per second"
-    )
-    requests_per_minute: float | None = Field(
-        default=None, description="Maximum requests per minute"
-    )
-    burst_size: int = Field(default=10, description="Maximum burst size")
-
-
 # Pre-defined provider configurations
 PROVIDER_CONFIGS: dict[str, ProviderConfig] = {
     "scryfall": ProviderConfig(
