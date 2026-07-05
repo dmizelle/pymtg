@@ -140,7 +140,6 @@ class Moxfield(BaseProvider):
             "moxfield",
             ProviderConfig(
                 name="moxfield",
-                base_url="",
             ),
         )
         self.base_url = self.config.base_url

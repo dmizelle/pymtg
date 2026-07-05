@@ -119,7 +119,7 @@ class Archidekt(BaseProvider):
 
         # Initialize session auth handler after base class sets up base_url
         self.auth_handler = SessionAuthHandler(
-            base_url=self.base_url,
+            base_url=self.base_url or "",
             login_endpoint="/accounts/login/",
             csrf_header="X-CSRFToken",
             csrf_cookie="csrftoken",
