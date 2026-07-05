@@ -384,6 +384,10 @@ def retry_with_config(
                     )
                     time.sleep(backoff)
 
+                except Exception:
+                    # Don't retry on other exceptions
+                    raise
+
             if last_exception:
                 raise last_exception
             raise RuntimeError("Unexpected state in retry logic")
