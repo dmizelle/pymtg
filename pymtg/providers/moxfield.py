@@ -609,15 +609,22 @@ class Moxfield(BaseProvider):
             # Exact match if it looks like a specific card name
             query_parts.append(f'"{name}"')
 
-        # Add color filters (color identity)
+        # Add color filters (color inclusion).
+        # Moxfield uses Scryfall syntax: c: for single-color include,
+        # ci: for multi-color identity inclusion.
         if colors:
             color_str = "".join(
                 c.value
                 for c in sorted(colors, key=lambda c: color_order.get(c.value, 99))
             )
-            query_parts.append(f"id:{color_str}")
+            if len(colors) == 1:
+                query_parts.append(f"c:{color_str}")
+            else:
+                query_parts.append(f"ci:{color_str}")
 
-        # Add exact color identity filter
+        # Add exact color identity filter.
+        # id: matches cards whose color identity is within the given set
+        # (Scryfall coverage semantics).
         if identity:
             id_str = "".join(
                 c.value

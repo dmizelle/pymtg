@@ -274,10 +274,35 @@ class TestMoxfieldSearch(unittest.TestCase):
         self.assertEqual(result, '"Black Lotus"')
 
     def test_build_search_query_with_colors(self):
-        """Test query building with colors."""
+        """Test query building with a single color (include)."""
         moxfield = Moxfield(api_key="test-key")
         result = moxfield._build_search_query(name="Lotus", colors=[Color.BLUE])
-        self.assertEqual(result, '"Lotus" id:U')
+        self.assertEqual(result, '"Lotus" c:U')
+
+    def test_build_search_query_with_multiple_colors(self):
+        """Test query building with multiple colors (include)."""
+        moxfield = Moxfield(api_key="test-key")
+        result = moxfield._build_search_query(
+            name="Lotus", colors=[Color.BLUE, Color.BLACK]
+        )
+        self.assertEqual(result, '"Lotus" ci:UB')
+
+    def test_build_search_query_with_identity(self):
+        """Test query building with exact color identity match."""
+        moxfield = Moxfield(api_key="test-key")
+        result = moxfield._build_search_query(
+            name="Lotus", identity=[Color.RED, Color.GREEN]
+        )
+        self.assertEqual(result, '"Lotus" id:RG')
+
+    def test_build_search_query_colors_and_identity_distinct(self):
+        """Test that colors and identity produce distinct operators."""
+        moxfield = Moxfield(api_key="test-key")
+        colors_result = moxfield._build_search_query(colors=[Color.BLUE])
+        identity_result = moxfield._build_search_query(identity=[Color.BLUE])
+        self.assertNotEqual(colors_result, identity_result)
+        self.assertEqual(colors_result, "c:U")
+        self.assertEqual(identity_result, "id:U")
 
 
 class TestMoxfieldSearchSyntax(unittest.TestCase):
