@@ -195,6 +195,21 @@ class TestMoxfieldGetCard(unittest.TestCase):
         with self.assertRaises(AuthenticationError):
             moxfield.get_card("test-card-id")
 
+    def test_get_card_rate_limit_error(self):
+        """Test that get_card raises RateLimitError on 429 status.
+
+        Verifies that get_card handles HTTP 429 rate limit responses
+        consistently with search, matching the coverage of
+        TestMoxfieldErrorHandling.test_handle_rate_limit_error.
+        """
+        moxfield = Moxfield(api_key="test-key")
+        mock_response = MagicMock()
+        mock_response.status_code = 429
+        mock_response.headers = {"Retry-After": "60"}
+        with patch.object(moxfield.http_client, "get", return_value=mock_response):
+            with self.assertRaises(RateLimitError):
+                moxfield.get_card("test-card-id")
+
 
 class TestMoxfieldSearch(unittest.TestCase):
     """Test Moxfield.search() method."""
