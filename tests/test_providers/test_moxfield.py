@@ -118,8 +118,8 @@ class TestMoxfieldInitialization(unittest.TestCase):
 class TestMoxfieldAuthentication(unittest.TestCase):
     """Test Moxfield authentication methods."""
 
-    def test_authenticate_success(self):
-        """Test successful authentication."""
+    def test_authenticate_with_valid_api_key(self):
+        """Tests authentication with a valid API key."""
         moxfield = Moxfield()
         moxfield.authenticate("test-api-key")
         self.assertTrue(moxfield.is_authenticated())
@@ -131,8 +131,8 @@ class TestMoxfieldAuthentication(unittest.TestCase):
         moxfield.authenticate("new-api-key")
         self.assertTrue(moxfield.is_authenticated())
 
-    def test_refresh_auth_success(self):
-        """Test successful authentication refresh."""
+    def test_refresh_auth_with_valid_api_key(self):
+        """Tests authentication refresh with a valid API key."""
         moxfield = Moxfield(api_key="test-api-key")
         moxfield.refresh_auth()
         self.assertTrue(moxfield.is_authenticated())
@@ -147,8 +147,8 @@ class TestMoxfieldAuthentication(unittest.TestCase):
 class TestMoxfieldGetCard(unittest.TestCase):
     """Test Moxfield.get_card() method."""
 
-    def test_get_card_success(self):
-        """Test successful card retrieval by ID."""
+    def test_get_card_returns_card(self):
+        """Tests that get_card returns a card by ID."""
         moxfield = Moxfield(api_key="test-key")
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -214,8 +214,8 @@ class TestMoxfieldGetCard(unittest.TestCase):
 class TestMoxfieldSearch(unittest.TestCase):
     """Test Moxfield.search() method."""
 
-    def test_search_success(self):
-        """Test successful card search."""
+    def test_search_returns_results(self):
+        """Tests that search returns card results."""
         moxfield = Moxfield(api_key="test-key")
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -276,8 +276,8 @@ class TestMoxfieldSearch(unittest.TestCase):
 class TestMoxfieldSearchSyntax(unittest.TestCase):
     """Test Moxfield.search_syntax() method."""
 
-    def test_search_syntax_success(self):
-        """Test successful search with syntax query."""
+    def test_search_syntax_returns_results(self):
+        """Tests that search_syntax returns results for a syntax query."""
         moxfield = Moxfield(api_key="test-key")
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -316,8 +316,8 @@ class TestMoxfieldSearchSyntax(unittest.TestCase):
 class TestMoxfieldGetDeck(unittest.TestCase):
     """Test Moxfield.get_deck() method."""
 
-    def test_get_deck_success(self):
-        """Test successful deck retrieval by ID."""
+    def test_get_deck_returns_deck(self):
+        """Tests that get_deck returns a deck by ID."""
         moxfield = Moxfield(api_key="test-key")
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -352,8 +352,8 @@ class TestMoxfieldGetDeck(unittest.TestCase):
 class TestMoxfieldGetDeckFull(unittest.TestCase):
     """Test Moxfield.get_deck_full() method."""
 
-    def test_get_deck_full_success(self):
-        """Test successful full deck retrieval."""
+    def test_get_deck_full_returns_deck(self):
+        """Tests that get_deck_full returns a full deck."""
         moxfield = Moxfield(api_key="test-key")
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -372,8 +372,8 @@ class TestMoxfieldGetDeckFull(unittest.TestCase):
 class TestMoxfieldGetUserDecks(unittest.TestCase):
     """Test Moxfield.get_user_decks() method."""
 
-    def test_get_user_decks_success(self):
-        """Test successful retrieval of user decks."""
+    def test_get_user_decks_returns_decks(self):
+        """Tests that get_user_decks returns user decks."""
         moxfield = Moxfield(api_key="test-key")
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -407,8 +407,8 @@ class TestMoxfieldGetUserDecks(unittest.TestCase):
 class TestMoxfieldAutocomplete(unittest.TestCase):
     """Test Moxfield.autocomplete() method."""
 
-    def test_autocomplete_success_list(self):
-        """Test successful autocomplete with list response."""
+    def test_autocomplete_returns_list(self):
+        """Tests that autocomplete returns results from a list response."""
         moxfield = Moxfield(api_key="test-key")
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -418,8 +418,8 @@ class TestMoxfieldAutocomplete(unittest.TestCase):
         self.assertEqual(len(result), 3)
         self.assertEqual(result[0], "Black Lotus")
 
-    def test_autocomplete_success_dict(self):
-        """Test successful autocomplete with dict response."""
+    def test_autocomplete_returns_dict(self):
+        """Tests that autocomplete returns results from a dict response."""
         moxfield = Moxfield(api_key="test-key")
         mock_response = MagicMock()
         mock_response.status_code = 200
