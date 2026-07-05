@@ -34,10 +34,7 @@ PROVIDER_CONFIGS: dict[str, ProviderConfig] = {
     "scryfall": ProviderConfig(
         name="scryfall",
         base_url="https://api.scryfall.com",
-        rate_limit={
-            "search": {"requests_per_second": 2},
-            "other": {"requests_per_second": 10},
-        },
+        rate_limit={"requests_per_second": 2},
         timeout=30,
         user_agent="pymtg/0.1.0 (+https://github.com/pymtg/pymtg)",
     ),
@@ -65,7 +62,7 @@ PROVIDER_CONFIGS: dict[str, ProviderConfig] = {
     "cardmarket": ProviderConfig(
         name="cardmarket",
         base_url="https://apiv2.cardmarket.com",
-        rate_limit={"requests_per_day": 100000},
+        rate_limit={"requests_per_minute": 10},
         timeout=30,
         user_agent="pymtg/0.1.0 (+https://github.com/pymtg/pymtg)",
     ),
