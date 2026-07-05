@@ -462,8 +462,13 @@ class Scryfall(BaseProvider):
             if not data:
                 return []
 
-            # Handle both single card and list responses
-            if isinstance(data, list):
+            # Handle single card, list response, and Card List (fuzzy) response
+            if isinstance(data, dict) and data.get("object") == "list":
+                # Fuzzy matching returns {"object": "list", "data": [...]}
+                return [
+                    self._parse_card(card_data) for card_data in data.get("data", [])
+                ]
+            elif isinstance(data, list):
                 return [self._parse_card(card_data) for card_data in data]
             else:
                 return [self._parse_card(data)]
