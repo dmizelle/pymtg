@@ -279,6 +279,34 @@ class TestScryfallSearchSyntax(unittest.TestCase):
 
         self.assertIn("Query must be a non-empty string", str(context.exception))
 
+    def test_search_negative_limit_raises(self):
+        """Test that InvalidQueryError is raised for negative limit in search()."""
+        scryfall = Scryfall()
+
+        with self.assertRaises(InvalidQueryError) as context:
+            scryfall.search(name="Test", limit=-1)
+
+        self.assertIn("limit must be a positive integer", str(context.exception))
+
+        with self.assertRaises(InvalidQueryError) as context:
+            scryfall.search(name="Test", limit=0)
+
+        self.assertIn("limit must be a positive integer", str(context.exception))
+
+    def test_search_syntax_negative_limit_raises(self):
+        """Test that InvalidQueryError is raised for negative limit in search_syntax()."""
+        scryfall = Scryfall()
+
+        with self.assertRaises(InvalidQueryError) as context:
+            scryfall.search_syntax("name:test", limit=-1)
+
+        self.assertIn("limit must be a positive integer", str(context.exception))
+
+        with self.assertRaises(InvalidQueryError) as context:
+            scryfall.search_syntax("name:test", limit=0)
+
+        self.assertIn("limit must be a positive integer", str(context.exception))
+
     @patch.object(Scryfall, "_handle_response")
     @patch.object(Scryfall, "http_client")
     def test_search_syntax_with_options(self, mock_http_client, mock_handle_response):
