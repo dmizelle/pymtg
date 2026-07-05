@@ -170,7 +170,12 @@ class TestCardmarketSearch:
     """Tests for Cardmarket search functionality."""
 
     def test_search_returns_results(self):
-        """Tests that search returns results for a query."""
+        """Tests that search returns results for a query.
+
+        This test verifies that the correct endpoint and query parameters are
+        passed to the HTTP client, including the search term, game filter,
+        and limit.
+        """
         # Mock response data
         mock_response_data = {
             "results": [
@@ -203,16 +208,29 @@ class TestCardmarketSearch:
             cardmarket.http_client,
             "get",
             return_value=MagicMock(status_code=200, json=lambda: mock_response_data),
-        ):
+        ) as mock_get:
             results = cardmarket.search(name="Black Lotus", limit=5)
 
-            assert len(results) == 1
-            assert results[0].name == "Black Lotus"
-            assert results[0].set_name == "Limited Edition Alpha"
-            assert results[0].set_code == "LEA"
+        assert len(results) == 1
+        assert results[0].name == "Black Lotus"
+        assert results[0].set_name == "Limited Edition Alpha"
+        assert results[0].set_code == "LEA"
+        # Verify HTTP client was called with correct URL and params
+        mock_get.assert_called_once()
+        call_args = mock_get.call_args
+        assert call_args[0][0] == "/ws/v2.0/products/output.json/"
+        assert call_args[1]["params"] == {
+            "search": "Black Lotus",
+            "game": "Magic",
+            "limit": 5,
+        }
 
     def test_search_empty_results(self):
-        """Test search with empty results."""
+        """Tests search with empty results.
+
+        This test verifies that the correct endpoint and query parameters are
+        passed to the HTTP client even when no results are returned.
+        """
         cardmarket = Cardmarket(
             consumer_key="test_consumer_key",
             consumer_secret="test_consumer_secret",
@@ -224,10 +242,19 @@ class TestCardmarketSearch:
             cardmarket.http_client,
             "get",
             return_value=MagicMock(status_code=200, json=lambda: {"results": []}),
-        ):
+        ) as mock_get:
             results = cardmarket.search(name="Non-existent Card")
 
-            assert results == []
+        assert results == []
+        # Verify HTTP client was called with correct URL and params
+        mock_get.assert_called_once()
+        call_args = mock_get.call_args
+        assert call_args[0][0] == "/ws/v2.0/products/output.json/"
+        assert call_args[1]["params"] == {
+            "search": "Non-existent Card",
+            "game": "Magic",
+            "limit": 20,
+        }
 
     def test_search_without_authentication(self):
         """Test search without authentication raises AuthenticationError."""
@@ -328,7 +355,11 @@ class TestCardmarketSearchSyntax:
     """Tests for Cardmarket search_syntax functionality."""
 
     def test_search_syntax_returns_results(self):
-        """Tests that search_syntax returns results for a query."""
+        """Tests that search_syntax returns results for a query.
+
+        This test verifies that the correct endpoint and query parameters are
+        passed to the HTTP client, including the raw query string and limit.
+        """
         mock_response_data = {
             "results": [
                 {
@@ -350,10 +381,18 @@ class TestCardmarketSearchSyntax:
             cardmarket.http_client,
             "get",
             return_value=MagicMock(status_code=200, json=lambda: mock_response_data),
-        ):
+        ) as mock_get:
             results = cardmarket.search_syntax(query="name:Black Lotus", limit=5)
 
-            assert len(results) == 1
+        assert len(results) == 1
+        # Verify HTTP client was called with correct URL and params
+        mock_get.assert_called_once()
+        call_args = mock_get.call_args
+        assert call_args[0][0] == "/ws/v2.0/products/output.json/"
+        assert call_args[1]["params"] == {
+            "search": "name:Black Lotus",
+            "limit": 5,
+        }
 
     def test_search_syntax_without_authentication(self):
         """Test search_syntax without authentication raises AuthenticationError."""
