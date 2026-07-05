@@ -5,8 +5,9 @@ managing provider settings, rate limits, and other configuration options.
 """
 
 from typing import Any
+from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ProviderConfig(BaseModel):
@@ -21,7 +22,31 @@ class ProviderConfig(BaseModel):
     """
 
     name: str = Field(..., description="Provider name")
-    base_url: str = Field(..., description="Base URL for the provider API")
+    base_url: str | None = Field(
+        default=None, description="Base URL for the provider API"
+    )
+
+    @field_validator("base_url")
+    @classmethod
+    def validate_base_url(cls, v: str | None) -> str | None:
+        """Validate that base_url is a valid HTTP(S) URL.
+
+        Args:
+            v: The base_url value to validate.
+
+        Returns:
+            The validated base_url string, or None if not set.
+
+        Raises:
+            ValueError: If the URL is not valid or does not use http/https.
+        """
+        if v is None:
+            return v
+        parsed = urlparse(v)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            raise ValueError(f"base_url must be a valid HTTP(S) URL, got: {v}")
+        return v
+
     rate_limit: dict[str, Any] = Field(
         default_factory=dict, description="Rate limit configuration"
     )
