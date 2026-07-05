@@ -263,6 +263,12 @@ class Archidekt(BaseProvider):
             APIError: If the API returns an error.
             AuthenticationError: If authentication is required but not provided.
         """
+        if not query or not isinstance(query, str):
+            raise InvalidQueryError("Query must be a non-empty string")
+
+        if limit is not None and (not isinstance(limit, int) or limit < 1):
+            raise InvalidQueryError("limit must be a positive integer (>= 1)")
+
         try:
             params: dict[str, Any] = {"q": query}
             if limit:

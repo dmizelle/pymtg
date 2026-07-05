@@ -288,7 +288,14 @@ class Moxfield(BaseProvider):
             NetworkError: If there is a network error.
             APIError: If the API returns an error.
             AuthenticationError: If API key is not provided.
+            InvalidQueryError: If query or limit is invalid.
         """
+        if not query or not isinstance(query, str):
+            raise InvalidQueryError("Query must be a non-empty string")
+
+        if limit is not None and (not isinstance(limit, int) or limit < 1):
+            raise InvalidQueryError("limit must be a positive integer (>= 1)")
+
         if not self.is_authenticated():
             raise AuthenticationError(
                 "Moxfield requires a Parse.bot API key",

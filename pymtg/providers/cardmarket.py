@@ -357,7 +357,14 @@ class Cardmarket(BaseProvider):
             NetworkError: If there is a network error.
             APIError: If the API returns an error.
             AuthenticationError: If authentication is required but not provided.
+            InvalidQueryError: If query or limit is invalid.
         """
+        if not query or not isinstance(query, str):
+            raise InvalidQueryError("Query must be a non-empty string")
+
+        if limit is not None and (not isinstance(limit, int) or limit < 1):
+            raise InvalidQueryError("limit must be a positive integer (>= 1)")
+
         try:
             # Validate authentication
             if not self.is_authenticated():
