@@ -61,7 +61,11 @@ from pymtg.exceptions import (
     RateLimitError,
 )
 
+from pymtg._version import __version__
+
 __all__ = [
+    # Version
+    "__version__",
     # Providers
     "Archidekt",
     "BaseProvider",
@@ -91,5 +95,3 @@ __all__ = [
     "PyMTGError",
     "RateLimitError",
 ]
-
-__version__ = "0.1.0"
