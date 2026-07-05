@@ -84,11 +84,13 @@ class Moxfield(BaseProvider):
         Raises:
             AuthenticationError: If api_key is not provided.
         """
-        # Store API key before calling super().__init__
-        self._api_key = api_key
-
-        # Call parent constructor
+        # Call parent constructor first to ensure base attributes are set
+        # before storing provider-specific state. This avoids leaving the
+        # object in an inconsistent state if super().__init__() raises.
         super().__init__(**kwargs)
+
+        # Store API key after parent initialization succeeds
+        self._api_key = api_key
 
         # Initialize API key auth handler for Parse.bot
         self.auth_handler = APIKeyAuthHandler(
