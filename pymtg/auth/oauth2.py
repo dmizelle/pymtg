@@ -65,9 +65,17 @@ class OAuth2ClientCredentialsHandler(BaseAuthHandler):
     ) -> None:
         """Authenticate with the provider using client credentials.
 
+        All authentication state fields (access_token, token_type,
+        expires_at, _authenticated) are updated atomically: token data is
+        parsed into local variables first, and only committed to instance
+        attributes once every field has been successfully parsed. A parsing
+        failure (e.g. an invalid expires_in type) therefore cannot leave
+        the handler in a half-authenticated state.
+
         Args:
             client_id: The OAuth2 client ID (overrides initialization value).
-            client_secret: The OAuth2 client secret (overrides initialization value).
+            client_secret: The OAuth2 client secret (overrides initialization
+                value).
             **kwargs: Additional authentication parameters.
 
         Raises:
@@ -112,18 +120,27 @@ class OAuth2ClientCredentialsHandler(BaseAuthHandler):
                     status_code=response.status_code,
                 )
 
-            # Parse and store token
+            # Parse token data into locals first so that a parsing failure
+            # cannot leave the handler in a half-updated (inconsistent) state.
+            # Only once all fields are successfully parsed do we commit them to
+            # instance attributes, making the update atomic.
             token_data = response.json()
-            self.access_token = token_data.get("access_token")
-            self.token_type = token_data.get("token_type", "Bearer")
+            new_access_token = token_data.get("access_token")
+            new_token_type = token_data.get("token_type", "Bearer")
 
-            # Calculate expiration time
+            # Calculate expiration time. timedelta() raises TypeError if
+            # expires_in is a non-numeric type (e.g. a string); computing it
+            # before any state is updated prevents a partial write.
             expires_in = token_data.get("expires_in")
             if expires_in:
-                self.expires_at = datetime.now() + timedelta(seconds=expires_in)
+                new_expires_at = datetime.now() + timedelta(seconds=expires_in)
             else:
-                self.expires_at = None
+                new_expires_at = None
 
+            # Commit all related state fields atomically.
+            self.access_token = new_access_token
+            self.token_type = new_token_type
+            self.expires_at = new_expires_at
             self._authenticated = True
             logger.info("OAuth2 authentication successful")
 
