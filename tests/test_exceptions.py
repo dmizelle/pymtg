@@ -222,14 +222,14 @@ class TestNotFoundError:
             resource_id="123",
         )
         str_repr = str(error)
-        assert "Resource: card" in str_repr
-        assert "(id: 123)" in str_repr
+        assert "Resource: 'card'" in str_repr
+        assert "(id: '123')" in str_repr
 
     def test_not_found_error_str_without_id(self) -> None:
         """Test NotFoundError string representation without resource_id."""
         error = NotFoundError("Card not found", resource_type="card")
         str_repr = str(error)
-        assert "Resource: card" in str_repr
+        assert "Resource: 'card'" in str_repr
         assert "(id:" not in str_repr
 
     def test_not_found_error_str_all_parameters(self) -> None:
@@ -252,7 +252,7 @@ class TestNotFoundError:
         assert str_repr == (
             "[scryfall] NotFoundError: Card not found "
             "(status code: 404) Details: {'id': '123'} "
-            "Resource: card (id: scryfall-card-123)"
+            "Resource: 'card' (id: 'scryfall-card-123')"
         )
 
     def test_not_found_error_repr(self) -> None:
@@ -293,7 +293,7 @@ class TestAuthenticationError:
         """Test AuthenticationError string representation."""
         error = AuthenticationError("Invalid credentials", auth_type="oauth2")
         str_repr = str(error)
-        assert "Auth type: oauth2" in str_repr
+        assert "Auth type: 'oauth2'" in str_repr
 
     def test_authentication_error_str_without_type(self) -> None:
         """Test AuthenticationError string representation without auth_type."""
@@ -319,7 +319,7 @@ class TestAuthenticationError:
         assert str_repr == (
             "[archidekt] AuthenticationError: Invalid credentials "
             "(status code: 401) Details: {'error': 'invalid_token'} "
-            "Auth type: oauth2"
+            "Auth type: 'oauth2'"
         )
 
     def test_authentication_error_repr(self) -> None:
@@ -367,7 +367,7 @@ class TestInvalidQueryError:
         )
         str_repr = str(error)
         assert "Query: 'invalid'" in str_repr
-        assert "Provider message: Error message" in str_repr
+        assert "Provider message: 'Error message'" in str_repr
 
     def test_invalid_query_error_str_minimal(self) -> None:
         """Test InvalidQueryError string representation with minimal info."""
@@ -396,8 +396,8 @@ class TestInvalidQueryError:
         assert str_repr == (
             "[scryfall] InvalidQueryError: Invalid query syntax "
             "(status code: 400) Details: {'query': 'invalid'} "
-            "Query: 'invalid query' Provider message: Syntax error at "
-            "position 5"
+            "Query: 'invalid query' Provider message: 'Syntax error "
+            "at position 5'"
         )
 
     def test_invalid_query_error_repr(self) -> None:
@@ -485,7 +485,7 @@ class TestNetworkError:
         original_exc = ConnectionError("Connection refused")
         error = NetworkError("Connection failed", original_exception=original_exc)
         str_repr = str(error)
-        assert "Original: ConnectionError: Connection refused" in str_repr
+        assert "Original: ConnectionError('Connection refused')" in str_repr
 
     def test_network_error_str_without_original_exception(self) -> None:
         """Test NetworkError string representation without original exception."""
@@ -513,7 +513,7 @@ class TestNetworkError:
         assert str_repr == (
             "[scryfall] NetworkError: Connection failed "
             "(status code: 503) Details: {'timeout': 30} "
-            "Original: ConnectionError: Connection refused"
+            "Original: ConnectionError('Connection refused')"
         )
 
     def test_network_error_repr(self) -> None:
