@@ -758,7 +758,7 @@ class TestTCGPlayerErrorHandling(unittest.TestCase):
                 with self.assertRaises(AuthenticationError) as cm:
                     self.tcgplayer.search(name="test")
 
-        assert cm.exception.provider == "tcgplayer"
+        self.assertEqual(cm.exception.provider, "tcgplayer")
 
     def test_make_request_401_refresh_failure_preserves_context(self):
         """Test that 401 context is preserved when token refresh fails.
@@ -787,12 +787,12 @@ class TestTCGPlayerErrorHandling(unittest.TestCase):
                     self.tcgplayer._make_request("GET", "/v2/catalog/products")
 
         error = cm.exception
-        assert error.status_code == 401
-        assert error.provider == "tcgplayer"
-        assert error.auth_type == "oauth2"
-        assert "Token refresh failed" in error.message
-        assert error.details["refresh_error"] == "Refresh token request failed"
-        assert error.__cause__ is refresh_error
+        self.assertEqual(error.status_code, 401)
+        self.assertEqual(error.provider, "tcgplayer")
+        self.assertEqual(error.auth_type, "oauth2")
+        self.assertIn("Token refresh failed", error.message)
+        self.assertEqual(error.details["refresh_error"], "Refresh token request failed")
+        self.assertIs(error.__cause__, refresh_error)
 
     def test_make_request_401_refresh_success_retries_request(self):
         """Test that _make_request retries after successful token refresh.
@@ -822,13 +822,13 @@ class TestTCGPlayerErrorHandling(unittest.TestCase):
 
         mock_refresh.assert_called_once()
         mock_apply.assert_called_once_with(self.tcgplayer.http_client.session)
-        assert result is second_response
+        self.assertIs(result, second_response)
         # Verify retry used same endpoint as original request
-        assert mock_get.call_count == 2
+        self.assertEqual(mock_get.call_count, 2)
         first_call = mock_get.call_args_list[0]
         second_call = mock_get.call_args_list[1]
-        assert "/v2/catalog/products" in first_call.args[0]
-        assert "/v2/catalog/products" in second_call.args[0]
+        self.assertIn("/v2/catalog/products", first_call.args[0])
+        self.assertIn("/v2/catalog/products", second_call.args[0])
 
     def test_make_request_401_refresh_failure_logs_info(self):
         """Test that 401 detection is logged before attempting refresh.
@@ -851,10 +851,11 @@ class TestTCGPlayerErrorHandling(unittest.TestCase):
                     with self.assertRaises(AuthenticationError) as error_cm:
                         self.tcgplayer._make_request("GET", "/v2/catalog/products")
 
-        assert any(
-            "Received 401" in msg for msg in cm.output
-        ), f"Expected 401 log message, got: {cm.output}"
-        assert error_cm.exception.provider == "tcgplayer"
+        self.assertTrue(
+            any("Received 401" in msg for msg in cm.output),
+            f"Expected 401 log message, got: {cm.output}",
+        )
+        self.assertEqual(error_cm.exception.provider, "tcgplayer")
 
     def test_api_error(self):
         """Test that APIError is raised on generic API errors."""
@@ -871,8 +872,8 @@ class TestTCGPlayerErrorHandling(unittest.TestCase):
             with self.assertRaises(APIError) as cm:
                 self.tcgplayer.search(name="test")
 
-        assert cm.exception.status_code == 500
-        assert cm.exception.provider == "tcgplayer"
+        self.assertEqual(cm.exception.status_code, 500)
+        self.assertEqual(cm.exception.provider, "tcgplayer")
 
     def test_network_error(self):
         """Test that NetworkError is raised on network errors."""
@@ -932,7 +933,7 @@ class TestTCGPlayerResponseParsing(unittest.TestCase):
         self.assertEqual(card.toughness, "4")
         self.assertIsNotNone(card.colors)
         colors = card.colors
-        assert colors is not None
+        self.assertIsNotNone(colors)
         self.assertEqual(len(colors), 1)
         self.assertEqual(
             colors[0], Color.WHITE
