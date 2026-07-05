@@ -24,6 +24,7 @@ from pymtg.config import PROVIDER_CONFIGS, ProviderConfig
 from pymtg.exceptions import (
     APIError,
     AuthenticationError,
+    InvalidQueryError,
     NetworkError,
     NotFoundError,
 )
@@ -341,7 +342,14 @@ class Moxfield(BaseProvider):
             NetworkError: If there is a network error.
             APIError: If the API returns an error.
             AuthenticationError: If API key is not provided.
+            InvalidQueryError: If card_id is not provided.
         """
+        if not card_id:
+            raise InvalidQueryError(
+                "card_id is required for Moxfield.get_card()",
+                provider=self.name,
+            )
+
         if not self.is_authenticated():
             raise AuthenticationError(
                 "Moxfield requires a Parse.bot API key",

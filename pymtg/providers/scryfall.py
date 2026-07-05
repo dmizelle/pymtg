@@ -409,6 +409,7 @@ class Scryfall(BaseProvider):
             NetworkError: If there is a network error.
             APIError: If the API returns an error.
             RateLimitError: If rate limits are exceeded.
+            InvalidQueryError: If card_id is not provided.
 
         Example:
             # Get Black Lotus
@@ -417,6 +418,12 @@ class Scryfall(BaseProvider):
             )
             print(black_lotus.name, black_lotus.mana_cost)
         """
+        if not card_id:
+            raise InvalidQueryError(
+                "card_id is required for Scryfall.get_card()",
+                provider=self.name,
+            )
+
         try:
             response = self.http_client.get(f"/cards/{card_id}")
             data = self._handle_response(response, "card")
