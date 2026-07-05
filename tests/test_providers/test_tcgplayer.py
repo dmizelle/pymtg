@@ -445,6 +445,52 @@ class TestTCGPlayerAutocomplete(unittest.TestCase):
         self.assertEqual(len(suggestions), 3)
         self.assertIn("Black Lotus", suggestions)
 
+    @patch("requests.Session.get")
+    def test_autocomplete_uses_default_limit(self, mock_get):
+        """Test that autocomplete uses default limit of 10 when not specified."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"results": []}
+        mock_get.return_value = mock_response
+
+        self.tcgplayer.autocomplete("Lotus")
+
+        _, kwargs = mock_get.call_args
+        self.assertEqual(kwargs["params"]["limit"], 10)
+
+    @patch("requests.Session.get")
+    def test_autocomplete_uses_explicit_limit(self, mock_get):
+        """Test that autocomplete uses the limit parameter from the signature."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"results": []}
+        mock_get.return_value = mock_response
+
+        self.tcgplayer.autocomplete("Lotus", limit=5)
+
+        _, kwargs = mock_get.call_args
+        self.assertEqual(kwargs["params"]["limit"], 5)
+
+    @patch("requests.Session.get")
+    def test_autocomplete_ignores_limit_in_kwargs(self, mock_get):
+        """Test that limit passed via kwargs splat binds to the signature param.
+
+        This verifies the fix for issue #198: previously `kwargs.get('limit', 10)`
+        ignored the signature `limit` parameter. Now the signature parameter is
+        used directly. When `limit=99` is passed (even via kwargs splat), Python
+        binds it to the explicit `limit` parameter, not to `**kwargs`.
+        """
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"results": []}
+        mock_get.return_value = mock_response
+
+        # limit=99 binds to the signature parameter, not to **kwargs
+        self.tcgplayer.autocomplete("Lotus", **{"limit": 99})
+
+        _, kwargs = mock_get.call_args
+        self.assertEqual(kwargs["params"]["limit"], 99)
+
 
 class TestTCGPlayerDeckMethods(unittest.TestCase):
     """Test TCGPlayer deck-related methods."""
