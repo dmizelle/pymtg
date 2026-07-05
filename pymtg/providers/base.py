@@ -219,9 +219,8 @@ class BaseProvider(ABC):
             A list of autocomplete suggestions.
 
         Raises:
-            NetworkError: If there is a network error.
-            APIError: If the API returns an error.
-            NotImplementedError: If the provider doesn't support autocomplete.
+            NotImplementedError: If the provider doesn't support
+                autocomplete.
         """
         raise NotImplementedError(f"{self.name} does not support autocomplete")
 
