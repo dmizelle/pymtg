@@ -1049,7 +1049,12 @@ class TestDeck:
         assert deck_card2 not in main_cards
 
     def test_deck_get_sideboard_cards(self) -> None:
-        """Test Deck get_sideboard_cards method."""
+        """Test Deck get_sideboard_cards filters from cards by board attribute.
+
+        Verifies that get_sideboard_cards returns only cards whose board is
+        'sideboard', consistent with get_main_deck_cards and
+        get_commander_cards which also filter from the cards list.
+        """
         card1 = Card(id="card1", name="Card 1")
         card2 = Card(id="card2", name="Card 2")
 
@@ -1066,20 +1071,122 @@ class TestDeck:
         assert len(sideboard_cards) == 1
         assert deck_card2 in sideboard_cards
 
-    def test_deck_get_maybeboard_cards(self) -> None:
-        """Test Deck get_maybeboard_cards method."""
+    def test_deck_get_sideboard_cards_none_cards(self) -> None:
+        """Test get_sideboard_cards returns empty list when cards is None."""
+        deck = Deck(id="deck-id", name="Test Deck")
+        assert deck.get_sideboard_cards() == []
+
+    def test_deck_get_sideboard_cards_no_sideboard(self) -> None:
+        """Test get_sideboard_cards returns empty when no sideboard cards."""
         card1 = Card(id="card1", name="Card 1")
-        maybeboard_card = DeckCard(card=card1, count=1)
+        deck_card = DeckCard(card=card1, count=4, board=Board.MAIN.value)
+        deck = Deck(
+            id="deck-id",
+            name="Test Deck",
+            cards=[deck_card],
+        )
+        assert deck.get_sideboard_cards() == []
+
+    def test_deck_get_maybeboard_cards(self) -> None:
+        """Test Deck get_maybeboard_cards filters from cards by board attribute.
+
+        Verifies that get_maybeboard_cards returns only cards whose board is
+        'maybeboard', consistent with the other board getters which filter
+        from the cards list.
+        """
+        card1 = Card(id="card1", name="Card 1")
+        card2 = Card(id="card2", name="Card 2")
+
+        maybeboard_card = DeckCard(card=card1, count=1, board=Board.MAYBEBOARD.value)
+        main_card = DeckCard(card=card2, count=4, board=Board.MAIN.value)
 
         deck = Deck(
             id="deck-id",
             name="Test Deck",
-            maybe_board=[maybeboard_card],
+            cards=[maybeboard_card, main_card],
         )
 
         maybeboard_cards = deck.get_maybeboard_cards()
         assert len(maybeboard_cards) == 1
         assert maybeboard_card in maybeboard_cards
+
+    def test_deck_get_maybeboard_cards_none_cards(self) -> None:
+        """Test get_maybeboard_cards returns empty list when cards is None."""
+        deck = Deck(id="deck-id", name="Test Deck")
+        assert deck.get_maybeboard_cards() == []
+
+    def test_deck_get_maybeboard_cards_no_maybeboard(self) -> None:
+        """Test get_maybeboard_cards returns empty when no maybeboard cards."""
+        card1 = Card(id="card1", name="Card 1")
+        deck_card = DeckCard(card=card1, count=4, board=Board.MAIN.value)
+        deck = Deck(
+            id="deck-id",
+            name="Test Deck",
+            cards=[deck_card],
+        )
+        assert deck.get_maybeboard_cards() == []
+
+    def test_deck_getters_consistent_pattern(self) -> None:
+        """Test all board getters filter from the same cards list.
+
+        Verifies that get_sideboard_cards, get_maybeboard_cards, and
+        get_commander_cards all filter from the cards list by board
+        attribute, ensuring no dual-source inconsistency. The
+        get_main_deck_cards method returns all non-sideboard cards.
+        """
+        main_card = DeckCard(
+            card=Card(id="c1", name="Main"), count=4, board=Board.MAIN.value
+        )
+        side_card = DeckCard(
+            card=Card(id="c2", name="Side"),
+            count=1,
+            board=Board.SIDEBOARD.value,
+        )
+        maybe_card = DeckCard(
+            card=Card(id="c3", name="Maybe"),
+            count=1,
+            board=Board.MAYBEBOARD.value,
+        )
+        cmdr_card = DeckCard(
+            card=Card(id="c4", name="Cmdr"),
+            count=1,
+            board=Board.COMMANDER.value,
+        )
+
+        deck = Deck(
+            id="deck-id",
+            name="Test Deck",
+            cards=[main_card, side_card, maybe_card, cmdr_card],
+        )
+
+        # get_main_deck_cards returns all non-sideboard cards.
+        assert main_card in deck.get_main_deck_cards()
+        assert side_card not in deck.get_main_deck_cards()
+        # The other three getters filter by exact board match.
+        assert deck.get_sideboard_cards() == [side_card]
+        assert deck.get_maybeboard_cards() == [maybe_card]
+        assert deck.get_commander_cards() == [cmdr_card]
+
+    def test_deck_getters_none_board_card(self) -> None:
+        """Test board getters with a card whose board is None.
+
+        A DeckCard with board=None is excluded from sideboard, maybeboard,
+        and commander lists (None != 'sideboard' etc.), but included in
+        get_main_deck_cards (None != 'sideboard' is True).
+        """
+        no_board_card = DeckCard(
+            card=Card(id="c1", name="NoBoard"), count=1, board=None
+        )
+        deck = Deck(
+            id="deck-id",
+            name="Test Deck",
+            cards=[no_board_card],
+        )
+
+        assert no_board_card in deck.get_main_deck_cards()
+        assert deck.get_sideboard_cards() == []
+        assert deck.get_maybeboard_cards() == []
+        assert deck.get_commander_cards() == []
 
     def test_deck_get_commander_cards(self) -> None:
         """Test Deck get_commander_cards method."""
@@ -1105,15 +1212,14 @@ class TestDeck:
         card2 = Card(id="card2", name="Card 2")
         card3 = Card(id="card3", name="Card 3")
 
-        main_card1 = DeckCard(card=card1, count=4)
-        main_card2 = DeckCard(card=card2, count=2)
-        sideboard_card = DeckCard(card=card3, count=3)
+        main_card1 = DeckCard(card=card1, count=4, board=Board.MAIN.value)
+        main_card2 = DeckCard(card=card2, count=2, board=Board.MAIN.value)
+        sideboard_card = DeckCard(card=card3, count=3, board=Board.SIDEBOARD.value)
 
         deck = Deck(
             id="deck-id",
             name="Test Deck",
-            cards=[main_card1, main_card2],
-            sideboard=[sideboard_card],
+            cards=[main_card1, main_card2, sideboard_card],
         )
 
         total = deck.get_total_cards()

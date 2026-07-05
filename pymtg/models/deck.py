@@ -23,9 +23,14 @@ class Deck(PyMTGBaseModel):
         description: Deck description.
         format: Deck format.
         commander: List of commander card IDs.
-        cards: List of DeckCard objects representing the cards in the deck.
-        sideboard: List of DeckCard objects in the sideboard.
-        maybe_board: List of DeckCard objects in the maybe board.
+        cards: List of DeckCard objects representing all cards in the deck,
+            including main, sideboard, commander, and maybe board cards. Each
+            card's board attribute indicates which board it belongs to.
+        sideboard: Legacy field for sideboard cards. The get_sideboard_cards()
+            method filters from cards by board attribute instead.
+        maybe_board: Legacy field for maybe board cards. The
+            get_maybeboard_cards() method filters from cards by board
+            attribute instead.
         source: Provider name that provided this deck data.
         source_id: Provider-specific ID.
         url: URL to the deck on the provider's site.
@@ -81,8 +86,6 @@ class Deck(PyMTGBaseModel):
         Returns:
             List of DeckCard objects in the sideboard.
         """
-        if self.sideboard is not None:
-            return self.sideboard
         if self.cards is None:
             return []
         return [card for card in self.cards if card.board == "sideboard"]
@@ -93,9 +96,9 @@ class Deck(PyMTGBaseModel):
         Returns:
             List of DeckCard objects in the maybe board.
         """
-        if self.maybe_board is not None:
-            return self.maybe_board
-        return []
+        if self.cards is None:
+            return []
+        return [card for card in self.cards if card.board == "maybeboard"]
 
     def get_commander_cards(self) -> list[DeckCard]:
         """Get all cards in the commander zone.
