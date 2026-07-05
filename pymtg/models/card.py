@@ -5,7 +5,10 @@ for representing Magic: The Gathering cards in a normalized format across all
 providers.
 """
 
+import warnings
 from typing import Any, ClassVar
+
+from pydantic import model_validator
 
 from pymtg.models.base import PyMTGBaseModel
 from pymtg.models.enums import Color, Format, Rarity
@@ -372,6 +375,66 @@ class Card(PyMTGBaseModel):
             if card_value != face_value:
                 mismatches[field] = (card_value, face_value)
         return mismatches
+
+    @model_validator(mode="after")
+    def _warn_main_face_inconsistency(self) -> "Card":
+        """Warns if top-level Card fields differ from the main face's fields.
+
+        Runs automatically after model validation. Emits a
+        ``UserWarning`` for each shared field whose top-level value does not
+        match the corresponding ``card_faces[0]`` value. Stays silent when
+        the card has no faces or all shared fields are consistent.
+
+        Warnings (not exceptions) are used because some card layouts (e.g.,
+        split cards) may legitimately carry combined values at the top level
+        that differ from the first face. Callers who want hard enforcement
+        can invoke ``validate_main_face_consistency()`` and raise on any
+        non-empty result.
+
+        Returns:
+            The validated Card instance (unchanged).
+        """
+        mismatches = self.validate_main_face_consistency()
+        for field, (card_value, face_value) in mismatches.items():
+            warnings.warn(
+                f"Card.{field}={card_value!r} does not match "
+                f"card_faces[0].{field}={face_value!r}; "
+                f"call synchronize_from_main_face() to align them "
+                f"(this will overwrite top-level fields).",
+                UserWarning,
+                stacklevel=2,
+            )
+        return self
+
+    def synchronize_from_main_face(self) -> dict[str, tuple[Any, Any]]:
+        """Copies shared field values from the main face to top-level fields.
+
+        Overwrites each top-level Card field listed in
+        ``_SHARED_FACE_FIELDS`` with the value from ``card_faces[0]``.
+        Useful when the data source may have populated the top-level fields
+        with combined or stale values (e.g., split cards) and the caller
+        wants the main face's values to take precedence.
+
+        Returns:
+            A dict mapping field names that were changed to tuples of
+            (old_value, new_value). Returns an empty dict if the card has
+            no faces or all shared fields already match.
+        """
+        main_face = self.get_main_face()
+        if main_face is None:
+            return {}
+
+        changes: dict[str, tuple[Any, Any]] = {}
+        for field in self._SHARED_FACE_FIELDS:
+            card_value = getattr(self, field, None)
+            face_value = getattr(main_face, field, None)
+            if card_value != face_value:
+                # setattr bypasses pydantic re-validation (validate_assignment
+                # is not enabled in model_config); the face value was already
+                # validated when the CardFace was constructed.
+                setattr(self, field, face_value)
+                changes[field] = (card_value, face_value)
+        return changes
 
 
 class DeckCard(PyMTGBaseModel):

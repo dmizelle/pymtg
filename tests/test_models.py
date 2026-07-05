@@ -17,6 +17,7 @@ Tests cover:
 """
 
 import json
+import warnings
 from typing import ClassVar
 
 import pytest
@@ -710,6 +711,196 @@ class TestCard:
                 name="None Face",
                 card_faces=[None],  # type: ignore  # Intentional invalid list element
             )
+
+    def test_card_validator_warns_on_mismatch(self) -> None:
+        """Test that the model_validator warns on field mismatches.
+
+        Verifies that constructing a Card with top-level fields that
+        differ from card_faces[0] emits a UserWarning per mismatched
+        field, naming the field, both values, and the suggested fix.
+        """
+        face = CardFace(
+            name="Front Face",
+            power="2",
+            toughness="2",
+        )
+        with pytest.warns(UserWarning) as record:
+            Card(
+                id="test-id",
+                name="Top-Level Name",
+                power="3",
+                toughness="3",
+                card_faces=[face],
+            )
+        # Three warnings expected: name, power, toughness.
+        assert len(record) >= 3
+        messages = [str(w.message) for w in record]
+        # Verify full message format includes the actionable suggestion.
+        for msg in messages:
+            assert "synchronize_from_main_face()" in msg
+            assert "overwrite top-level fields" in msg
+        assert any("Card.name='Top-Level Name'" in m for m in messages)
+        assert any("Card.power='3'" in m for m in messages)
+        assert any("Card.toughness='3'" in m for m in messages)
+
+    def test_card_validator_only_checks_first_face(self) -> None:
+        """Test that the validator only compares against card_faces[0].
+
+        Verifies that mismatches between top-level fields and
+        card_faces[1] (the second face) do NOT emit warnings, since
+        only the main face (card_faces[0]) is used for comparison.
+        """
+        face1 = CardFace(name="Front", power="2", toughness="2")
+        face2 = CardFace(name="Back", power="5", toughness="5")
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            Card(
+                id="test-id",
+                name="Front",
+                power="2",
+                toughness="2",
+                card_faces=[face1, face2],
+            )
+
+    def test_card_validator_silent_when_consistent(self) -> None:
+        """Test that the model_validator is silent when fields match.
+
+        Verifies that constructing a Card whose shared fields all match
+        card_faces[0] emits no UserWarning.
+        """
+        face = CardFace(
+            name="Delver of Secrets",
+            mana_cost="{1}{U}",
+            type_line="Creature — Human Wizard",
+            power="1",
+            toughness="1",
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            Card(
+                id="test-id",
+                name="Delver of Secrets",
+                mana_cost="{1}{U}",
+                type_line="Creature — Human Wizard",
+                power="1",
+                toughness="1",
+                card_faces=[face, CardFace(name="Insectile Aberration")],
+            )
+
+    def test_card_validator_silent_when_no_faces(self) -> None:
+        """Test that the model_validator is silent when card has no faces.
+
+        Verifies that constructing a single-faced Card emits no
+        UserWarning, since there is no main face to compare against.
+        """
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            Card(id="test-id", name="Single Faced", power="2")
+
+    def test_card_synchronize_from_main_face_copies_values(self) -> None:
+        """Test that synchronize_from_main_face copies face values to top.
+
+        Verifies that calling synchronize_from_main_face() overwrites
+        mismatched top-level fields with values from card_faces[0] and
+        returns a dict describing the changes.
+        """
+        face = CardFace(
+            name="Front Face",
+            power="2",
+            toughness="2",
+        )
+        # Construct inside a warnings filter so the validator does not
+        # emit warnings during setup.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            card = Card(
+                id="test-id",
+                name="Top-Level Name",
+                power="3",
+                toughness="3",
+                card_faces=[face],
+            )
+        changes = card.synchronize_from_main_face()
+        assert "name" in changes
+        assert changes["name"] == ("Top-Level Name", "Front Face")
+        assert "power" in changes
+        assert changes["power"] == ("3", "2")
+        assert "toughness" in changes
+        assert changes["toughness"] == ("3", "2")
+        # After sync, top-level fields should match the face.
+        assert card.name == "Front Face"
+        assert card.power == "2"
+        assert card.toughness == "2"
+        # And validate_main_face_consistency should now be clean.
+        assert card.validate_main_face_consistency() == {}
+
+    def test_card_synchronize_no_faces(self) -> None:
+        """Test that synchronize_from_main_face is a no-op without faces.
+
+        Verifies that calling synchronize_from_main_face() on a card
+        with no card_faces returns an empty dict and changes nothing.
+        """
+        card = Card(id="test-id", name="Single Faced", power="2")
+        assert card.synchronize_from_main_face() == {}
+        assert card.name == "Single Faced"
+        assert card.power == "2"
+
+    def test_card_synchronize_already_consistent(self) -> None:
+        """Test that synchronize_from_main_face is a no-op when consistent.
+
+        Verifies that calling synchronize_from_main_face() on a card
+        whose shared fields already match card_faces[0] returns an empty
+        dict and changes nothing.
+        """
+        face = CardFace(name="Match", power="2", toughness="2")
+        card = Card(
+            id="test-id",
+            name="Match",
+            power="2",
+            toughness="2",
+            card_faces=[face],
+        )
+        assert card.synchronize_from_main_face() == {}
+        assert card.name == "Match"
+        assert card.power == "2"
+
+    def test_card_synchronize_empty_faces(self) -> None:
+        """Test that synchronize_from_main_face handles empty faces list.
+
+        Verifies that calling synchronize_from_main_face() on a card
+        with an empty card_faces list returns an empty dict (since
+        get_main_face() returns None for empty lists).
+        """
+        card = Card(id="test-id", name="Empty", card_faces=[])
+        assert card.synchronize_from_main_face() == {}
+        assert card.name == "Empty"
+
+    def test_card_synchronize_none_face_fields(self) -> None:
+        """Test that synchronize_from_main_face handles None face values.
+
+        Verifies that when the main face has None for shared fields
+        (e.g., a non-creature face with no power/toughness), calling
+        synchronize_from_main_face() copies None to the top-level
+        fields and records the changes.
+        """
+        face = CardFace(name="Front", power=None, toughness=None)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            card = Card(
+                id="test-id",
+                name="Front",
+                power="2",
+                toughness="2",
+                card_faces=[face],
+            )
+        changes = card.synchronize_from_main_face()
+        # power and toughness should change from "2" to None.
+        assert "power" in changes
+        assert changes["power"] == ("2", None)
+        assert "toughness" in changes
+        assert changes["toughness"] == ("2", None)
+        assert card.power is None
+        assert card.toughness is None
 
     def test_card_serialization(self) -> None:
         """Test Card serialization and deserialization."""
