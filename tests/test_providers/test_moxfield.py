@@ -24,6 +24,7 @@ from pymtg.exceptions import (
 )
 from pymtg.models.card import Card
 from pymtg.models.enums import Board, Color, Format, Rarity
+from pymtg.providers.base import BaseProvider
 from pymtg.providers.moxfield import Moxfield
 
 
@@ -48,6 +49,40 @@ class TestMoxfieldInitialization(unittest.TestCase):
         moxfield = Moxfield(api_key="test-api-key")
         self.assertEqual(moxfield.name, "moxfield")
         self.assertTrue(moxfield.is_authenticated())
+
+    def test_init_api_key_set_after_successful_init(self):
+        """Test that _api_key is set after successful initialization.
+
+        Verifies that api_key is stored following super().__init__() so the
+        attribute is present once the object is fully constructed.
+        """
+        moxfield = Moxfield(api_key="test-api-key")
+        self.assertEqual(moxfield._api_key, "test-api-key")
+
+    def test_init_api_key_not_set_if_super_init_fails(self):
+        """Test that _api_key is not set if super().__init__() raises.
+
+        Verifies the fix for issue #189: api_key is stored after
+        super().__init__() so that if parent initialization fails, the object
+        is not left in an inconsistent state with _api_key set but base
+        attributes missing.
+        """
+        with patch.object(
+            BaseProvider, "__init__", side_effect=RuntimeError("init failed")
+        ):
+            instance = Moxfield.__new__(Moxfield)
+            with self.assertRaises(RuntimeError):
+                Moxfield.__init__(instance, api_key="test-api-key")
+            self.assertFalse(hasattr(instance, "_api_key"))
+
+    def test_init_api_key_none_set_after_successful_init(self):
+        """Test that _api_key is None after successful init without api_key.
+
+        Verifies that _api_key is set to None (not missing) when no api_key
+        is provided, since the attribute is stored after super().__init__().
+        """
+        moxfield = Moxfield()
+        self.assertIsNone(moxfield._api_key)
 
     def test_is_authenticated_without_api_key(self):
         """Test that is_authenticated returns False without API key."""
