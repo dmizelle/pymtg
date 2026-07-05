@@ -184,22 +184,36 @@ class TestScryfallSearch(unittest.TestCase):
     @patch.object(Scryfall, "_handle_response")
     @patch.object(Scryfall, "http_client")
     def test_search_with_colors(self, mock_http_client, mock_handle_response):
-        """Test search with color parameters."""
+        """Tests that search with colors returns parsed cards.
+
+        Verifies that the color parameters are forwarded to the HTTP client
+        and that the returned card data is parsed via _parse_card, producing
+        a list of Card objects.
+        """
         # Mock HTTP client
         mock_response = MagicMock()
         mock_http_client.get.return_value = mock_response
 
-        # Mock response data
-        mock_data = {"data": []}
-        mock_handle_response.return_value = mock_data
+        # Mock response data with one card entry so _parse_card is exercised
+        card_data = {"id": "test-id", "name": "Test Card"}
+        mock_handle_response.return_value = {"data": [card_data]}
 
         scryfall = Scryfall()
         mock_card = Card(id="test-id", name="Test Card")
-        with patch.object(Scryfall, "_parse_card", return_value=mock_card):
-            scryfall.search(colors=[Color.BLUE, Color.BLACK], limit=10)
+        with patch.object(
+            Scryfall, "_parse_card", return_value=mock_card
+        ) as mock_parse:
+            results = scryfall.search(colors=[Color.BLUE, Color.BLACK], limit=10)
 
-        # Verify the search was called
+        # Verify the HTTP call was made
         mock_http_client.get.assert_called_once()
+
+        # Verify _parse_card was called with the raw card data
+        mock_parse.assert_called_once_with(card_data)
+
+        # Verify the parsed card is returned
+        self.assertEqual(len(results), 1)
+        self.assertIs(results[0], mock_card)
 
     @patch.object(Scryfall, "_handle_response")
     @patch.object(Scryfall, "http_client")
