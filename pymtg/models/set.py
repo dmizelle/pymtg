@@ -4,6 +4,8 @@ This module provides the Set model for representing Magic: The Gathering
 sets in a normalized format across all providers.
 """
 
+from pydantic import Field
+
 from pymtg.models.base import PyMTGBaseModel
 from pymtg.models.enums import SetType
 
@@ -38,8 +40,8 @@ class Set(PyMTGBaseModel):
         cardmarket_id: Cardmarket ID for the set.
     """
 
-    code: str
-    name: str
+    code: str = Field(..., min_length=1)
+    name: str = Field(..., min_length=1)
     set_type: SetType | None = None
     released_at: str | None = None
     block_code: str | None = None
