@@ -933,5 +933,172 @@ class TestArchidektBuildSearchQuery(unittest.TestCase):
         self.assertIn("t:Artifact", query)
 
 
+class TestArchidektNormalizeFlavorText(unittest.TestCase):
+    """Tests for the _normalize_flavor_text helper method."""
+
+    def test_normalize_flavor_text_string(self):
+        """Tests that a string flavor_text is returned as-is."""
+        result = Archidekt._normalize_flavor_text("A flavorful card")
+        self.assertEqual(result, "A flavorful card")
+
+    def test_normalize_flavor_text_empty_string(self):
+        """Tests that an empty string flavor_text returns None."""
+        result = Archidekt._normalize_flavor_text("")
+        self.assertIsNone(result)
+
+    def test_normalize_flavor_text_none(self):
+        """Tests that None flavor_text returns None."""
+        result = Archidekt._normalize_flavor_text(None)
+        self.assertIsNone(result)
+
+    def test_normalize_flavor_text_list(self):
+        """Tests that a list flavor_text is joined into a single string."""
+        result = Archidekt._normalize_flavor_text(["Flavor one", "Flavor two"])
+        self.assertEqual(result, "Flavor one Flavor two")
+
+    def test_normalize_flavor_text_empty_list(self):
+        """Tests that an empty list flavor_text returns None."""
+        result = Archidekt._normalize_flavor_text([])
+        self.assertIsNone(result)
+
+    def test_normalize_flavor_text_list_with_empty_items(self):
+        """Tests that a list with empty items filters them out."""
+        result = Archidekt._normalize_flavor_text(["Flavor one", "", "Flavor two"])
+        self.assertEqual(result, "Flavor one Flavor two")
+
+    def test_normalize_flavor_text_list_all_empty(self):
+        """Tests that a list with all empty items returns None."""
+        result = Archidekt._normalize_flavor_text(["", ""])
+        self.assertIsNone(result)
+
+    def test_normalize_flavor_text_unsupported_type(self):
+        """Tests that unsupported types (e.g. int) return None."""
+        result = Archidekt._normalize_flavor_text(42)
+        self.assertIsNone(result)
+
+    def test_normalize_flavor_text_list_of_non_strings(self):
+        """Tests that a list of non-string items converts them to strings."""
+        result = Archidekt._normalize_flavor_text([1, 2, 3])
+        self.assertEqual(result, "1 2 3")
+
+
+class TestArchidektCardFaceFlavorText(unittest.TestCase):
+    """Tests for CardFace flavor_text normalization in _parse_card."""
+
+    def test_parse_card_face_flavor_text_string(self):
+        """Tests that string flavor_text in card_faces is passed through."""
+        archidekt = Archidekt()
+        data = {
+            "id": "card-1",
+            "name": "Test Card",
+            "card_faces": [
+                {
+                    "name": "Face One",
+                    "flavor_text": "A string flavor",
+                },
+            ],
+        }
+        card = archidekt._parse_card(data)
+        assert card.card_faces is not None
+        self.assertEqual(card.card_faces[0].flavor_text, "A string flavor")
+
+    def test_parse_card_face_flavor_text_list(self):
+        """Tests that list flavor_text in card_faces is joined to a string.
+
+        This is the core issue #170 scenario: the API may return a list
+        for flavor_text, but CardFace.flavor_text is typed as str | None.
+        """
+        archidekt = Archidekt()
+        data = {
+            "id": "card-2",
+            "name": "Test Card",
+            "card_faces": [
+                {
+                    "name": "Face One",
+                    "flavor_text": ["Flavor part one", "Flavor part two"],
+                },
+            ],
+        }
+        card = archidekt._parse_card(data)
+        assert card.card_faces is not None
+        self.assertEqual(
+            card.card_faces[0].flavor_text,
+            "Flavor part one Flavor part two",
+        )
+
+    def test_parse_card_face_flavor_text_none(self):
+        """Tests that None flavor_text in card_faces returns None."""
+        archidekt = Archidekt()
+        data = {
+            "id": "card-3",
+            "name": "Test Card",
+            "card_faces": [
+                {
+                    "name": "Face One",
+                    "flavor_text": None,
+                },
+            ],
+        }
+        card = archidekt._parse_card(data)
+        assert card.card_faces is not None
+        self.assertIsNone(card.card_faces[0].flavor_text)
+
+    def test_parse_card_face_flavor_text_missing(self):
+        """Tests that missing flavor_text in card_faces returns None."""
+        archidekt = Archidekt()
+        data = {
+            "id": "card-4",
+            "name": "Test Card",
+            "card_faces": [
+                {
+                    "name": "Face One",
+                },
+            ],
+        }
+        card = archidekt._parse_card(data)
+        assert card.card_faces is not None
+        self.assertIsNone(card.card_faces[0].flavor_text)
+
+    def test_parse_card_face_flavor_text_empty_string(self):
+        """Tests that empty string flavor_text in card_faces returns None."""
+        archidekt = Archidekt()
+        data = {
+            "id": "card-5",
+            "name": "Test Card",
+            "card_faces": [
+                {
+                    "name": "Face One",
+                    "flavor_text": "",
+                },
+            ],
+        }
+        card = archidekt._parse_card(data)
+        assert card.card_faces is not None
+        self.assertIsNone(card.card_faces[0].flavor_text)
+
+    def test_parse_card_face_flavor_text_type_safety(self):
+        """Tests that CardFace.flavor_text is always str or None, never list.
+
+        This directly verifies the type safety fix from issue #170: even
+        when the API returns a list, the normalized value must be a str
+        or None to match the CardFace.flavor_text type annotation.
+        """
+        archidekt = Archidekt()
+        data = {
+            "id": "card-6",
+            "name": "Test Card",
+            "card_faces": [
+                {
+                    "name": "Face One",
+                    "flavor_text": ["A", "B", "C"],
+                },
+            ],
+        }
+        card = archidekt._parse_card(data)
+        assert card.card_faces is not None
+        flavor = card.card_faces[0].flavor_text
+        self.assertIn(type(flavor), (str, type(None)))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -495,6 +495,31 @@ class Archidekt(BaseProvider):
 
         return " ".join(query_parts)
 
+    @staticmethod
+    def _normalize_flavor_text(value: Any) -> str | None:
+        """Normalize flavor_text to a string or None.
+
+        The Archidekt API may return flavor_text as a string, a list of
+        strings, or None. This helper ensures a consistent str | None
+        return type, preventing type safety violations when the value
+        is assigned to CardFace.flavor_text (typed as str | None).
+
+        Args:
+            value: Raw flavor_text value from the API (str, list, or None).
+
+        Returns:
+            The flavor text as a single string, or None if the input is
+            empty, None, or an unsupported type.
+        """
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return value if value else None
+        if isinstance(value, list):
+            joined = " ".join(str(item) for item in value if item)
+            return joined if joined else None
+        return None
+
     def _parse_card(self, data: dict[str, Any]) -> Card:
         """Parse Archidekt card data into a normalized Card model.
 
@@ -520,7 +545,9 @@ class Archidekt(BaseProvider):
                     power=face_data.get("power"),
                     toughness=face_data.get("toughness"),
                     loyalty=face_data.get("loyalty"),
-                    flavor_text=face_data.get("flavor_text"),
+                    flavor_text=self._normalize_flavor_text(
+                        face_data.get("flavor_text")
+                    ),
                     artist=face_data.get("artist"),
                 )
                 parsed_faces.append(card_face)
