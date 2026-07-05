@@ -54,8 +54,8 @@ class TestScryfallGetCard(unittest.TestCase):
 
     @patch.object(Scryfall, "_handle_response")
     @patch.object(Scryfall, "http_client")
-    def test_get_card_success(self, mock_http_client, mock_handle_response):
-        """Test successful card retrieval by ID."""
+    def test_get_card_returns_card(self, mock_http_client, mock_handle_response):
+        """Tests that get_card returns a card by ID."""
         # Mock the HTTP client
         mock_response = MagicMock()
         mock_http_client.get.return_value = mock_response
@@ -143,10 +143,10 @@ class TestScryfallSearch(unittest.TestCase):
     @patch.object(Scryfall, "http_client")
     @patch.object(Scryfall, "_parse_card")
     @patch.object(Scryfall, "_build_search_query")
-    def test_search_success(
+    def test_search_returns_results(
         self, mock_build_query, mock_parse_card, mock_http_client, mock_handle_response
     ):
-        """Test successful search with generic parameters."""
+        """Tests that search returns results for a query."""
         # Mock query building
         mock_build_query.return_value = 'name:"Black Lotus"'
 
@@ -238,10 +238,10 @@ class TestScryfallSearchSyntax(unittest.TestCase):
     @patch.object(Scryfall, "_handle_response")
     @patch.object(Scryfall, "http_client")
     @patch.object(Scryfall, "_parse_card")
-    def test_search_syntax_success(
+    def test_search_syntax_returns_results(
         self, mock_parse_card, mock_http_client, mock_handle_response
     ):
-        """Test successful syntax search."""
+        """Tests that search_syntax returns results for a query."""
         # Mock HTTP client
         mock_response = MagicMock()
         mock_http_client.get.return_value = mock_response
@@ -313,8 +313,8 @@ class TestScryfallAutocomplete(unittest.TestCase):
 
     @patch.object(Scryfall, "_handle_response")
     @patch.object(Scryfall, "http_client")
-    def test_autocomplete_success(self, mock_http_client, mock_handle_response):
-        """Test successful autocomplete."""
+    def test_autocomplete_returns_results(self, mock_http_client, mock_handle_response):
+        """Tests that autocomplete returns results for a query."""
         # Mock HTTP client
         mock_response = MagicMock()
         mock_http_client.get.return_value = mock_response
@@ -389,10 +389,10 @@ class TestScryfallGetCardsByName(unittest.TestCase):
     @patch.object(Scryfall, "_handle_response")
     @patch.object(Scryfall, "http_client")
     @patch.object(Scryfall, "_parse_card")
-    def test_get_cards_by_name_success(
+    def test_get_cards_by_name_returns_cards(
         self, mock_parse_card, mock_http_client, mock_handle_response
     ):
-        """Test successful card retrieval by name."""
+        """Tests that get_cards_by_name returns cards by name."""
         # Mock HTTP client
         mock_response = MagicMock()
         mock_http_client.get.return_value = mock_response

@@ -48,8 +48,8 @@ class TestScryfallIntegration(unittest.TestCase):
             self.skipTest("Integration tests skipped (network or env not configured)")
         self.scryfall = Scryfall()
 
-    def test_get_card_success(self):
-        """Test retrieving a known card by ID."""
+    def test_get_card_returns_card(self):
+        """Tests that get_card returns a card by ID."""
         # Use a well-known card ID (Black Lotus from Limited Edition Alpha)
         card_id = "bd8fa327-dd41-4737-8f19-2cf5eb1f7cdd"
         card = self.scryfall.get_card(card_id)
@@ -66,8 +66,8 @@ class TestScryfallIntegration(unittest.TestCase):
         with self.assertRaises(NotFoundError):
             self.scryfall.get_card(fake_id)
 
-    def test_search_success(self):
-        """Test searching for cards by name."""
+    def test_search_returns_results(self):
+        """Tests that search returns results for a card name."""
         cards = self.scryfall.search(name="Black Lotus", limit=5)
 
         self.assertIsInstance(cards, list)
@@ -76,8 +76,8 @@ class TestScryfallIntegration(unittest.TestCase):
         card_names = [c.name for c in cards]
         self.assertIn("Black Lotus", card_names)
 
-    def test_search_syntax_success(self):
-        """Test searching using Scryfall query syntax."""
+    def test_search_syntax_returns_results(self):
+        """Tests that search_syntax returns results for a query."""
         # Search for blue creatures
         cards = self.scryfall.search_syntax("c:U type:creature", limit=10)
 
@@ -89,8 +89,8 @@ class TestScryfallIntegration(unittest.TestCase):
             len(blue_cards), 0, "Expected to find at least one blue creature"
         )
 
-    def test_autocomplete_success(self):
-        """Test card name autocomplete."""
+    def test_autocomplete_returns_results(self):
+        """Tests that autocomplete returns results for a query."""
         results = self.scryfall.autocomplete("Blac")
 
         self.assertIsInstance(results, list)

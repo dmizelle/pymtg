@@ -169,8 +169,8 @@ class TestCardmarketAuthentication:
 class TestCardmarketSearch:
     """Tests for Cardmarket search functionality."""
 
-    def test_search_success(self):
-        """Test successful card search."""
+    def test_search_returns_results(self):
+        """Tests that search returns results for a query."""
         # Mock response data
         mock_response_data = {
             "results": [
@@ -261,8 +261,8 @@ class TestCardmarketSearch:
 class TestCardmarketGetCard:
     """Tests for Cardmarket get_card functionality."""
 
-    def test_get_card_success(self):
-        """Test successful card retrieval by ID."""
+    def test_get_card_returns_card(self):
+        """Tests that get_card returns a card by ID."""
         mock_response_data = {
             "results": [
                 {
@@ -327,8 +327,8 @@ class TestCardmarketGetCard:
 class TestCardmarketSearchSyntax:
     """Tests for Cardmarket search_syntax functionality."""
 
-    def test_search_syntax_success(self):
-        """Test successful syntax search."""
+    def test_search_syntax_returns_results(self):
+        """Tests that search_syntax returns results for a query."""
         mock_response_data = {
             "results": [
                 {
@@ -366,8 +366,8 @@ class TestCardmarketSearchSyntax:
 class TestCardmarketPricing:
     """Tests for Cardmarket pricing functionality."""
 
-    def test_get_pricing_success(self):
-        """Test successful pricing retrieval."""
+    def test_get_pricing_returns_pricing(self):
+        """Tests that get_pricing returns pricing for a product ID."""
         mock_response_data = {
             "results": [
                 {
