@@ -98,9 +98,8 @@ class TestMoxfieldInitialization(unittest.TestCase):
         """Test that rate limit status returns correct information."""
         moxfield = Moxfield()
         status = moxfield.get_rate_limit_status()
-        self.assertIn("rate_limit", status)
-        self.assertIn("requests_per_minute", status["rate_limit"])
-        self.assertEqual(status["rate_limit"]["requests_per_minute"], 100)
+        self.assertIn("requests_per_minute", status)
+        self.assertEqual(status["requests_per_minute"], 100)
 
     def test_repr(self):
         """Test string representation of Moxfield provider."""
