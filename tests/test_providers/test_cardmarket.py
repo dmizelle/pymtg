@@ -125,6 +125,26 @@ class TestCardmarketAuthentication:
 
         assert "OAuth1 does not support automatic token refresh" in str(exc_info.value)
 
+    def test_authenticate_method_missing_consumer_credentials(self):
+        """Test authenticate with only access tokens, no consumer credentials.
+
+        When authenticate() is called with the access token pair but no
+        consumer pair on a fresh Cardmarket (no stored consumer credentials),
+        pair validation passes (both consumer args are None) but the
+        'required' check raises. Verifies the full error message matches
+        the implementation.
+        """
+        cardmarket = Cardmarket()
+
+        with pytest.raises(AuthenticationError) as exc_info:
+            cardmarket.authenticate(
+                access_token="test_access_token",
+                access_token_secret="test_access_token_secret",
+            )
+
+        assert "Consumer key and consumer secret are required" in str(exc_info.value)
+        assert "OAuth1 authentication" in str(exc_info.value)
+
     def test_is_authenticated_with_valid_credentials(self):
         """Test is_authenticated returns True with valid credentials."""
         cardmarket = Cardmarket(
@@ -923,14 +943,23 @@ class TestOAuth1Handler:
         assert handler.is_authenticated()
 
     def test_oauth1_handler_authenticate_missing_credentials(self):
-        """Test OAuth1Handler authenticate with missing credentials."""
+        """Test OAuth1Handler authenticate with missing credentials.
+
+        Providing the access token pair without the consumer pair passes
+        pair validation (both consumer args are None), but the subsequent
+        'required' check raises because no consumer credentials are stored.
+        Verifies the full error message matches the implementation.
+        """
         handler = OAuth1Handler()
 
-        with pytest.raises(AuthenticationError):
+        with pytest.raises(AuthenticationError) as exc_info:
             handler.authenticate(
                 access_token="test_access_token",
                 access_token_secret="test_access_token_secret",
             )
+
+        assert "Consumer key and consumer secret are required" in str(exc_info.value)
+        assert "OAuth1 authentication" in str(exc_info.value)
 
     def test_oauth1_handler_authenticate_partial_consumer_pair_rejected(self):
         """Test that providing consumer_key without consumer_secret fails.
