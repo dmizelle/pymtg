@@ -125,11 +125,18 @@ class TestMoxfieldAuthentication(unittest.TestCase):
         self.assertTrue(moxfield.is_authenticated())
 
     def test_authenticate_sets_api_key(self):
-        """Test that authenticate sets the API key."""
+        """Tests that authenticate stores the API key on both provider and handler.
+
+        Verifies that the API key passed to authenticate() is stored on both
+        the Moxfield provider instance (_api_key) and the auth_handler
+        (api_key property), ensuring authentication is backed by a real key.
+        """
         moxfield = Moxfield()
         self.assertFalse(moxfield.is_authenticated())
         moxfield.authenticate("new-api-key")
         self.assertTrue(moxfield.is_authenticated())
+        self.assertEqual(moxfield._api_key, "new-api-key")
+        self.assertEqual(moxfield.auth_handler.api_key, "new-api-key")
 
     def test_refresh_auth_with_valid_api_key(self):
         """Tests authentication refresh with a valid API key."""
