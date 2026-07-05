@@ -301,6 +301,17 @@ class TestMoxfieldSearchSyntax(unittest.TestCase):
         with self.assertRaises(AuthenticationError):
             moxfield.search_syntax("t:Land")
 
+    def test_search_syntax_network_error(self):
+        """Test that search_syntax raises NetworkError on network failure."""
+        moxfield = Moxfield(api_key="test-key")
+        with patch.object(
+            moxfield.http_client,
+            "get",
+            side_effect=requests.exceptions.RequestException("Network error"),
+        ):
+            with self.assertRaises(NetworkError):
+                moxfield.search_syntax("t:Land")
+
 
 class TestMoxfieldGetDeck(unittest.TestCase):
     """Test Moxfield.get_deck() method."""
