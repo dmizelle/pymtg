@@ -999,9 +999,8 @@ class TCGPlayer(BaseProvider):
         # a missing field, or a number), bail out.
         if not isinstance(product_type, str):
             logger.debug(
-                "TCGPlayer productType is %s (value: %r), not str; " "skipping",
-                type(product_type).__name__,
-                product_type,
+                f"TCGPlayer productType is {type(product_type).__name__} "
+                f"(value: {product_type!r}), not str; skipping"
             )
             return None
 
@@ -1031,10 +1030,8 @@ class TCGPlayer(BaseProvider):
         for marker in product_markers:
             if marker in lowered:
                 logger.debug(
-                    "TCGPlayer productType %r contains product marker "
-                    "%r; not using as type_line",
-                    product_type,
-                    marker,
+                    f"TCGPlayer productType {product_type!r} contains "
+                    f"product marker {marker!r}; not using as type_line"
                 )
                 return None
 
@@ -1065,8 +1062,7 @@ class TCGPlayer(BaseProvider):
         # Unknown value: return None rather than risking a wrong
         # type_line. Callers can inspect the raw data if needed.
         logger.debug(
-            "Unknown TCGPlayer productType %r; not using as type_line",
-            product_type,
+            f"Unknown TCGPlayer productType {product_type!r}; not using as type_line"
         )
         return None
 
