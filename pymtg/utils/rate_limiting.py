@@ -205,11 +205,11 @@ class RateLimiter:
 
             return True
 
-    def record(self, provider: str) -> None:
+    def _record(self, provider: str) -> None:
         """Record that a request was made to the specified provider.
 
-        This should be called after a request is successfully made to
-        update the rate limit state.
+        This is a private method called by RateLimitGuard.__exit__() to
+        update the rate limit state after a request completes.
 
         Args:
             provider: The provider name.
@@ -397,7 +397,7 @@ class RateLimitGuard:
 
         Records the request regardless of whether an exception occurred.
         """
-        self.rate_limiter.record(self.provider)
+        self.rate_limiter._record(self.provider)
 
     def __repr__(self) -> str:
         """Return a string representation of the guard.
