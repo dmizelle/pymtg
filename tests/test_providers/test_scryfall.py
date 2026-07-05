@@ -117,6 +117,7 @@ class TestScryfallGetCard(unittest.TestCase):
 
         self.assertEqual(context.exception.provider, "scryfall")
         self.assertEqual(context.exception.resource_type, "card")
+        self.assertIn("Card with ID non-existent-id not found", str(context.exception))
 
     @patch.object(Scryfall, "_handle_response")
     @patch.object(Scryfall, "http_client")
@@ -211,8 +212,10 @@ class TestScryfallSearch(unittest.TestCase):
 
         scryfall = Scryfall()
 
-        with self.assertRaises(NetworkError):
+        with self.assertRaises(NetworkError) as context:
             scryfall.search(name="test")
+
+        self.assertIn("Network error during search", str(context.exception))
 
 
 class TestScryfallSearchSyntax(unittest.TestCase):
@@ -257,8 +260,10 @@ class TestScryfallSearchSyntax(unittest.TestCase):
 
         self.assertIn("Query must be a non-empty string", str(context.exception))
 
-        with self.assertRaises(InvalidQueryError):
+        with self.assertRaises(InvalidQueryError) as context:
             scryfall.search_syntax(None)  # type: ignore  # Intentional None argument
+
+        self.assertIn("Query must be a non-empty string", str(context.exception))
 
     @patch.object(Scryfall, "_handle_response")
     @patch.object(Scryfall, "http_client")
@@ -321,11 +326,15 @@ class TestScryfallAutocomplete(unittest.TestCase):
         """Test that InvalidQueryError is raised for invalid autocomplete query."""
         scryfall = Scryfall()
 
-        with self.assertRaises(InvalidQueryError):
+        with self.assertRaises(InvalidQueryError) as context:
             scryfall.autocomplete("")
 
-        with self.assertRaises(InvalidQueryError):
+        self.assertIn("Query must be a non-empty string", str(context.exception))
+
+        with self.assertRaises(InvalidQueryError) as context:
             scryfall.autocomplete(None)  # type: ignore  # Intentional None argument
+
+        self.assertIn("Query must be a non-empty string", str(context.exception))
 
     @patch.object(Scryfall, "_handle_response")
     @patch.object(Scryfall, "http_client")
@@ -402,11 +411,15 @@ class TestScryfallGetCardsByName(unittest.TestCase):
         """Test that InvalidQueryError is raised for invalid card name."""
         scryfall = Scryfall()
 
-        with self.assertRaises(InvalidQueryError):
+        with self.assertRaises(InvalidQueryError) as context:
             scryfall.get_cards_by_name("")
 
-        with self.assertRaises(InvalidQueryError):
+        self.assertIn("Name must be a non-empty string", str(context.exception))
+
+        with self.assertRaises(InvalidQueryError) as context:
             scryfall.get_cards_by_name(None)  # type: ignore  # Intentional None argument
+
+        self.assertIn("Name must be a non-empty string", str(context.exception))
 
 
 class TestScryfallResponseParsing(unittest.TestCase):
@@ -580,6 +593,7 @@ class TestScryfallErrorHandling(unittest.TestCase):
 
         self.assertEqual(context.exception.provider, "scryfall")
         self.assertEqual(context.exception.resource_type, "card")
+        self.assertIn("Resource not found", str(context.exception))
 
     def test_handle_response_429(self):
         """Test that _handle_response raises RateLimitError for 429."""
@@ -595,6 +609,7 @@ class TestScryfallErrorHandling(unittest.TestCase):
 
         self.assertEqual(context.exception.provider, "scryfall")
         self.assertEqual(context.exception.retry_after, 10)
+        self.assertIn("Rate limit exceeded", str(context.exception))
 
     def test_handle_response_401(self):
         """Test that _handle_response raises AuthenticationError for 401."""
@@ -610,6 +625,7 @@ class TestScryfallErrorHandling(unittest.TestCase):
             scryfall._handle_response(mock_response, "search")
 
         self.assertEqual(context.exception.provider, "scryfall")
+        self.assertIn("Authentication failed", str(context.exception))
 
     def test_handle_response_400(self):
         """Test that _handle_response raises APIError for 400."""
@@ -625,6 +641,7 @@ class TestScryfallErrorHandling(unittest.TestCase):
 
         self.assertEqual(context.exception.provider, "scryfall")
         self.assertEqual(context.exception.status_code, 400)
+        self.assertIn("API error: 400", str(context.exception))
 
 
 class TestScryfallQueryBuilding(unittest.TestCase):
