@@ -506,7 +506,8 @@ class TCGPlayer(BaseProvider):
 
         Args:
             query: Partial card name to get suggestions for.
-            **kwargs: Additional parameters.
+            limit: Maximum number of suggestions to return. Defaults to 10.
+            **kwargs: Additional parameters (currently ignored).
 
         Returns:
             List of suggested card names.
@@ -520,7 +521,7 @@ class TCGPlayer(BaseProvider):
 
         params: dict[str, Any] = {
             "autoComplete": query,
-            "limit": kwargs.get("limit", 10),
+            "limit": limit,
         }
 
         endpoint = "/v2/catalog/products"
