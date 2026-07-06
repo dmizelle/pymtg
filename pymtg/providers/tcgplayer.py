@@ -933,7 +933,19 @@ class TCGPlayer(BaseProvider):
         if mana_cost_str is not None:
             try:
                 cmc = float(mana_cost_str)
+                if cmc < 0:
+                    logger.warning(
+                        "Negative CMC value %r for card %r; setting to None",
+                        cmc,
+                        data.get("name", ""),
+                    )
+                    cmc = None
             except (ValueError, TypeError):
+                logger.warning(
+                    "Invalid CMC value %r for card %r; setting to None",
+                    mana_cost_str,
+                    data.get("name", ""),
+                )
                 mana_cost_str = str(mana_cost_str)
                 cmc = None
 

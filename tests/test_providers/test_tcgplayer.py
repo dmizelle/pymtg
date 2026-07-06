@@ -946,6 +946,30 @@ class TestTCGPlayerResponseParsing(unittest.TestCase):
             colors[0], Color.WHITE
         )  # Use enum instance, not class attribute
 
+    def test_parse_card_data_negative_cmc_logs_warning(self):
+        """Test that negative CMC values log a warning and set to None."""
+        data = {
+            "productId": 12345,
+            "name": "Test Card",
+            "convertedManaCost": "-2",
+        }
+        with self.assertLogs(level="WARNING") as log:
+            card = self.tcgplayer._parse_card_data(data)
+        self.assertIsNone(card.cmc)
+        self.assertTrue(any("Negative CMC" in m for m in log.output))
+
+    def test_parse_card_data_invalid_cmc_logs_warning(self):
+        """Test that invalid CMC values log a warning and set to None."""
+        data = {
+            "productId": 12345,
+            "name": "Test Card",
+            "convertedManaCost": "not_a_number",
+        }
+        with self.assertLogs(level="WARNING") as log:
+            card = self.tcgplayer._parse_card_data(data)
+        self.assertIsNone(card.cmc)
+        self.assertTrue(any("Invalid CMC" in m for m in log.output))
+
     def test_parse_card_data_minimal(self):
         """Test parsing card data with minimal fields."""
         data = {
