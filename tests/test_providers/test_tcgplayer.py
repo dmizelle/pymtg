@@ -1122,6 +1122,54 @@ class TestTCGPlayerResponseParsing(unittest.TestCase):
         card = self.tcgplayer._parse_card_data(data)
         self.assertIsNone(card.type_line)
 
+    def test_parse_card_data_type_field_preferred_over_productType(self):
+        """Test that 'type' field is preferred over 'productType'.
+
+        Verifies that when both 'type' and 'productType' are present,
+        the 'type' field value is used for type_line.
+        """
+        data = {
+            "productId": 12345,
+            "name": "Serra Angel",
+            "categoryName": "LEA",
+            "type": "Creature - Angel",
+            "productType": "Magic: The Gathering - Single Card",
+        }
+        card = self.tcgplayer._parse_card_data(data)
+        self.assertEqual(card.type_line, "Creature - Angel")
+
+    def test_parse_card_data_type_field_used_directly(self):
+        """Test that 'type' field is used without productType validation.
+
+        Verifies that the 'type' field is used directly even if it
+        would not pass _extract_type_line validation (e.g., a value
+        not starting with a known MTG type prefix).
+        """
+        data = {
+            "productId": 12345,
+            "name": "Custom Card",
+            "categoryName": "LEA",
+            "type": "Legendary Artifact - Equipment",
+        }
+        card = self.tcgplayer._parse_card_data(data)
+        self.assertEqual(card.type_line, "Legendary Artifact - Equipment")
+
+    def test_parse_card_data_empty_type_falls_back_to_productType(self):
+        """Test that empty 'type' field falls back to 'productType'.
+
+        Verifies that when 'type' is an empty string, _parse_card_data
+        falls back to validating 'productType'.
+        """
+        data = {
+            "productId": 12345,
+            "name": "Serra Angel",
+            "categoryName": "LEA",
+            "type": "",
+            "productType": "Creature - Angel",
+        }
+        card = self.tcgplayer._parse_card_data(data)
+        self.assertEqual(card.type_line, "Creature - Angel")
+
 
 if __name__ == "__main__":
     unittest.main()

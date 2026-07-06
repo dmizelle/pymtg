@@ -948,12 +948,18 @@ class TCGPlayer(BaseProvider):
         flavors = [flavor_text] if flavor_text else None
 
         # Extract card type.
-        # TCGPlayer's productType field is overloaded: search results
+        # Prefer the 'type' field which contains the actual card type.
+        # Fall back to 'productType' which is overloaded: search results
         # return a product category (e.g., "Magic: The Gathering -
         # Single Card") while detailed card data returns the actual
-        # card type (e.g., "Creature - Angel"). Validate the value to
-        # avoid storing a product category as the card's type_line.
-        card_type = self._extract_type_line(data.get("productType", ""))
+        # card type (e.g., "Creature - Angel"). Validate the fallback
+        # to avoid storing a product category as the card's type_line.
+        raw_type = data.get("type")
+        stripped_type = raw_type.strip() if isinstance(raw_type, str) else ""
+        if stripped_type:
+            card_type = stripped_type
+        else:
+            card_type = self._extract_type_line(data.get("productType", ""))
 
         # Extract power/toughness
         power = data.get("power", "") or None
