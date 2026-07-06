@@ -893,8 +893,8 @@ class TCGPlayer(BaseProvider):
 
         for ext in extended_data:
             if isinstance(ext, dict):
-                if "price" in ext and "condition" in ext:
-                    condition = ext.get("condition", "").lower()
+                if "price" in ext and "conditionName" in ext:
+                    condition = ext.get("conditionName", "").lower().replace(" ", "_")
                     price = ext.get("price", 0)
                     if isinstance(price, (int, float)):
                         pricing_dict[condition] = float(price)
