@@ -9,6 +9,7 @@ public API that doesn't require authentication for most endpoints.
 """
 
 import logging
+import re
 from typing import Any
 
 import requests
@@ -28,6 +29,12 @@ from pymtg.models.pricing import Pricing, ScryfallPricing
 from pymtg.providers.base import BaseProvider
 
 logger = logging.getLogger(__name__)
+
+# UUID v4 pattern for Scryfall card IDs
+_UUID_PATTERN = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
 
 
 class Scryfall(BaseProvider):
@@ -445,6 +452,13 @@ class Scryfall(BaseProvider):
         if not card_id:
             raise InvalidQueryError(
                 "card_id is required for Scryfall.get_card()",
+                provider=self.name,
+            )
+
+        # Validate UUID format
+        if not _UUID_PATTERN.match(card_id):
+            raise InvalidQueryError(
+                f"card_id '{card_id}' is not a valid UUID format",
                 provider=self.name,
             )
 

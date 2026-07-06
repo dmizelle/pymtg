@@ -113,11 +113,14 @@ class TestScryfallGetCard(unittest.TestCase):
         scryfall = Scryfall()
 
         with self.assertRaises(NotFoundError) as context:
-            scryfall.get_card("non-existent-id")
+            scryfall.get_card("00000000-0000-0000-0000-000000000000")
 
         self.assertEqual(context.exception.provider, "scryfall")
         self.assertEqual(context.exception.resource_type, "card")
-        self.assertIn("Card with ID non-existent-id not found", str(context.exception))
+        self.assertIn(
+            "Card with ID 00000000-0000-0000-0000-000000000000 not found",
+            str(context.exception),
+        )
 
     @patch.object(Scryfall, "_handle_response")
     @patch.object(Scryfall, "http_client")
@@ -131,7 +134,7 @@ class TestScryfallGetCard(unittest.TestCase):
         scryfall = Scryfall()
 
         with self.assertRaises(NetworkError) as context:
-            scryfall.get_card("test-id")
+            scryfall.get_card("00000000-0000-0000-0000-000000000001")
 
         self.assertIn("Network error getting card", str(context.exception))
 
@@ -955,6 +958,57 @@ class TestScryfallQueryBuilding(unittest.TestCase):
         query = scryfall._build_search_query(name="Lotus", set_code="LEA")
         self.assertIn('"Lotus"', query)
         self.assertIn("set:LEA", query)
+
+
+class TestScryfallGetCardUUIDValidation(unittest.TestCase):
+    """Test Scryfall get_card UUID validation."""
+
+    def test_get_card_invalid_uuid_format(self):
+        """Test that get_card raises InvalidQueryError for invalid UUID format."""
+        scryfall = Scryfall()
+
+        with self.assertRaises(InvalidQueryError) as ctx:
+            scryfall.get_card("not-a-uuid")
+
+        self.assertIn("is not a valid uuid format", str(ctx.exception).lower())
+
+    def test_get_card_empty_uuid(self):
+        """Test that get_card raises InvalidQueryError for empty card_id."""
+        scryfall = Scryfall()
+
+        with self.assertRaises(InvalidQueryError) as ctx:
+            scryfall.get_card("")
+
+        self.assertIn("card_id is required", str(ctx.exception).lower())
+
+    def test_get_card_none_uuid(self):
+        """Test that get_card raises InvalidQueryError for None card_id."""
+        scryfall = Scryfall()
+
+        with self.assertRaises(InvalidQueryError) as ctx:
+            scryfall.get_card(None)  # type: ignore
+
+        self.assertIn("card_id is required", str(ctx.exception).lower())
+
+    def test_get_card_valid_uuid_format(self):
+        """Test that get_card accepts valid UUID format."""
+        scryfall = Scryfall()
+
+        # Mock the HTTP client to avoid actual API call
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "object": "card",
+            "id": "38625902-0567-4f24-85b0-a00843553997",
+            "name": "Black Lotus",
+            "mana_cost": "{0}",
+            "type_line": "Artifact",
+        }
+        with patch.object(scryfall.http_client, "get", return_value=mock_response):
+            card = scryfall.get_card("38625902-0567-4f24-85b0-a00843553997")
+            self.assertIsNotNone(card)
+            self.assertEqual(card.id, "38625902-0567-4f24-85b0-a00843553997")
+            self.assertEqual(card.name, "Black Lotus")
 
 
 class TestScryfallRepr(unittest.TestCase):
