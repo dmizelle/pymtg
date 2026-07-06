@@ -70,10 +70,9 @@ class SessionAuthHandler(BaseAuthHandler):
         self._username = username
         self._password = password
 
+        auth_session = requests.Session()
+        session_stored = False
         try:
-            # Create a session for authentication
-            auth_session = requests.Session()
-
             # First, get the login page to retrieve CSRF token
             login_url = f"{self.base_url}{self.login_endpoint}"
             logger.debug(f"Getting CSRF token from {login_url}")
@@ -127,6 +126,7 @@ class SessionAuthHandler(BaseAuthHandler):
             }
             self._session = auth_session
             self._authenticated = True
+            session_stored = True
 
             logger.info(f"Session authentication successful for {username}")
 
@@ -136,6 +136,9 @@ class SessionAuthHandler(BaseAuthHandler):
                 "Network error during authentication",
                 original_exception=e,
             ) from e
+        finally:
+            if not session_stored:
+                auth_session.close()
 
     def is_authenticated(self) -> bool:
         """Check if authentication is valid.
