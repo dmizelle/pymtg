@@ -882,6 +882,14 @@ class TestScryfallResponseParsing(unittest.TestCase):
         # Test empty list
         self.assertIsNone(scryfall._parse_colors([]))
 
+    def test_parse_pricing_none_input(self):
+        """Test that _parse_pricing handles None input gracefully."""
+        scryfall = Scryfall()
+        pricing = scryfall._parse_pricing(None)
+        self.assertIsNotNone(pricing)
+        self.assertIsNotNone(pricing.scryfall)
+        self.assertIsNone(pricing.scryfall.usd)
+
 
 class TestScryfallErrorHandling(unittest.TestCase):
     """Test Scryfall error handling."""
