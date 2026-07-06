@@ -1395,3 +1395,83 @@ class TestOAuth1Handler:
         assert handler.access_token is None
         assert handler.access_token_secret is None
         assert not handler.is_authenticated()
+
+
+class TestCardmarketRateLimiting:
+    """Tests for Cardmarket rate limit tracking."""
+
+    def test_rate_limit_initialization(self):
+        """Test that rate limit attributes are initialized correctly."""
+        cardmarket = Cardmarket()
+
+        assert cardmarket._request_count == 0
+        assert cardmarket._rate_limit == 30000
+
+    def test_record_request_increments_counter(self):
+        """Test that _record_request increments the request counter."""
+        cardmarket = Cardmarket()
+
+        cardmarket._record_request()
+        assert cardmarket._request_count == 1
+
+        cardmarket._record_request()
+        assert cardmarket._request_count == 2
+
+    def test_check_rate_limit_raises_when_exceeded(self):
+        """Test that _check_rate_limit raises RateLimitError when limit is reached."""
+        cardmarket = Cardmarket()
+        cardmarket._rate_limit = 2
+        cardmarket._request_count = 2
+
+        with pytest.raises(RateLimitError):
+            cardmarket._check_rate_limit()
+
+    def test_check_rate_limit_passes_when_below_limit(self):
+        """Test that _check_rate_limit does not raise when below limit."""
+        cardmarket = Cardmarket()
+        cardmarket._rate_limit = 100
+        cardmarket._request_count = 50
+
+        # Should not raise
+        cardmarket._check_rate_limit()
+
+    def test_check_rate_limit_passes_one_below_limit(self):
+        """Test that _check_rate_limit does not raise when one below limit."""
+        cardmarket = Cardmarket()
+        cardmarket._rate_limit = 100
+        cardmarket._request_count = 99
+
+        # Should not raise (only raises when >= limit)
+        cardmarket._check_rate_limit()
+
+    def test_check_rate_limit_raises_at_limit(self):
+        """Test that _check_rate_limit raises when count >= limit."""
+        cardmarket = Cardmarket()
+        cardmarket._rate_limit = 100
+        cardmarket._request_count = 100
+
+        with pytest.raises(RateLimitError) as exc_info:
+            cardmarket._check_rate_limit()
+
+        assert "rate limit exceeded" in str(exc_info.value).lower()
+
+    def test_record_and_check_rate_limit_interaction(self):
+        """Test that _record_request and _check_rate_limit work together."""
+        cardmarket = Cardmarket()
+        cardmarket._rate_limit = 3
+
+        # Record requests up to limit
+        for _ in range(3):
+            cardmarket._record_request()
+
+        # Should raise now
+        with pytest.raises(RateLimitError):
+            cardmarket._check_rate_limit()
+
+    def test_check_rate_limit_zero_limit(self):
+        """Test that _check_rate_limit raises immediately when limit is 0."""
+        cardmarket = Cardmarket()
+        cardmarket._rate_limit = 0
+
+        with pytest.raises(RateLimitError):
+            cardmarket._check_rate_limit()
