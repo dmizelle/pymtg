@@ -750,8 +750,20 @@ class Archidekt(BaseProvider):
         # Parse main deck cards
         main_cards = data.get("cards", [])
         for card_data in main_cards:
+            if not isinstance(card_data, dict):
+                logger.warning(
+                    "Skipping invalid card_data in main deck: " "expected dict, got %s",
+                    type(card_data).__name__,
+                )
+                continue
             quantity = card_data.get("quantity", 1)
             card_info = card_data.get("card", {})
+            if not isinstance(card_info, dict):
+                logger.warning(
+                    "Skipping invalid card_info in main deck: " "expected dict, got %s",
+                    type(card_info).__name__,
+                )
+                continue
 
             # Parse card
             card = self._parse_card(card_info)
@@ -777,8 +789,20 @@ class Archidekt(BaseProvider):
         # Parse sideboard cards if present
         sideboard_cards = data.get("sideboard", [])
         for card_data in sideboard_cards:
+            if not isinstance(card_data, dict):
+                logger.warning(
+                    "Skipping invalid card_data in sideboard: " "expected dict, got %s",
+                    type(card_data).__name__,
+                )
+                continue
             quantity = card_data.get("quantity", 1)
             card_info = card_data.get("card", {})
+            if not isinstance(card_info, dict):
+                logger.warning(
+                    "Skipping invalid card_info in sideboard: " "expected dict, got %s",
+                    type(card_info).__name__,
+                )
+                continue
 
             card = self._parse_card(card_info)
 
@@ -794,7 +818,21 @@ class Archidekt(BaseProvider):
         # Parse commander cards if present
         commander_cards = data.get("commanders", [])
         for card_data in commander_cards:
+            if not isinstance(card_data, dict):
+                logger.warning(
+                    "Skipping invalid card_data in commanders: "
+                    "expected dict, got %s",
+                    type(card_data).__name__,
+                )
+                continue
             card_info = card_data.get("card", {})
+            if not isinstance(card_info, dict):
+                logger.warning(
+                    "Skipping invalid card_info in commanders: "
+                    "expected dict, got %s",
+                    type(card_info).__name__,
+                )
+                continue
 
             card = self._parse_card(card_info)
 
