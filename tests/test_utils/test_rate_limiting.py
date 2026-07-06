@@ -165,6 +165,135 @@ class TestRateLimiterCheckAndRecord(unittest.TestCase):
         self.assertEqual(len(self.limiter.states["test_provider"].timestamps), 1)
 
 
+class TestRateLimiterFractionalLimits(unittest.TestCase):
+    """Tests for fractional rate limit handling.
+
+    Verifies that fractional rate limits are rounded up using math.ceil
+    so that fractional rates allow at least one request per window,
+    per issue #133.
+    """
+
+    def test_fractional_requests_per_second_rounds_up(self) -> None:
+        """Tests that 1.5 req/s with 1s window allows 2 requests.
+
+        Without ceil, int(1.5 * 1) = 1, which would under-limit. With
+        ceil, math.ceil(1.5 * 1) = 2, the correct upper bound.
+        """
+        limiter = RateLimiter(
+            {
+                "frac": RateLimitConfig(
+                    requests_per_second=1.5,
+                    burst_size=10,
+                ),
+            }
+        )
+        # Should allow 2 requests (ceil(1.5)) before blocking
+        self.assertTrue(limiter.check("frac"))
+        limiter._record("frac")
+        self.assertTrue(limiter.check("frac"))
+        limiter._record("frac")
+        # Third request should be blocked (at limit of 2)
+        self.assertFalse(limiter.check("frac"))
+
+    def test_fractional_requests_per_minute_rounds_up(self) -> None:
+        """Tests that 1.5 req/min with 60s window allows 2 requests.
+
+        Without ceil, int(1.5 * 60 / 60) = 1. With ceil,
+        math.ceil(1.5 * 60 / 60) = 2.
+        """
+        limiter = RateLimiter(
+            {
+                "frac": RateLimitConfig(
+                    requests_per_minute=1.5,
+                    burst_size=10,
+                    window_seconds=60,
+                ),
+            }
+        )
+        self.assertTrue(limiter.check("frac"))
+        limiter._record("frac")
+        self.assertTrue(limiter.check("frac"))
+        limiter._record("frac")
+        self.assertFalse(limiter.check("frac"))
+
+    def test_sub_one_per_second_allows_one_request(self) -> None:
+        """Tests that 0.5 req/s with 1s window allows 1 request.
+
+        Without ceil, int(0.5 * 1) = 0, blocking all requests. With
+        ceil, math.ceil(0.5 * 1) = 1, allowing a single request.
+        """
+        limiter = RateLimiter(
+            {
+                "sub": RateLimitConfig(
+                    requests_per_second=0.5,
+                    burst_size=10,
+                ),
+            }
+        )
+        self.assertTrue(limiter.check("sub"))
+        limiter._record("sub")
+        self.assertFalse(limiter.check("sub"))
+
+    def test_integer_rate_limit_unchanged_by_ceil(self) -> None:
+        """Tests that integer rate limits are unaffected by ceil.
+
+        math.ceil(5 * 1) = 5, same as int(5 * 1) = 5.
+        """
+        limiter = RateLimiter(
+            {
+                "int": RateLimitConfig(
+                    requests_per_second=5,
+                    burst_size=10,
+                ),
+            }
+        )
+        # Should allow 5 requests
+        for _ in range(5):
+            self.assertTrue(limiter.check("int"))
+            limiter._record("int")
+        self.assertFalse(limiter.check("int"))
+
+    def test_burst_size_caps_rounded_up_max_requests(self) -> None:
+        """Tests that burst_size caps the rounded-up max_requests.
+
+        With requests_per_second=1.5 (ceil=2) but burst_size=1, the
+        effective limit should be 1, not 2. The min(max_requests,
+        burst_size) logic must still apply after ceil.
+        """
+        limiter = RateLimiter(
+            {
+                "frac": RateLimitConfig(
+                    requests_per_second=1.5,
+                    burst_size=1,
+                ),
+            }
+        )
+        self.assertTrue(limiter.check("frac"))
+        limiter._record("frac")
+        # Second request blocked by burst_size cap, not ceil result
+        self.assertFalse(limiter.check("frac"))
+
+    def test_fractional_rate_with_custom_window(self) -> None:
+        """Tests ceil with a non-standard window_seconds.
+
+        With requests_per_second=1.5 and window_seconds=2,
+        max_requests = ceil(1.5 * 2) = 3.
+        """
+        limiter = RateLimiter(
+            {
+                "frac": RateLimitConfig(
+                    requests_per_second=1.5,
+                    burst_size=10,
+                    window_seconds=2,
+                ),
+            }
+        )
+        for _ in range(3):
+            self.assertTrue(limiter.check("frac"))
+            limiter._record("frac")
+        self.assertFalse(limiter.check("frac"))
+
+
 class TestRateLimitGuard(unittest.TestCase):
     """Tests for the RateLimitGuard context manager.
 
