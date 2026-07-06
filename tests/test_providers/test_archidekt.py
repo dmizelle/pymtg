@@ -886,6 +886,156 @@ class TestArchidektParseDeck(unittest.TestCase):
         cards = deck.cards or []
         self.assertEqual(len(cards), 0)
 
+    def test_parse_deck_skips_invalid_card_data_in_main(self):
+        """Test that non-dict entries in main cards are skipped with warning."""
+        archidekt = Archidekt()
+
+        with patch.object(archidekt, "_parse_card") as mock_parse_card:
+            mock_parse_card.side_effect = [
+                Card(id="card1", name="Card 1", source="archidekt"),
+            ]
+
+            data = {
+                "id": "deck-1",
+                "name": "Test",
+                "cards": [
+                    "not-a-dict",
+                    42,
+                    {"quantity": 4, "card": {"id": "card1"}},
+                ],
+            }
+
+            deck = archidekt._parse_deck(data)
+
+            cards = deck.cards or []
+            self.assertEqual(len(cards), 1)
+            self.assertEqual(mock_parse_card.call_count, 1)
+
+    def test_parse_deck_skips_invalid_card_info_in_main(self):
+        """Test that entries with non-dict card_info in main are skipped."""
+        archidekt = Archidekt()
+
+        with patch.object(archidekt, "_parse_card") as mock_parse_card:
+            mock_parse_card.side_effect = [
+                Card(id="card1", name="Card 1", source="archidekt"),
+            ]
+
+            data = {
+                "id": "deck-1",
+                "name": "Test",
+                "cards": [
+                    {"quantity": 4, "card": "not-a-dict"},
+                    {"quantity": 2, "card": 123},
+                    {"quantity": 1, "card": {"id": "card1"}},
+                ],
+            }
+
+            deck = archidekt._parse_deck(data)
+
+            cards = deck.cards or []
+            self.assertEqual(len(cards), 1)
+            self.assertEqual(mock_parse_card.call_count, 1)
+
+    def test_parse_deck_skips_invalid_card_data_in_sideboard(self):
+        """Test that non-dict entries in sideboard are skipped."""
+        archidekt = Archidekt()
+
+        with patch.object(archidekt, "_parse_card") as mock_parse_card:
+            mock_parse_card.side_effect = [
+                Card(id="side1", name="Side 1", source="archidekt"),
+            ]
+
+            data = {
+                "id": "deck-1",
+                "name": "Test",
+                "cards": [],
+                "sideboard": [
+                    None,
+                    {"quantity": 3, "card": {"id": "side1"}},
+                ],
+            }
+
+            deck = archidekt._parse_deck(data)
+
+            cards = deck.cards or []
+            self.assertEqual(len(cards), 1)
+            self.assertEqual(mock_parse_card.call_count, 1)
+
+    def test_parse_deck_skips_invalid_card_info_in_sideboard(self):
+        """Test that entries with non-dict card_info in sideboard are skipped."""
+        archidekt = Archidekt()
+
+        with patch.object(archidekt, "_parse_card") as mock_parse_card:
+            mock_parse_card.side_effect = [
+                Card(id="side1", name="Side 1", source="archidekt"),
+            ]
+
+            data = {
+                "id": "deck-1",
+                "name": "Test",
+                "cards": [],
+                "sideboard": [
+                    {"quantity": 3, "card": ["not", "a", "dict"]},
+                    {"quantity": 1, "card": {"id": "side1"}},
+                ],
+            }
+
+            deck = archidekt._parse_deck(data)
+
+            cards = deck.cards or []
+            self.assertEqual(len(cards), 1)
+            self.assertEqual(mock_parse_card.call_count, 1)
+
+    def test_parse_deck_skips_invalid_card_data_in_commanders(self):
+        """Test that non-dict entries in commanders are skipped."""
+        archidekt = Archidekt()
+
+        with patch.object(archidekt, "_parse_card") as mock_parse_card:
+            mock_parse_card.side_effect = [
+                Card(id="cmd1", name="Commander", source="archidekt"),
+            ]
+
+            data = {
+                "id": "deck-1",
+                "name": "Test",
+                "cards": [],
+                "commanders": [
+                    "invalid",
+                    {"card": {"id": "cmd1"}},
+                ],
+            }
+
+            deck = archidekt._parse_deck(data)
+
+            cards = deck.cards or []
+            self.assertEqual(len(cards), 1)
+            self.assertEqual(mock_parse_card.call_count, 1)
+
+    def test_parse_deck_skips_invalid_card_info_in_commanders(self):
+        """Test that entries with non-dict card_info in commanders are skipped."""
+        archidekt = Archidekt()
+
+        with patch.object(archidekt, "_parse_card") as mock_parse_card:
+            mock_parse_card.side_effect = [
+                Card(id="cmd1", name="Commander", source="archidekt"),
+            ]
+
+            data = {
+                "id": "deck-1",
+                "name": "Test",
+                "cards": [],
+                "commanders": [
+                    {"card": 42},
+                    {"card": {"id": "cmd1"}},
+                ],
+            }
+
+            deck = archidekt._parse_deck(data)
+
+            cards = deck.cards or []
+            self.assertEqual(len(cards), 1)
+            self.assertEqual(mock_parse_card.call_count, 1)
+
 
 class TestArchidektBuildSearchQuery(unittest.TestCase):
     """Test Archidekt._build_search_query() method."""
