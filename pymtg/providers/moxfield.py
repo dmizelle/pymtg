@@ -824,7 +824,9 @@ class Moxfield(BaseProvider):
         if flavor_text and isinstance(flavor_text, str):
             flavors = [flavor_text]
         elif isinstance(flavor_text, list):
-            flavors = flavor_text
+            flavors = [ft for ft in flavor_text if ft is not None]
+            if not flavors:
+                flavors = None
         else:
             flavors = None
 

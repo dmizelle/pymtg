@@ -599,6 +599,31 @@ class TestMoxfieldCardParsing(unittest.TestCase):
         assert card_faces is not None
         self.assertEqual(len(card_faces), 2)
 
+    def test_parse_card_flavor_text_list_filters_none(self):
+        """Test that None values are filtered from flavor_text list."""
+        moxfield = Moxfield(api_key="test-key")
+        data = {
+            "id": "card-123",
+            "name": "Black Lotus",
+            "flavor_text": ["A flavorful card", None, "Another flavor"],
+        }
+        card = moxfield._parse_card(data)
+        assert card.flavors is not None
+        self.assertEqual(len(card.flavors), 2)
+        self.assertEqual(card.flavors[0], "A flavorful card")
+        self.assertEqual(card.flavors[1], "Another flavor")
+
+    def test_parse_card_flavor_text_all_none_returns_none(self):
+        """Test that flavor_text list with all None values returns None."""
+        moxfield = Moxfield(api_key="test-key")
+        data = {
+            "id": "card-123",
+            "name": "Black Lotus",
+            "flavor_text": [None, None],
+        }
+        card = moxfield._parse_card(data)
+        self.assertIsNone(card.flavors)
+
     def test_parse_card_image_uris_filters_empty_strings(self):
         """Test that empty string values are filtered from image_uris."""
         moxfield = Moxfield(api_key="test-key")
