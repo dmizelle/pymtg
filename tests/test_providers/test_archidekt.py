@@ -1133,6 +1133,18 @@ class TestArchidektBuildSearchQuery(unittest.TestCase):
         self.assertIn("c:B", query)
         self.assertIn("t:Artifact", query)
 
+    def test_build_query_name_with_special_chars_sanitized(self):
+        """Test that special characters in name are sanitized."""
+        archidekt = Archidekt()
+
+        # Double quotes should be escaped
+        query = archidekt._build_search_query(name='Card "Test"')
+        self.assertIn(r"\"", query)
+
+        # Backslashes should be escaped
+        query = archidekt._build_search_query(name="Card\\Test")
+        self.assertIn(r"\\", query)
+
 
 class TestArchidektNormalizeFlavorText(unittest.TestCase):
     """Tests for the _normalize_flavor_text helper method."""

@@ -501,8 +501,9 @@ class Archidekt(BaseProvider):
 
         # Add name filter
         if name:
-            # Exact match if it's a specific card name
-            query_parts.append(f'"{name}"')
+            # Sanitize name to prevent query injection
+            sanitized_name = name.replace("\\", "\\\\").replace('"', '\\"')
+            query_parts.append(f'"{sanitized_name}"')
 
         # Add color filters
         if colors:
