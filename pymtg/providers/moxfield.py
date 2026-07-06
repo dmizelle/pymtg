@@ -832,11 +832,12 @@ class Moxfield(BaseProvider):
         raw_image_uris = data.get("image_uris", {})
         image_uris: dict[str, str] | None = {}
         if raw_image_uris:
-            # Convert all values to strings, filtering out None values
+            # Keep only non-empty string values, filtering out None,
+            # empty strings, and non-string types
             image_uris = {
-                key: str(value)
+                key: value
                 for key, value in raw_image_uris.items()
-                if value is not None
+                if isinstance(value, str) and value
             }
             image_uris = image_uris if image_uris else None
         elif data.get("image_url"):
