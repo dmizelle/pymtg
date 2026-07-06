@@ -960,6 +960,44 @@ class TestTCGPlayerResponseParsing(unittest.TestCase):
         self.assertEqual(card.name, "Plains")
         self.assertEqual(card.set_code, "LEA")
 
+    def test_parse_card_data_set_name_uses_group_name(self):
+        """Test set_name uses groupName, not categoryName.
+
+        Verifies that set_code comes from categoryName and set_name
+        comes from groupName (a different field), fixing the bug where
+        both were set to categoryName.
+        """
+        data = {
+            "productId": 12345,
+            "name": "Serra Angel",
+            "categoryName": "LEA",
+            "groupName": "Limited Edition Alpha",
+        }
+
+        card = self.tcgplayer._parse_card_data(data)
+
+        self.assertIsInstance(card, Card)
+        self.assertEqual(card.set_code, "LEA")
+        self.assertEqual(card.set_name, "Limited Edition Alpha")
+
+    def test_parse_card_data_set_name_none_without_group_name(self):
+        """Test set_name is None when groupName is not provided.
+
+        Verifies that set_name falls back to None when groupName is
+        absent, rather than duplicating the set_code value.
+        """
+        data = {
+            "productId": 12345,
+            "name": "Plains",
+            "categoryName": "LEA",
+        }
+
+        card = self.tcgplayer._parse_card_data(data)
+
+        self.assertIsInstance(card, Card)
+        self.assertEqual(card.set_code, "LEA")
+        self.assertIsNone(card.set_name)
+
     def test_parse_card_data_pricing_uses_condition_name(self):
         """Test pricing extraction uses conditionName, not condition.
 
