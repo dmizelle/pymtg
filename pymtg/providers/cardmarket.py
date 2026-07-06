@@ -931,7 +931,7 @@ class Cardmarket(BaseProvider):
                     result.get("conditionName", "").lower().replace(" ", "_")
                 )
                 price = result.get("price", 0)
-                if isinstance(price, (int, float)):
+                if isinstance(price, (int, float)) and price >= 0:
                     # Map condition names to our fields
                     if condition in [
                         "near_mint",
@@ -951,6 +951,11 @@ class Cardmarket(BaseProvider):
                         cardmarket_pricing_data["low_ex"] = float(price)
                     elif condition == "low" or condition_name == "low":
                         cardmarket_pricing_data["low"] = float(price)
+                    else:
+                        logger.warning(
+                            f"Unmapped condition '{condition}' "
+                            f"(name: '{condition_name}') in pricing data"
+                        )
         else:
             # Try direct fields
             for field in ["avg1", "avg7", "avg30", "low", "low_ex", "trend"]:
