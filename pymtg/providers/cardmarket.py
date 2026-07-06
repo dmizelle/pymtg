@@ -309,6 +309,12 @@ class Cardmarket(BaseProvider):
                         f"Valid parameters: {', '.join(sorted(self.VALID_SEARCH_PARAMS))}"
                     )
 
+            # Validate limit and page
+            if limit < 1:
+                raise InvalidQueryError("limit must be a positive integer (>= 1)")
+            if page < 1:
+                raise InvalidQueryError("page must be a positive integer (>= 1)")
+
             # Build query parameters for Cardmarket /products endpoint
             params: dict[str, Any] = {}
 
