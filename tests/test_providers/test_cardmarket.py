@@ -284,6 +284,44 @@ class TestCardmarketSearch:
 
             assert "Network error" in str(exc_info.value)
 
+    def test_search_negative_limit_raises(self):
+        """Test search with limit <= 0 raises InvalidQueryError.
+
+        Verifies that limit values of 0 and -1 are rejected before any
+        API request is made.
+        """
+        cardmarket = Cardmarket(
+            consumer_key="test_consumer_key",
+            consumer_secret="test_consumer_secret",
+            access_token="test_access_token",
+            access_token_secret="test_access_token_secret",
+        )
+
+        for invalid_limit in (0, -1):
+            with pytest.raises(InvalidQueryError) as exc_info:
+                cardmarket.search(name="Black Lotus", limit=invalid_limit)
+
+            assert "limit must be a positive integer (>= 1)" in str(exc_info.value)
+
+    def test_search_negative_page_raises(self):
+        """Test search with page <= 0 raises InvalidQueryError.
+
+        Verifies that page values of 0 and -1 are rejected before any
+        API request is made.
+        """
+        cardmarket = Cardmarket(
+            consumer_key="test_consumer_key",
+            consumer_secret="test_consumer_secret",
+            access_token="test_access_token",
+            access_token_secret="test_access_token_secret",
+        )
+
+        for invalid_page in (0, -1):
+            with pytest.raises(InvalidQueryError) as exc_info:
+                cardmarket.search(name="Black Lotus", page=invalid_page)
+
+            assert "page must be a positive integer (>= 1)" in str(exc_info.value)
+
 
 class TestCardmarketGetCard:
     """Tests for Cardmarket get_card functionality."""
