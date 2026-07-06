@@ -443,6 +443,43 @@ class TestScryfallSearchSyntax(unittest.TestCase):
         self.assertEqual(params["order"], "name")
         self.assertEqual(params["unique"], "prints")
 
+    def test_search_negative_page_raises(self):
+        """Test that InvalidQueryError is raised for page < 1 in search()."""
+        scryfall = Scryfall()
+
+        with self.assertRaises(InvalidQueryError) as context:
+            scryfall.search(name="Test", page=-1)
+
+        self.assertIn("page must be a positive integer (>= 1)", str(context.exception))
+
+        with self.assertRaises(InvalidQueryError) as context:
+            scryfall.search(name="Test", page=0)
+
+        self.assertIn("page must be a positive integer (>= 1)", str(context.exception))
+
+    def test_search_syntax_negative_page_raises(self):
+        """Test that InvalidQueryError is raised for page < 1 in search_syntax()."""
+        scryfall = Scryfall()
+
+        with self.assertRaises(InvalidQueryError) as context:
+            scryfall.search_syntax("name:test", page=-1)
+
+        self.assertIn("page must be a positive integer (>= 1)", str(context.exception))
+
+        with self.assertRaises(InvalidQueryError) as context:
+            scryfall.search_syntax("name:test", page=0)
+
+        self.assertIn("page must be a positive integer (>= 1)", str(context.exception))
+
+    def test_search_syntax_non_integer_page_raises(self):
+        """Test that InvalidQueryError is raised for non-integer page in search_syntax()."""
+        scryfall = Scryfall()
+
+        with self.assertRaises(InvalidQueryError) as context:
+            scryfall.search_syntax("name:test", page="two")
+
+        self.assertIn("page must be a positive integer (>= 1)", str(context.exception))
+
 
 class TestScryfallAutocomplete(unittest.TestCase):
     """Test Scryfall.autocomplete() method."""
