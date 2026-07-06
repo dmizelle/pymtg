@@ -804,6 +804,62 @@ class TestCardmarketParseCard:
         assert isinstance(pricing, Pricing)
         assert pricing.cardmarket is not None
 
+    def test_parse_pricing_negative_price_skipped(self):
+        """Test that negative prices are skipped in pricing parsing."""
+        cardmarket = Cardmarket(
+            consumer_key="test_consumer_key",
+            consumer_secret="test_consumer_secret",
+            access_token="test_access_token",
+            access_token_secret="test_access_token_secret",
+        )
+
+        pricing_data = {
+            "results": [
+                {
+                    "price": -5.0,
+                    "conditionName": "Near Mint",
+                },
+                {
+                    "price": 10.50,
+                    "conditionName": "Near Mint",
+                },
+            ]
+        }
+
+        pricing = cardmarket._parse_pricing(pricing_data)
+
+        assert isinstance(pricing, Pricing)
+        assert pricing.cardmarket is not None
+        # Negative price should be skipped, only valid price used
+        assert pricing.cardmarket.avg1 == 10.50
+
+    def test_parse_pricing_unmapped_condition_warning(self, caplog):
+        """Test that unmapped conditions log a warning."""
+        import logging
+
+        cardmarket = Cardmarket(
+            consumer_key="test_consumer_key",
+            consumer_secret="test_consumer_secret",
+            access_token="test_access_token",
+            access_token_secret="test_access_token_secret",
+        )
+
+        pricing_data = {
+            "results": [
+                {
+                    "price": 10.50,
+                    "condition": "damaged",
+                    "conditionName": "Damaged",
+                },
+            ]
+        }
+
+        with caplog.at_level(logging.WARNING, logger="pymtg.providers.cardmarket"):
+            pricing = cardmarket._parse_pricing(pricing_data)
+
+        assert isinstance(pricing, Pricing)
+        assert "Unmapped condition 'damaged'" in caplog.text
+
     @pytest.mark.parametrize(
         ("rarity_str", "expected_rarity"),
         [
