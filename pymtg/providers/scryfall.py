@@ -593,7 +593,10 @@ class Scryfall(BaseProvider):
         # Extract the Scryfall card ID. For Scryfall, the provider-specific
         # card ID and the canonical Scryfall UUID are the same value, so both
         # the Card.id and Card.scryfall_id fields are populated from it.
+        # Card.id is required (defaults to empty string), while
+        # Card.scryfall_id is optional (defaults to None per the Card model).
         card_id = scryfall_data.get("id", "")
+        scryfall_id = scryfall_data.get("id")
 
         # Extract basic information
         card_faces = scryfall_data.get("card_faces")
@@ -673,7 +676,7 @@ class Scryfall(BaseProvider):
 
         return Card(
             id=card_id,
-            scryfall_id=card_id,
+            scryfall_id=scryfall_id,
             oracle_id=scryfall_data.get("oracle_id"),
             name=name,
             printed_name=scryfall_data.get("printed_name"),
