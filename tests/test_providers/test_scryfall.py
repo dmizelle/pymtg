@@ -649,6 +649,45 @@ class TestScryfallResponseParsing(unittest.TestCase):
         self.assertEqual(card.cmc, 0.0)
         self.assertEqual(card.source, "scryfall")
 
+    def test_parse_card_artist_fields(self):
+        """Test parsing artist, artist_id, and illustration_id fields."""
+        scryfall = Scryfall()
+
+        scryfall_data = {
+            "id": "test-id",
+            "name": "Test Card",
+            "type_line": "Creature",
+            "rarity": "common",
+            "set": "LEA",
+            "artist": "Rebecca Guay",
+            "artist_id": "abc123",
+            "illustration_id": "ill-456",
+        }
+
+        card = scryfall._parse_card(scryfall_data)
+
+        self.assertEqual(card.artist, "Rebecca Guay")
+        self.assertEqual(card.artist_id, "abc123")
+        self.assertEqual(card.illustration_id, "ill-456")
+
+    def test_parse_card_artist_fields_missing(self):
+        """Test that missing artist fields default to None."""
+        scryfall = Scryfall()
+
+        scryfall_data = {
+            "id": "test-id",
+            "name": "Test Card",
+            "type_line": "Creature",
+            "rarity": "common",
+            "set": "LEA",
+        }
+
+        card = scryfall._parse_card(scryfall_data)
+
+        self.assertIsNone(card.artist)
+        self.assertIsNone(card.artist_id)
+        self.assertIsNone(card.illustration_id)
+
     def test_parse_card_with_colors(self):
         """Test parsing a card with colors from Scryfall data."""
         scryfall = Scryfall()
