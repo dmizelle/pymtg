@@ -920,6 +920,26 @@ class Moxfield(BaseProvider):
 
         return colors if colors else None
 
+    @staticmethod
+    def _extract_quantity(card_data: dict[str, Any]) -> int:
+        """Extract quantity from card data, checking common field names.
+
+        Uses explicit None checks instead of `or` chaining so that an
+        explicit quantity of 0 is preserved rather than treated as missing.
+
+        Args:
+            card_data: Raw card data dictionary from Parse.bot.
+
+        Returns:
+            The card quantity, defaulting to 1 if no quantity field
+            is found.
+        """
+        for field in ("quantity", "count", "qty"):
+            value = card_data.get(field)
+            if value is not None:
+                return value
+        return 1
+
     def _parse_deck(self, data: dict[str, Any]) -> Deck:
         """Parse Moxfield/Parse.bot deck data into a normalized Deck model.
 
@@ -945,12 +965,7 @@ class Moxfield(BaseProvider):
             # Format 2: {"name": "...", "quantity": N, "board": "main", "card": {...}}
             # Format 3: Direct card object with count
 
-            quantity = (
-                card_data.get("quantity")
-                or card_data.get("count")
-                or card_data.get("qty")
-                or 1
-            )
+            quantity = self._extract_quantity(card_data)
 
             # Get card info - could be nested or at top level
             card_info = card_data.get("card", card_data)
@@ -987,12 +1002,7 @@ class Moxfield(BaseProvider):
         # Parse sideboard cards if present
         sideboard_cards = data.get("sideboard", []) or data.get("side_board", []) or []
         for card_data in sideboard_cards:
-            quantity = (
-                card_data.get("quantity")
-                or card_data.get("count")
-                or card_data.get("qty")
-                or 1
-            )
+            quantity = self._extract_quantity(card_data)
             card_info = card_data.get("card", card_data)
 
             card = self._parse_card(card_info)
@@ -1025,12 +1035,7 @@ class Moxfield(BaseProvider):
         # Parse maybe board cards if present
         maybe_cards = data.get("maybe", []) or data.get("maybe_board", []) or []
         for card_data in maybe_cards:
-            quantity = (
-                card_data.get("quantity")
-                or card_data.get("count")
-                or card_data.get("qty")
-                or 1
-            )
+            quantity = self._extract_quantity(card_data)
             card_info = card_data.get("card", card_data)
 
             card = self._parse_card(card_info)
