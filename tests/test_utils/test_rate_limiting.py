@@ -1,7 +1,8 @@
 """Tests for pymtg.utils.rate_limiting module.
 
 This module tests the RateLimiter class including configuration management,
-state tracking, and resource cleanup when configurations are removed.
+state tracking, resource cleanup when configurations are removed, and the
+RateLimitGuard context manager behavior for recording requests.
 """
 
 import unittest
@@ -10,6 +11,12 @@ from pymtg.utils.rate_limiting import (
     RateLimitConfig,
     RateLimiter,
 )
+
+
+class _TestError(Exception):
+    """Custom exception for testing guard exception handling."""
+
+    pass
 
 
 class TestRateLimiterConfigManagement(unittest.TestCase):
@@ -156,6 +163,86 @@ class TestRateLimiterCheckAndRecord(unittest.TestCase):
         self.limiter._record("test_provider")
         self.assertIn("test_provider", self.limiter.states)
         self.assertEqual(len(self.limiter.states["test_provider"].timestamps), 1)
+
+
+class TestRateLimitGuard(unittest.TestCase):
+    """Tests for the RateLimitGuard context manager.
+
+    Verifies that the guard records requests only on successful completion
+    and skips recording when an exception occurs within the context block,
+    per issue #135.
+    """
+
+    def setUp(self) -> None:
+        """Set up a RateLimiter with a test provider config."""
+        self.limiter = RateLimiter(
+            {
+                "test_provider": RateLimitConfig(
+                    requests_per_second=2,
+                    burst_size=2,
+                ),
+            }
+        )
+
+    def test_guard_records_on_success(self) -> None:
+        """Tests that the guard records a request when no exception occurs."""
+        with self.limiter.guard("test_provider"):
+            pass
+        self.assertEqual(len(self.limiter.states["test_provider"].timestamps), 1)
+
+    def test_guard_does_not_record_on_exception(self) -> None:
+        """Tests that the guard skips recording when an exception occurs.
+
+        Verifies the fix for issue #135: failed requests should not be
+        counted against the rate limit.
+        """
+        with self.assertRaises(_TestError):
+            with self.limiter.guard("test_provider"):
+                raise _TestError("simulated failure")
+        self.assertEqual(len(self.limiter.states["test_provider"].timestamps), 0)
+
+    def test_guard_enter_returns_true_when_allowed(self) -> None:
+        """Tests that __enter__ returns True when the request can proceed."""
+        guard = self.limiter.guard("test_provider")
+        result = guard.__enter__()
+        self.assertTrue(result)
+        guard.__exit__(None, None, None)
+
+    def test_guard_enter_returns_false_when_rate_limited(self) -> None:
+        """Tests that __enter__ returns False when rate limit is exceeded.
+
+        When the rate limit is already at capacity, __enter__ should wait
+        and return False to indicate the caller had to wait.
+        """
+        # Fill the burst capacity
+        self.limiter._record("test_provider")
+        self.limiter._record("test_provider")
+        guard = self.limiter.guard("test_provider")
+        result = guard.__enter__()
+        self.assertFalse(result)
+        self.assertTrue(guard.waited)
+        guard.__exit__(None, None, None)
+
+    def test_guard_waited_flag_default_false(self) -> None:
+        """Tests that the waited flag defaults to False."""
+        guard = self.limiter.guard("test_provider")
+        self.assertFalse(guard.waited)
+
+    def test_guard_records_only_once_per_context(self) -> None:
+        """Tests that the guard records exactly one request per context."""
+        with self.limiter.guard("test_provider"):
+            pass
+        with self.limiter.guard("test_provider"):
+            pass
+        self.assertEqual(len(self.limiter.states["test_provider"].timestamps), 2)
+
+    def test_guard_does_not_record_multiple_exceptions(self) -> None:
+        """Tests that the guard records zero requests on repeated failures."""
+        for _ in range(3):
+            with self.assertRaises(_TestError):
+                with self.limiter.guard("test_provider"):
+                    raise _TestError("simulated failure")
+        self.assertEqual(len(self.limiter.states["test_provider"].timestamps), 0)
 
 
 if __name__ == "__main__":
