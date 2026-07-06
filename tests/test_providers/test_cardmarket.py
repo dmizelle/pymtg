@@ -322,6 +322,210 @@ class TestCardmarketSearch:
 
             assert "page must be a positive integer (>= 1)" in str(exc_info.value)
 
+    def test_search_game_defaults_to_magic(self):
+        """Test search defaults game to Magic when not provided."""
+        mock_response_data = {
+            "results": [
+                {
+                    "idProduct": 12345,
+                    "productName": "Black Lotus",
+                    "cardName": "Black Lotus",
+                    "idLanguage": 1,
+                    "idSet": 1,
+                    "idGame": 1,
+                    "idRarity": 1,
+                    "idCardType": 1,
+                    "idSubType": 1,
+                    "idColor": 1,
+                    "idFormat": 1,
+                    "idSetType": 1,
+                    "idSetFormat": 1,
+                    "idCardFace": 1,
+                    "idLayout": 1,
+                    "idCardLayout": 1,
+                    "idCardFaceType": 1,
+                    "idCardFaceLayout": 1,
+                    "idCardFaceLayoutType": 1,
+                    "idCardFaceLayoutSubType": 1,
+                    "idCardFaceLayoutSubTypeType": 1,
+                    "idCardFaceLayoutSubTypeSubType": 1,
+                }
+            ],
+            "numberOfResults": 1,
+            "currentPage": 1,
+            "currentPageResult": 1,
+            "nPages": 1,
+            "actionsWarning": [],
+        }
+        cardmarket = Cardmarket(
+            consumer_key="test_consumer_key",
+            consumer_secret="test_consumer_secret",
+            access_token="test_access_token",
+            access_token_secret="test_access_token_secret",
+        )
+        with patch.object(
+            cardmarket.http_client,
+            "get",
+            return_value=MagicMock(status_code=200, json=lambda: mock_response_data),
+        ) as mock_get:
+            cardmarket.search(name="Black Lotus")
+            call_args = mock_get.call_args
+            assert call_args[1]["params"]["game"] == "Magic"
+
+    def test_search_game_uses_provided_value(self):
+        """Test search uses provided game value."""
+        mock_response_data = {
+            "results": [
+                {
+                    "idProduct": 12345,
+                    "productName": "Test",
+                    "cardName": "Test",
+                    "idLanguage": 1,
+                    "idSet": 1,
+                    "idGame": 1,
+                    "idRarity": 1,
+                    "idCardType": 1,
+                    "idSubType": 1,
+                    "idColor": 1,
+                    "idFormat": 1,
+                    "idSetType": 1,
+                    "idSetFormat": 1,
+                    "idCardFace": 1,
+                    "idLayout": 1,
+                    "idCardLayout": 1,
+                    "idCardFaceType": 1,
+                    "idCardFaceLayout": 1,
+                    "idCardFaceLayoutType": 1,
+                    "idCardFaceLayoutSubType": 1,
+                    "idCardFaceLayoutSubTypeType": 1,
+                    "idCardFaceLayoutSubTypeSubType": 1,
+                }
+            ],
+            "numberOfResults": 1,
+            "currentPage": 1,
+            "currentPageResult": 1,
+            "nPages": 1,
+            "actionsWarning": [],
+        }
+        cardmarket = Cardmarket(
+            consumer_key="test_consumer_key",
+            consumer_secret="test_consumer_secret",
+            access_token="test_access_token",
+            access_token_secret="test_access_token_secret",
+        )
+        with patch.object(
+            cardmarket.http_client,
+            "get",
+            return_value=MagicMock(status_code=200, json=lambda: mock_response_data),
+        ) as mock_get:
+            cardmarket.search(name="Test", game="StarCityGames")
+            call_args = mock_get.call_args
+            assert call_args[1]["params"]["game"] == "StarCityGames"
+
+    def test_search_game_invalid_defaults_to_magic_with_warning(self, caplog):
+        """Test search defaults game to Magic when invalid with warning."""
+        mock_response_data = {
+            "results": [
+                {
+                    "idProduct": 12345,
+                    "productName": "Test",
+                    "cardName": "Test",
+                    "idLanguage": 1,
+                    "idSet": 1,
+                    "idGame": 1,
+                    "idRarity": 1,
+                    "idCardType": 1,
+                    "idSubType": 1,
+                    "idColor": 1,
+                    "idFormat": 1,
+                    "idSetType": 1,
+                    "idSetFormat": 1,
+                    "idCardFace": 1,
+                    "idLayout": 1,
+                    "idCardLayout": 1,
+                    "idCardFaceType": 1,
+                    "idCardFaceLayout": 1,
+                    "idCardFaceLayoutType": 1,
+                    "idCardFaceLayoutSubType": 1,
+                    "idCardFaceLayoutSubTypeType": 1,
+                    "idCardFaceLayoutSubTypeSubType": 1,
+                }
+            ],
+            "numberOfResults": 1,
+            "currentPage": 1,
+            "currentPageResult": 1,
+            "nPages": 1,
+            "actionsWarning": [],
+        }
+        cardmarket = Cardmarket(
+            consumer_key="test_consumer_key",
+            consumer_secret="test_consumer_secret",
+            access_token="test_access_token",
+            access_token_secret="test_access_token_secret",
+        )
+        with patch.object(
+            cardmarket.http_client,
+            "get",
+            return_value=MagicMock(status_code=200, json=lambda: mock_response_data),
+        ) as mock_get:
+            cardmarket.search(name="Test", game=123)
+            call_args = mock_get.call_args
+            assert call_args[1]["params"]["game"] == "Magic"
+            assert any(
+                "Invalid or missing game parameter" in record.message
+                for record in caplog.records
+            )
+
+    def test_search_game_empty_string_defaults_to_magic(self):
+        """Test search defaults game to Magic when empty string."""
+        mock_response_data = {
+            "results": [
+                {
+                    "idProduct": 12345,
+                    "productName": "Test",
+                    "cardName": "Test",
+                    "idLanguage": 1,
+                    "idSet": 1,
+                    "idGame": 1,
+                    "idRarity": 1,
+                    "idCardType": 1,
+                    "idSubType": 1,
+                    "idColor": 1,
+                    "idFormat": 1,
+                    "idSetType": 1,
+                    "idSetFormat": 1,
+                    "idCardFace": 1,
+                    "idLayout": 1,
+                    "idCardLayout": 1,
+                    "idCardFaceType": 1,
+                    "idCardFaceLayout": 1,
+                    "idCardFaceLayoutType": 1,
+                    "idCardFaceLayoutSubType": 1,
+                    "idCardFaceLayoutSubTypeType": 1,
+                    "idCardFaceLayoutSubTypeSubType": 1,
+                }
+            ],
+            "numberOfResults": 1,
+            "currentPage": 1,
+            "currentPageResult": 1,
+            "nPages": 1,
+            "actionsWarning": [],
+        }
+        cardmarket = Cardmarket(
+            consumer_key="test_consumer_key",
+            consumer_secret="test_consumer_secret",
+            access_token="test_access_token",
+            access_token_secret="test_access_token_secret",
+        )
+        with patch.object(
+            cardmarket.http_client,
+            "get",
+            return_value=MagicMock(status_code=200, json=lambda: mock_response_data),
+        ) as mock_get:
+            cardmarket.search(name="Test", game="")
+            call_args = mock_get.call_args
+            assert call_args[1]["params"]["game"] == "Magic"
+
 
 class TestCardmarketGetCard:
     """Tests for Cardmarket get_card functionality."""

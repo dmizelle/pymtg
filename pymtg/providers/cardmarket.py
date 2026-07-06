@@ -324,7 +324,14 @@ class Cardmarket(BaseProvider):
 
             # Cardmarket uses: name, game, category, etc.
             # For MTG, game would be "Magic" or similar
-            params["game"] = kwargs.get("game", "Magic")
+            game_value = kwargs.get("game")
+            if not isinstance(game_value, str) or not game_value:
+                game_value = "Magic"
+                logger.warning(
+                    "Invalid or missing game parameter for Cardmarket; "
+                    "defaulting to 'Magic'"
+                )
+            params["game"] = game_value
 
             # Handle limit and pagination
             # Cardmarket uses limit and offset
