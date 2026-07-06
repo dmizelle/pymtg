@@ -599,6 +599,60 @@ class TestMoxfieldCardParsing(unittest.TestCase):
         assert card_faces is not None
         self.assertEqual(len(card_faces), 2)
 
+    def test_parse_card_image_uris_filters_empty_strings(self):
+        """Test that empty string values are filtered from image_uris."""
+        moxfield = Moxfield(api_key="test-key")
+        data = {
+            "id": "card-123",
+            "name": "Black Lotus",
+            "image_uris": {
+                "normal": "https://example.com/normal.jpg",
+                "small": "",
+                "large": "https://example.com/large.jpg",
+            },
+        }
+        card = moxfield._parse_card(data)
+        assert card.image_uris is not None
+        self.assertEqual(len(card.image_uris), 2)
+        self.assertIn("normal", card.image_uris)
+        self.assertIn("large", card.image_uris)
+        self.assertNotIn("small", card.image_uris)
+
+    def test_parse_card_image_uris_filters_non_string_values(self):
+        """Test that non-string values are filtered from image_uris."""
+        moxfield = Moxfield(api_key="test-key")
+        data = {
+            "id": "card-123",
+            "name": "Black Lotus",
+            "image_uris": {
+                "normal": "https://example.com/normal.jpg",
+                "png": 12345,
+                "border_crop": None,
+                "large": "https://example.com/large.jpg",
+            },
+        }
+        card = moxfield._parse_card(data)
+        assert card.image_uris is not None
+        self.assertEqual(len(card.image_uris), 2)
+        self.assertIn("normal", card.image_uris)
+        self.assertIn("large", card.image_uris)
+        self.assertNotIn("png", card.image_uris)
+        self.assertNotIn("border_crop", card.image_uris)
+
+    def test_parse_card_image_uris_all_empty_returns_none(self):
+        """Test that image_uris with all empty values returns None."""
+        moxfield = Moxfield(api_key="test-key")
+        data = {
+            "id": "card-123",
+            "name": "Black Lotus",
+            "image_uris": {
+                "normal": "",
+                "small": "",
+            },
+        }
+        card = moxfield._parse_card(data)
+        self.assertIsNone(card.image_uris)
+
     def test_parse_colors(self):
         """Test color parsing helper method."""
         moxfield = Moxfield(api_key="test-key")
