@@ -574,12 +574,24 @@ class Archidekt(BaseProvider):
         """
         # Handle card faces (for flip/transform cards)
         card_faces_data = data.get("card_faces", [])
+        if not isinstance(card_faces_data, list):
+            logger.warning(
+                "Skipping invalid card_faces: expected list, got %s",
+                type(card_faces_data).__name__,
+            )
+            card_faces_data = []
         card_faces = None
 
         if card_faces_data:
             # Multi-faced card
             parsed_faces = []
             for face_data in card_faces_data:
+                if not isinstance(face_data, dict):
+                    logger.warning(
+                        "Skipping invalid face_data: expected dict, got %s",
+                        type(face_data).__name__,
+                    )
+                    continue
                 card_face = CardFace(
                     name=face_data.get("name", ""),
                     mana_cost=face_data.get("mana_cost"),

@@ -707,6 +707,58 @@ class TestArchidektParseCard(unittest.TestCase):
         self.assertEqual(card_faces[1].name, "Back Side")
         self.assertEqual(card.color_identity, [Color.BLACK])
 
+    def test_parse_card_card_faces_not_list(self):
+        """Test _parse_card handles card_faces that is not a list.
+
+        Verifies that when card_faces is a non-list value (e.g., dict,
+        string, int), it is treated as empty and the card parses without
+        card_faces instead of raising a TypeError during iteration.
+        """
+        archidekt = Archidekt()
+
+        for invalid in ({"name": "x"}, "not a list", 42, None):
+            data = {
+                "id": "card-999",
+                "name": "Simple Card",
+                "card_faces": invalid,
+            }
+            card = archidekt._parse_card(data)
+            self.assertIsInstance(card, Card)
+            self.assertIsNone(card.card_faces)
+            self.assertEqual(card.name, "Simple Card")
+
+    def test_parse_card_card_faces_skips_non_dict_entries(self):
+        """Test _parse_card skips non-dict entries in card_faces.
+
+        Verifies that non-dict entries in the card_faces list are skipped
+        and only valid dict faces are parsed into CardFace objects.
+        """
+        archidekt = Archidekt()
+
+        data = {
+            "id": "card-1000",
+            "name": "Transform Card",
+            "card_faces": [
+                "not a dict",
+                42,
+                None,
+                {
+                    "name": "Valid Face",
+                    "mana_cost": "{1}",
+                    "type_line": "Creature",
+                    "oracle_text": "text",
+                },
+            ],
+        }
+
+        card = archidekt._parse_card(data)
+        self.assertIsInstance(card, Card)
+        self.assertIsNotNone(card.card_faces)
+        card_faces = card.card_faces
+        assert card_faces is not None
+        self.assertEqual(len(card_faces), 1)
+        self.assertEqual(card_faces[0].name, "Valid Face")
+
     def test_parse_card_with_missing_fields(self):
         """Test parsing a card with missing optional fields."""
         archidekt = Archidekt()
