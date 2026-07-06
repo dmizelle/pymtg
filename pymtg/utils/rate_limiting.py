@@ -425,9 +425,16 @@ class RateLimitGuard:
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         """Exit the context manager.
 
-        Records the request regardless of whether an exception occurred.
+        Only records the request if no exception occurred, so failed or
+        aborted requests are not counted against the rate limit.
+
+        Args:
+            exc_type: The exception type, or None if no exception occurred.
+            exc_val: The exception value, or None if no exception occurred.
+            exc_tb: The exception traceback, or None if no exception occurred.
         """
-        self.rate_limiter._record(self.provider)
+        if exc_type is None:
+            self.rate_limiter._record(self.provider)
 
     def __repr__(self) -> str:
         """Return a string representation of the guard.
