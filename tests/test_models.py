@@ -1466,7 +1466,15 @@ class TestPricing:
 
     def test_scryfall_pricing_currencies_classvar(self) -> None:
         """Test ScryfallPricing declares its CURRENCIES ClassVar."""
-        assert ScryfallPricing.CURRENCIES == ("usd", "eur", "tix")
+        assert ScryfallPricing.CURRENCIES == (
+            "usd",
+            "eur",
+            "tix",
+            "cad",
+            "gbp",
+            "jpy",
+            "cny",
+        )
 
     def test_tcgplayer_pricing_currency_classvar(self) -> None:
         """Test TCGPlayerPricing declares its CURRENCIES ClassVar as usd."""
@@ -1477,30 +1485,36 @@ class TestPricing:
         assert CardmarketPricing.CURRENCIES == ("eur",)
 
     def test_scryfall_pricing_get_normal_print_currencies_all_set(self) -> None:
-        """Test get_normal_print_currencies returns all three currencies when set."""
-        pricing = ScryfallPricing(usd=10.0, eur=8.0, tix=5.0)
-        assert pricing.get_normal_print_currencies() == {
+        """Test get_normal_print_currencies returns all currencies when set."""
+        pricing = ScryfallPricing(
+            usd=10.0, eur=8.0, tix=5.0, cad=12.0, gbp=7.0, jpy=1000.0, cny=50.0
+        )
+        currencies = pricing.get_normal_print_currencies()
+        assert currencies == {
             "usd": 10.0,
             "eur": 8.0,
             "tix": 5.0,
+            "cad": 12.0,
+            "gbp": 7.0,
+            "jpy": 1000.0,
+            "cny": 50.0,
         }
 
     def test_scryfall_pricing_get_normal_print_currencies_none(self) -> None:
-        """Test get_normal_print_currencies returns None for unset currencies."""
+        """Test get_normal_print_currencies returns None for all currencies."""
         pricing = ScryfallPricing()
-        assert pricing.get_normal_print_currencies() == {
-            "usd": None,
-            "eur": None,
-            "tix": None,
-        }
+        currencies = pricing.get_normal_print_currencies()
+        for currency in ScryfallPricing.CURRENCIES:
+            assert currencies[currency] is None
 
     def test_scryfall_pricing_get_normal_print_currencies_partial(self) -> None:
         """Test get_normal_print_currencies returns only set values, others None."""
         pricing = ScryfallPricing(usd=10.0)
         currencies = pricing.get_normal_print_currencies()
         assert currencies["usd"] == 10.0
-        assert currencies["eur"] is None
-        assert currencies["tix"] is None
+        for currency in ScryfallPricing.CURRENCIES:
+            if currency != "usd":
+                assert currencies[currency] is None
 
     def test_tcgplayer_pricing_has_prices_true(self) -> None:
         """Test has_prices returns True when at least one field is set."""
