@@ -867,9 +867,10 @@ class TCGPlayer(BaseProvider):
         )
 
         # Extract set information
-        # TCGPlayer uses categoryName for set code
+        # TCGPlayer uses categoryName for set code; groupName (when
+        # available from enriched responses) provides the set name.
         set_code = data.get("categoryName", "")
-        set_name = data.get("categoryName", "")
+        set_name = data.get("groupName", "")
 
         # Extract card number - TCGPlayer uses number field
         card_number = data.get("number", "")
