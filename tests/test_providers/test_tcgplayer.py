@@ -781,9 +781,7 @@ class TestTCGPlayerErrorHandling(unittest.TestCase):
         )
 
         session_mock = MagicMock()
-        with patch.object(
-            self.tcgplayer.http_client, "session", session_mock
-        ):
+        with patch.object(self.tcgplayer.http_client, "session", session_mock):
             with patch.object(
                 session_mock,
                 "get",
@@ -793,9 +791,7 @@ class TestTCGPlayerErrorHandling(unittest.TestCase):
                     self.tcgplayer, "refresh_auth", side_effect=refresh_error
                 ):
                     with pytest.raises(AuthenticationError) as exc_info:
-                        self.tcgplayer._make_request(
-                            "GET", "/v2/catalog/products"
-                        )
+                        self.tcgplayer._make_request("GET", "/v2/catalog/products")
 
         error = exc_info.value
         assert error.status_code == 401
@@ -819,9 +815,7 @@ class TestTCGPlayerErrorHandling(unittest.TestCase):
         second_response.raise_for_status.return_value = None
 
         session_mock = MagicMock()
-        with patch.object(
-            self.tcgplayer.http_client, "session", session_mock
-        ):
+        with patch.object(self.tcgplayer.http_client, "session", session_mock):
             with patch.object(
                 session_mock,
                 "get",
@@ -848,13 +842,9 @@ class TestTCGPlayerErrorHandling(unittest.TestCase):
         mock_response = MagicMock()
         mock_response.status_code = 401
 
-        refresh_error = AuthenticationError(
-            "Refresh failed", provider="tcgplayer"
-        )
+        refresh_error = AuthenticationError("Refresh failed", provider="tcgplayer")
 
-        with patch.object(
-            self.tcgplayer.http_client, "session", MagicMock()
-        ):
+        with patch.object(self.tcgplayer.http_client, "session", MagicMock()):
             with patch.object(
                 self.tcgplayer.http_client.session,
                 "get",
@@ -867,9 +857,7 @@ class TestTCGPlayerErrorHandling(unittest.TestCase):
                         "pymtg.providers.tcgplayer", level="INFO"
                     ) as cm:
                         with self.assertRaises(AuthenticationError):
-                            self.tcgplayer._make_request(
-                                "GET", "/v2/catalog/products"
-                            )
+                            self.tcgplayer._make_request("GET", "/v2/catalog/products")
 
         assert any(
             "Received 401" in msg for msg in cm.output

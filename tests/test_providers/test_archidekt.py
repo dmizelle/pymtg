@@ -1133,6 +1133,26 @@ class TestArchidektBuildSearchQuery(unittest.TestCase):
         self.assertIn("c:B", query)
         self.assertIn("t:Artifact", query)
 
+    def test_build_query_name_sanitization(self):
+        """Test that name sanitization escapes backslashes and double quotes.
+
+        Verifies that special characters in card names are properly escaped
+        to prevent query injection in the Archidekt search syntax.
+        """
+        archidekt = Archidekt()
+
+        # Test backslash escaping
+        query = archidekt._build_search_query(name="Test\\Name")
+        self.assertIn("Test\\\\Name", query)
+
+        # Test double quote escaping
+        query = archidekt._build_search_query(name='Test"Name')
+        self.assertIn('Test\\"Name', query)
+
+        # Test both together
+        query = archidekt._build_search_query(name='Test\\"Name')
+        self.assertIn('Test\\\\\\"Name', query)
+
 
 class TestArchidektNormalizeFlavorText(unittest.TestCase):
     """Tests for the _normalize_flavor_text helper method."""
