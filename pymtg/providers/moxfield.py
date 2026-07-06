@@ -971,7 +971,11 @@ class Moxfield(BaseProvider):
                     try:
                         board = Board[board_str.lower()]
                     except (KeyError, TypeError):
-                        pass
+                        logger.warning(
+                            "Unknown board %r in Moxfield deck data, "
+                            "defaulting to MAIN",
+                            board_str,
+                        )
 
             deck_card = DeckCard(
                 card=card,
