@@ -8,6 +8,7 @@ search, and error handling.
 import unittest
 from unittest.mock import MagicMock, patch
 
+import pytest
 import requests
 
 from pymtg.auth.oauth2 import OAuth2ClientCredentialsHandler
@@ -106,6 +107,42 @@ class TestTCGPlayerInitialization(unittest.TestCase):
         repr_str = repr(tcgplayer)
         self.assertIn("TCGPlayer", repr_str)
         self.assertIn("not authenticated", repr_str)
+
+    def test_initialization_empty_client_id_raises_value_error(self):
+        """Test that empty client_id raises ValueError."""
+        with pytest.raises(ValueError) as exc_info:
+            TCGPlayer(client_id="", client_secret="test_secret")
+        assert "client_id cannot be empty" in str(exc_info.value)
+
+    def test_initialization_empty_client_secret_raises_value_error(self):
+        """Test that empty client_secret raises ValueError."""
+        with pytest.raises(ValueError) as exc_info:
+            TCGPlayer(client_id="test_id", client_secret="")
+        assert "client_secret cannot be empty" in str(exc_info.value)
+
+    def test_initialization_whitespace_client_id_raises_value_error(self):
+        """Test that whitespace-only client_id raises ValueError."""
+        with pytest.raises(ValueError) as exc_info:
+            TCGPlayer(client_id="   ", client_secret="test_secret")
+        assert "client_id cannot be empty" in str(exc_info.value)
+
+    def test_initialization_whitespace_client_secret_raises_value_error(self):
+        """Test that whitespace-only client_secret raises ValueError."""
+        with pytest.raises(ValueError) as exc_info:
+            TCGPlayer(client_id="test_id", client_secret="   ")
+        assert "client_secret cannot be empty" in str(exc_info.value)
+
+    def test_initialization_non_string_client_id_raises_type_error(self):
+        """Test that non-string client_id raises TypeError."""
+        with pytest.raises(TypeError) as exc_info:
+            TCGPlayer(client_id=123, client_secret="test_secret")  # type: ignore
+        assert "client_id must be a string or None" in str(exc_info.value)
+
+    def test_initialization_non_string_client_secret_raises_type_error(self):
+        """Test that non-string client_secret raises TypeError."""
+        with pytest.raises(TypeError) as exc_info:
+            TCGPlayer(client_id="test_id", client_secret=123)  # type: ignore
+        assert "client_secret must be a string or None" in str(exc_info.value)
 
 
 class TestTCGPlayerAuthenticationRequired(unittest.TestCase):
@@ -790,16 +827,16 @@ class TestTCGPlayerErrorHandling(unittest.TestCase):
             with patch.object(
                 self.tcgplayer, "refresh_auth", side_effect=refresh_error
             ):
-                with self.assertRaises(AuthenticationError) as cm:
+                with pytest.raises(AuthenticationError) as exc_info:
                     self.tcgplayer._make_request("GET", "/v2/catalog/products")
 
-        error = cm.exception
-        self.assertEqual(error.status_code, 401)
-        self.assertEqual(error.provider, "tcgplayer")
-        self.assertEqual(error.auth_type, "oauth2")
-        self.assertIn("Token refresh failed", error.message)
-        self.assertEqual(error.details["refresh_error"], "Refresh token request failed")
-        self.assertIs(error.__cause__, refresh_error)
+        error = exc_info.value
+        assert error.status_code == 401
+        assert error.provider == "tcgplayer"
+        assert error.auth_type == "oauth2"
+        assert "Token refresh failed" in error.message
+        assert error.details["refresh_error"] == "Refresh token request failed"
+        assert error.__cause__ is refresh_error
 
     def test_make_request_401_refresh_success_retries_request(self):
         """Test that _make_request retries after successful token refresh.
@@ -829,13 +866,13 @@ class TestTCGPlayerErrorHandling(unittest.TestCase):
 
         mock_refresh.assert_called_once()
         mock_apply.assert_called_once_with(self.tcgplayer.http_client.session)
-        self.assertIs(result, second_response)
+        assert result is second_response
         # Verify retry used same endpoint as original request
-        self.assertEqual(mock_get.call_count, 2)
+        assert mock_get.call_count == 2
         first_call = mock_get.call_args_list[0]
         second_call = mock_get.call_args_list[1]
-        self.assertIn("/v2/catalog/products", first_call.args[0])
-        self.assertIn("/v2/catalog/products", second_call.args[0])
+        assert "/v2/catalog/products" in first_call.args[0]
+        assert "/v2/catalog/products" in second_call.args[0]
 
     def test_make_request_401_refresh_failure_logs_info(self):
         """Test that 401 detection is logged before attempting refresh.

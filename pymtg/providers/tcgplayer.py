@@ -109,7 +109,20 @@ class TCGPlayer(BaseProvider):
 
         Raises:
             AuthenticationError: If authentication fails during initialization.
+            ValueError: If client_id or client_secret are provided but empty.
+            TypeError: If client_id or client_secret are not strings.
         """
+        # Validate OAuth2 credentials
+        if client_id is not None and not isinstance(client_id, str):
+            raise TypeError("client_id must be a string or None")
+        if client_id is not None and client_id.strip() == "":
+            raise ValueError("client_id cannot be empty")
+
+        if client_secret is not None and not isinstance(client_secret, str):
+            raise TypeError("client_secret must be a string or None")
+        if client_secret is not None and client_secret.strip() == "":
+            raise ValueError("client_secret cannot be empty")
+
         # Store OAuth2 credentials before calling super().__init__()
         # This is needed because _initialize() is called during super().__init__()
         self.client_id = client_id
