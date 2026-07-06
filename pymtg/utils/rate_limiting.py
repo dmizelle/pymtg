@@ -130,6 +130,9 @@ class RateLimiter:
     def remove_config(self, provider: str) -> bool:
         """Remove a rate limit configuration for a provider.
 
+        Also removes any accumulated state entry to avoid retaining stale
+        data for providers that are no longer configured.
+
         Args:
             provider: The provider name.
 
@@ -139,7 +142,8 @@ class RateLimiter:
         with self._global_lock:
             if provider in self.configs:
                 del self.configs[provider]
-                logger.debug(f"Removed rate limit config for {provider}")
+                self.states.pop(provider, None)
+                logger.debug(f"Removed rate limit config and state for {provider}")
                 return True
             return False
 
