@@ -25,6 +25,7 @@ from pymtg.exceptions import (
     InvalidQueryError,
     NetworkError,
     NotFoundError,
+    ParsingError,
     RateLimitError,
 )
 from pymtg.models.card import Card
@@ -856,6 +857,9 @@ class TCGPlayer(BaseProvider):
         Returns:
             Normalized Card object.
 
+        Raises:
+            ParsingError: If the card data cannot be parsed into a Card object.
+
         Note:
             TCGPlayer data needs to be mapped to the normalized Card model.
             This method handles the mapping from TCGPlayer-specific fields.
@@ -1005,12 +1009,11 @@ class TCGPlayer(BaseProvider):
 
         except Exception as e:
             logger.error(f"Failed to create Card object: {e}")
-            # Return a minimal card with required fields
-            return Card(
-                id=str(product_id) if product_id else "",
-                name=name,
-                source="tcgplayer",
-            )
+            raise ParsingError(
+                f"Failed to parse card data: {e}",
+                provider=self.name,
+                raw_data=data,
+            ) from e
 
     def _extract_type_line(self, product_type: str) -> str | None:
         """Validates and extracts the card type_line from productType.
