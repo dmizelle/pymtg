@@ -688,6 +688,42 @@ class TestScryfallResponseParsing(unittest.TestCase):
         self.assertIsNone(card.artist_id)
         self.assertIsNone(card.illustration_id)
 
+    def test_parse_card_id_and_scryfall_id_consistent_defaults(self):
+        """Test that id and scryfall_id use consistent defaults per Card model.
+
+        Verifies that when 'id' is present, both fields get the same value.
+        When 'id' is missing, id defaults to empty string (required field)
+        and scryfall_id defaults to None (optional field per Card model).
+        """
+        scryfall = Scryfall()
+
+        # When id is present, both fields get the same value
+        scryfall_data = {
+            "id": "abc-123",
+            "name": "Test Card",
+            "type_line": "Creature",
+            "rarity": "common",
+            "set": "LEA",
+        }
+
+        card = scryfall._parse_card(scryfall_data)
+
+        self.assertEqual(card.id, "abc-123")
+        self.assertEqual(card.scryfall_id, "abc-123")
+
+        # When id is missing, id defaults to "" and scryfall_id defaults to None
+        scryfall_data_no_id = {
+            "name": "Test Card",
+            "type_line": "Creature",
+            "rarity": "common",
+            "set": "LEA",
+        }
+
+        card_no_id = scryfall._parse_card(scryfall_data_no_id)
+
+        self.assertEqual(card_no_id.id, "")
+        self.assertIsNone(card_no_id.scryfall_id)
+
     def test_parse_card_with_colors(self):
         """Test parsing a card with colors from Scryfall data."""
         scryfall = Scryfall()
