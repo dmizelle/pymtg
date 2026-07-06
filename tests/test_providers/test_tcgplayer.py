@@ -17,6 +17,7 @@ from pymtg.exceptions import (
     InvalidQueryError,
     NetworkError,
     NotFoundError,
+    ParsingError,
     RateLimitError,
 )
 from pymtg.models.card import Card
@@ -1321,6 +1322,46 @@ class TestTCGPlayerResponseParsing(unittest.TestCase):
         }
         card = self.tcgplayer._parse_card_data(data)
         self.assertEqual(card.type_line, "Creature - Angel")
+
+
+class TestTCGPlayerParsingError(unittest.TestCase):
+    """Test TCGPlayer ParsingError handling."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.tcgplayer = TCGPlayer()
+
+    def test_parse_card_data_raises_parsing_error_on_failure(self):
+        """Test that _parse_card_data raises ParsingError on card creation failure."""
+        # Create data that will cause Card creation to fail
+        # by providing None for required fields
+        data = {
+            "productId": None,
+            "name": None,
+            "categoryName": "LEA",
+            "type": "Creature",
+        }
+
+        with self.assertRaises(ParsingError) as ctx:
+            self.tcgplayer._parse_card_data(data)
+
+        self.assertIn("Failed to parse card data", str(ctx.exception))
+        self.assertEqual(ctx.exception.provider, "tcgplayer")
+
+    def test_parsing_error_includes_raw_data(self):
+        """Test that ParsingError includes raw data for debugging."""
+        data = {
+            "productId": None,
+            "name": None,
+            "categoryName": "LEA",
+            "type": "Creature",
+        }
+
+        with self.assertRaises(ParsingError) as ctx:
+            self.tcgplayer._parse_card_data(data)
+
+        self.assertIn("Raw data:", str(ctx.exception))
+        self.assertEqual(ctx.exception.raw_data, data)
 
 
 if __name__ == "__main__":

@@ -384,3 +384,63 @@ class NetworkError(PyMTGError):
             f"details={self.details!r}, "
             f"original_exception={self.original_exception!r})"
         )
+
+
+class ParsingError(PyMTGError):
+    """Data parsing error.
+
+    Raised when data from a provider cannot be parsed into the expected
+    model objects.
+
+    Attributes:
+        raw_data: The raw data that failed to parse, or None.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        provider: str | None = None,
+        status_code: int | None = None,
+        details: dict[str, Any] | None = None,
+        raw_data: dict | str | list | None = None,
+    ) -> None:
+        """Initialize a ParsingError.
+
+        Args:
+            message: A human-readable description of the error.
+            provider: The name of the provider where the error occurred.
+            status_code: The HTTP status code if applicable.
+            details: Additional details about the error.
+            raw_data: The raw data that failed to parse.
+        """
+        super().__init__(message, provider, status_code, details)
+        self.raw_data = raw_data
+
+    def __str__(self) -> str:
+        """Return a string representation of the error.
+
+        Returns:
+            A formatted string containing the error details.
+        """
+        base = super().__str__()
+        if self.raw_data is not None:
+            raw_data_str = repr(self.raw_data)
+            if len(raw_data_str) > 200:
+                raw_data_str = raw_data_str[:200] + "..."
+            base += f" Raw data: {raw_data_str}"
+        return base
+
+    def __repr__(self) -> str:
+        """Return a detailed representation of the error.
+
+        Returns:
+            A string representation suitable for debugging.
+        """
+        return (
+            f"{self.__class__.__name__}("
+            f"message={self.message!r}, "
+            f"provider={self.provider!r}, "
+            f"status_code={self.status_code!r}, "
+            f"details={self.details!r}, "
+            f"raw_data={self.raw_data!r})"
+        )
