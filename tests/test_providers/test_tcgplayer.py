@@ -960,6 +960,61 @@ class TestTCGPlayerResponseParsing(unittest.TestCase):
         self.assertEqual(card.name, "Plains")
         self.assertEqual(card.set_code, "LEA")
 
+    def test_parse_card_data_pricing_uses_condition_name(self):
+        """Test pricing extraction uses conditionName, not condition.
+
+        Verifies that _parse_card_data extracts pricing from extendedData
+        using the conditionName field (not condition) and normalizes
+        values by lowercasing and replacing spaces with underscores.
+        """
+        data = {
+            "productId": 12345,
+            "name": "Serra Angel",
+            "categoryName": "LEA",
+            "extendedData": [
+                {
+                    "price": 5000.00,
+                    "conditionName": "Near Mint",
+                },
+                {
+                    "price": 3000.00,
+                    "conditionName": "Very Good",
+                },
+            ],
+        }
+
+        card = self.tcgplayer._parse_card_data(data)
+
+        self.assertIsInstance(card, Card)
+        self.assertIsNotNone(card.pricing)
+        self.assertIsNotNone(card.pricing.tcgplayer)
+        tcg_pricing = card.pricing.tcgplayer
+        self.assertEqual(tcg_pricing.near_mint, 5000.00)
+        self.assertEqual(tcg_pricing.very_good, 3000.00)
+
+    def test_parse_card_data_pricing_ignores_condition_field(self):
+        """Test pricing extraction ignores the incorrect condition field.
+
+        Verifies that extendedData entries with only a condition field
+        (the wrong field name) are not extracted into pricing data.
+        """
+        data = {
+            "productId": 12345,
+            "name": "Serra Angel",
+            "categoryName": "LEA",
+            "extendedData": [
+                {
+                    "price": 5000.00,
+                    "condition": "Near Mint",
+                },
+            ],
+        }
+
+        card = self.tcgplayer._parse_card_data(data)
+
+        self.assertIsInstance(card, Card)
+        self.assertIsNone(card.pricing)
+
     def test_parse_color_string_single_char(self):
         """Test parsing color string with single character codes."""
         colors = self.tcgplayer._parse_tcgplayer_color_string("WU")
