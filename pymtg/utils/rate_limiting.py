@@ -6,6 +6,7 @@ rate limits that must be respected to avoid being blocked.
 """
 
 import logging
+import math
 import threading
 import time
 from collections import defaultdict
@@ -188,11 +189,13 @@ class RateLimiter:
 
         current_count = len(state.timestamps)
 
-        # Calculate max requests based on config
+        # Calculate max requests based on config. Use ceil to round up
+        # so fractional rate limits allow at least one request per window
+        # (e.g., 1.5 req/s * 1s window = 2, not 1).
         if config.requests_per_second is not None:
-            max_requests = int(config.requests_per_second * window)
+            max_requests = math.ceil(config.requests_per_second * window)
         elif config.requests_per_minute is not None:
-            max_requests = int(config.requests_per_minute * window / 60)
+            max_requests = math.ceil(config.requests_per_minute * window / 60)
         else:
             return (current_count, None)
 
