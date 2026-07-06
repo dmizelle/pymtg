@@ -231,6 +231,114 @@ class TestScryfallSearch(unittest.TestCase):
 
         self.assertIn("Network error during search", str(context.exception))
 
+    @patch.object(Scryfall, "_handle_response")
+    @patch.object(Scryfall, "http_client")
+    def test_search_api_error_response_raises_apierror(
+        self, mock_http_client, mock_handle_response
+    ):
+        """Tests that search raises APIError when Scryfall returns an error object.
+
+        Verifies that a response with ``object: "error"`` is detected and
+        raised as an APIError rather than silently returning an empty list.
+        """
+        mock_response = MagicMock()
+        mock_http_client.get.return_value = mock_response
+
+        mock_handle_response.return_value = {
+            "object": "error",
+            "code": "bad_request",
+            "status": 400,
+            "details": "Invalid query syntax",
+            "warnings": ["Some warning"],
+        }
+
+        scryfall = Scryfall()
+
+        with self.assertRaises(APIError) as context:
+            scryfall.search(name="test")
+
+        self.assertIn("bad_request", str(context.exception))
+        self.assertEqual(context.exception.provider, "scryfall")
+        self.assertEqual(context.exception.status_code, 400)
+        self.assertEqual(context.exception.details["code"], "bad_request")
+        self.assertEqual(context.exception.details["message"], "Invalid query syntax")
+        self.assertEqual(context.exception.details["warnings"], ["Some warning"])
+
+    @patch.object(Scryfall, "_handle_response")
+    @patch.object(Scryfall, "http_client")
+    def test_search_api_error_response_minimal_fields(
+        self, mock_http_client, mock_handle_response
+    ):
+        """Tests that search raises APIError with minimal error fields.
+
+        Verifies that an error response with only ``object`` and ``code``
+        (no ``status`` or ``details``) still raises an APIError.
+        """
+        mock_response = MagicMock()
+        mock_http_client.get.return_value = mock_response
+
+        mock_handle_response.return_value = {
+            "object": "error",
+            "code": "not_found",
+        }
+
+        scryfall = Scryfall()
+
+        with self.assertRaises(APIError) as context:
+            scryfall.search(name="test")
+
+        self.assertIn("not_found", str(context.exception))
+        self.assertIsNone(context.exception.status_code)
+
+    @patch.object(Scryfall, "_handle_response")
+    @patch.object(Scryfall, "http_client")
+    def test_search_non_error_dict_with_object_field_returns_results(
+        self, mock_http_client, mock_handle_response
+    ):
+        """Tests that a dict with object != 'error' is treated as normal data.
+
+        Verifies that a valid response with ``object: "list"`` is not
+        mistaken for an error response.
+        """
+        mock_response = MagicMock()
+        mock_http_client.get.return_value = mock_response
+
+        mock_handle_response.return_value = {
+            "object": "list",
+            "data": [{"id": "test1"}],
+        }
+
+        scryfall = Scryfall()
+        mock_card = Card(id="test1", name="Test Card", source="scryfall")
+        with patch.object(Scryfall, "_parse_card", return_value=mock_card):
+            cards = scryfall.search(name="test")
+
+        self.assertEqual(len(cards), 1)
+
+    @patch.object(Scryfall, "_handle_response")
+    @patch.object(Scryfall, "http_client")
+    def test_search_missing_object_field_returns_results(
+        self, mock_http_client, mock_handle_response
+    ):
+        """Tests that a dict without 'object' field is treated as normal data.
+
+        Verifies that a response missing the ``object`` key is not
+        mistaken for an error response and returns results normally.
+        """
+        mock_response = MagicMock()
+        mock_http_client.get.return_value = mock_response
+
+        mock_handle_response.return_value = {
+            "data": [{"id": "test1"}],
+        }
+
+        scryfall = Scryfall()
+        mock_card = Card(id="test1", name="Test Card", source="scryfall")
+        with patch.object(Scryfall, "_parse_card", return_value=mock_card):
+            cards = scryfall.search(name="test")
+
+        self.assertEqual(len(cards), 1)
+
 
 class TestScryfallSearchSyntax(unittest.TestCase):
     """Test Scryfall.search_syntax() method."""

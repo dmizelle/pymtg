@@ -16,6 +16,7 @@ import requests
 from pymtg.auth.no_auth import NoAuthHandler
 from pymtg.config import PROVIDER_CONFIGS
 from pymtg.exceptions import (
+    APIError,
     InvalidQueryError,
     NetworkError,
     NotFoundError,
@@ -217,6 +218,19 @@ class Scryfall(BaseProvider):
 
             response = self.http_client.get("/cards/search", params=params)
             data = self._handle_response(response, "cards")
+
+            # Check for Scryfall API error response format
+            if isinstance(data, dict) and data.get("object") == "error":
+                raise APIError(
+                    f"Scryfall API error: {data.get('code', 'unknown')}",
+                    provider=self.name,
+                    status_code=data.get("status"),
+                    details={
+                        "code": data.get("code"),
+                        "message": data.get("details"),
+                        "warnings": data.get("warnings"),
+                    },
+                )
 
             if not data or "data" not in data:
                 return []
