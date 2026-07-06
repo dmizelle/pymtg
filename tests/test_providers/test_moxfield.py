@@ -745,6 +745,123 @@ class TestMoxfieldDeckParsing(unittest.TestCase):
             f"Expected 'Unknown board' warning in logs: {log_context.output}",
         )
 
+    def test_parse_deck_quantity_zero_preserved(self):
+        """Test that explicit quantity 0 is preserved, not defaulted to 1.
+
+        Verifies the fix for issue #120: the `or` chaining treated 0 as
+        falsy and fell through to the default of 1. The _extract_quantity
+        helper uses explicit None checks so 0 is preserved.
+        """
+        moxfield = Moxfield(api_key="test-key")
+        data = {
+            "id": "deck-zero-qty",
+            "name": "Test Deck Zero Quantity",
+            "format": "standard",
+            "cards": [
+                {
+                    "card": {
+                        "id": "card-1",
+                        "name": "Island",
+                        "mana_cost": "{0}",
+                        "type_line": "Land",
+                        "rarity": "common",
+                    },
+                    "quantity": 0,
+                    "board": "main",
+                }
+            ],
+        }
+        deck = moxfield._parse_deck(data)
+        cards = deck.cards or []
+        self.assertEqual(len(cards), 1)
+        self.assertEqual(cards[0].count, 0)
+
+    def test_parse_deck_quantity_falls_back_to_count(self):
+        """Test that quantity falls back to 'count' field when missing.
+
+        Verifies the fallback chain still works: quantity -> count -> qty
+        -> 1, but only when fields are absent (None), not when they are 0.
+        """
+        moxfield = Moxfield(api_key="test-key")
+        data = {
+            "id": "deck-fallback",
+            "name": "Test Deck Fallback",
+            "format": "standard",
+            "cards": [
+                {
+                    "card": {
+                        "id": "card-1",
+                        "name": "Island",
+                        "mana_cost": "{0}",
+                        "type_line": "Land",
+                        "rarity": "common",
+                    },
+                    "count": 3,
+                    "board": "main",
+                }
+            ],
+        }
+        deck = moxfield._parse_deck(data)
+        cards = deck.cards or []
+        self.assertEqual(len(cards), 1)
+        self.assertEqual(cards[0].count, 3)
+
+    def test_parse_deck_quantity_defaults_to_1_when_absent(self):
+        """Test that quantity defaults to 1 when no quantity field exists.
+
+        Verifies the default behavior when quantity, count, and qty are
+        all absent from the card data.
+        """
+        moxfield = Moxfield(api_key="test-key")
+        data = {
+            "id": "deck-default",
+            "name": "Test Deck Default",
+            "format": "standard",
+            "cards": [
+                {
+                    "card": {
+                        "id": "card-1",
+                        "name": "Island",
+                        "mana_cost": "{0}",
+                        "type_line": "Land",
+                        "rarity": "common",
+                    },
+                    "board": "main",
+                }
+            ],
+        }
+        deck = moxfield._parse_deck(data)
+        cards = deck.cards or []
+        self.assertEqual(len(cards), 1)
+        self.assertEqual(cards[0].count, 1)
+
+    def test_extract_quantity_zero_not_treated_as_missing(self):
+        """Test _extract_quantity preserves 0 across all field names.
+
+        Verifies that 0 is returned for quantity, count, and qty fields
+        rather than falling through to the default of 1.
+        """
+        moxfield = Moxfield(api_key="test-key")
+        self.assertEqual(moxfield._extract_quantity({"quantity": 0}), 0)
+        self.assertEqual(moxfield._extract_quantity({"count": 0}), 0)
+        self.assertEqual(moxfield._extract_quantity({"qty": 0}), 0)
+
+    def test_extract_quantity_none_falls_through(self):
+        """Test _extract_quantity falls through when fields are None.
+
+        Verifies that explicit None values are treated as missing and the
+        next field in the chain is checked.
+        """
+        moxfield = Moxfield(api_key="test-key")
+        self.assertEqual(
+            moxfield._extract_quantity({"quantity": None, "count": None, "qty": 5}),
+            5,
+        )
+        self.assertEqual(
+            moxfield._extract_quantity({"quantity": None, "count": None, "qty": None}),
+            1,
+        )
+
 
 class TestMoxfieldIterSearch(unittest.TestCase):
     """Test Moxfield.iter_search() method (inherited from BaseProvider)."""
