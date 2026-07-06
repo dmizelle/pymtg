@@ -186,6 +186,11 @@ class Scryfall(BaseProvider):
             if limit < 1:
                 raise InvalidQueryError("limit must be a positive integer (>= 1)")
 
+            if page < 1:
+                raise InvalidQueryError(
+                    f"page must be a positive integer (>= 1), got {page!r}"
+                )
+
             # Build query parameters
             params: dict[str, Any] = {
                 "q": self._build_search_query(
@@ -380,7 +385,12 @@ class Scryfall(BaseProvider):
 
             # Add optional parameters
             if "page" in kwargs:
-                params["page"] = kwargs["page"]
+                page_value = kwargs["page"]
+                if not isinstance(page_value, int) or page_value < 1:
+                    raise InvalidQueryError(
+                        "page must be a positive integer (>= 1), got " f"{page_value!r}"
+                    )
+                params["page"] = page_value
             if "order" in kwargs:
                 params["order"] = kwargs["order"]
             if "unique" in kwargs:
