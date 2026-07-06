@@ -707,6 +707,44 @@ class TestMoxfieldDeckParsing(unittest.TestCase):
         cards = deck.cards or []
         self.assertEqual(len(cards), 2)
 
+    def test_parse_deck_invalid_board_defaults_to_main_with_warning(self):
+        """Test that invalid board strings default to MAIN with a warning.
+
+        Verifies that when a board string cannot be matched to a Board enum
+        value (via either upper or lowercase lookup), the card is assigned to
+        Board.MAIN and a warning is logged.
+        """
+        moxfield = Moxfield(api_key="test-key")
+        data = {
+            "id": "deck-invalid-board",
+            "name": "Test Deck Invalid Board",
+            "format": "standard",
+            "cards": [
+                {
+                    "card": {
+                        "id": "card-1",
+                        "name": "Island",
+                        "mana_cost": "{0}",
+                        "type_line": "Land",
+                        "rarity": "common",
+                    },
+                    "quantity": 4,
+                    "board": "invalid_board_name",
+                }
+            ],
+        }
+        with self.assertLogs(
+            "pymtg.providers.moxfield", level="WARNING"
+        ) as log_context:
+            deck = moxfield._parse_deck(data)
+        cards = deck.cards or []
+        self.assertEqual(len(cards), 1)
+        self.assertEqual(cards[0].board, Board.MAIN)
+        self.assertTrue(
+            any("Unknown board" in msg for msg in log_context.output),
+            f"Expected 'Unknown board' warning in logs: {log_context.output}",
+        )
+
 
 class TestMoxfieldIterSearch(unittest.TestCase):
     """Test Moxfield.iter_search() method (inherited from BaseProvider)."""
