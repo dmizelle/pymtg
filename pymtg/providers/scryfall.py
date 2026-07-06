@@ -797,7 +797,7 @@ class Scryfall(BaseProvider):
                     logger.debug(f"Unknown color: {color}")
             return valid_colors if valid_colors else None
 
-    def _parse_pricing(self, pricing_data: dict[str, Any]) -> Pricing:
+    def _parse_pricing(self, pricing_data: dict[str, Any] | None) -> Pricing:
         """Parse Scryfall pricing data into a Pricing object.
 
         Scryfall can return pricing data in different formats:
@@ -811,6 +811,8 @@ class Scryfall(BaseProvider):
         Returns:
             A Pricing object with Scryfall pricing populated.
         """
+        if pricing_data is None:
+            return Pricing(scryfall=ScryfallPricing())
 
         def parse_currency_value(value: Any) -> float | None:
             """Parse a currency value from Scryfall API.
