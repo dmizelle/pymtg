@@ -570,7 +570,22 @@ class Scryfall(BaseProvider):
             response = self.http_client.get("/cards/autocomplete", params=params)
             data = self._handle_response(response, "autocomplete")
 
-            if not data or "data" not in data:
+            if not data:
+                return []
+
+            # Check for Scryfall error response
+            if isinstance(data, dict) and data.get("object") == "error":
+                raise APIError(
+                    data.get("message", "Unknown Scryfall API error"),
+                    status_code=data.get("status"),
+                    details={
+                        "message": data.get("message", ""),
+                        "code": data.get("code"),
+                        "status": data.get("status"),
+                    },
+                )
+
+            if "data" not in data:
                 return []
 
             return data["data"]

@@ -555,6 +555,47 @@ class TestScryfallAutocomplete(unittest.TestCase):
 
         self.assertEqual(suggestions, [])
 
+    @patch.object(Scryfall, "_handle_response")
+    @patch.object(Scryfall, "http_client")
+    def test_autocomplete_error_response_raises_apierror(
+        self, mock_http_client, mock_handle_response
+    ):
+        """Test that autocomplete raises APIError for error responses."""
+        mock_response = MagicMock()
+        mock_http_client.get.return_value = mock_response
+
+        mock_handle_response.return_value = {
+            "object": "error",
+            "code": "not_found",
+            "status": 404,
+            "message": "Card not found",
+        }
+
+        scryfall = Scryfall()
+        with self.assertRaises(APIError) as context:
+            scryfall.autocomplete("test")
+
+        self.assertIn("Card not found", str(context.exception))
+        self.assertEqual(context.exception.status_code, 404)
+        self.assertEqual(context.exception.details["code"], "not_found")
+
+    @patch.object(Scryfall, "_handle_response")
+    @patch.object(Scryfall, "http_client")
+    def test_autocomplete_error_response_minimal_fields(
+        self, mock_http_client, mock_handle_response
+    ):
+        """Test autocomplete with minimal error response."""
+        mock_response = MagicMock()
+        mock_http_client.get.return_value = mock_response
+
+        mock_handle_response.return_value = {"object": "error", "code": "bad_request"}
+
+        scryfall = Scryfall()
+        with self.assertRaises(APIError) as context:
+            scryfall.autocomplete("test")
+
+        self.assertEqual(context.exception.details["code"], "bad_request")
+
 
 class TestScryfallGetCardsByName(unittest.TestCase):
     """Test Scryfall.get_cards_by_name() method."""
