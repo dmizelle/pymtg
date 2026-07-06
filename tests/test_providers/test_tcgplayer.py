@@ -1073,6 +1073,41 @@ class TestTCGPlayerResponseParsing(unittest.TestCase):
         colors = self.tcgplayer._parse_tcgplayer_color_string("")
         self.assertEqual(len(colors), 0)
 
+    def test_parse_color_string_mixed_format(self):
+        """Test parsing mixed format color string (single char + names)."""
+        colors = self.tcgplayer._parse_tcgplayer_color_string("W, Blue")
+        self.assertEqual(len(colors), 2)
+        self.assertIn(Color.WHITE, colors)
+        self.assertIn(Color.BLUE, colors)
+
+    def test_parse_color_string_unknown_logs_warning(self):
+        """Test that unknown color values log a warning."""
+        with self.assertLogs(level="WARNING") as log:
+            colors = self.tcgplayer._parse_tcgplayer_color_string("W, Xyz")
+        self.assertEqual(len(colors), 1)
+        self.assertIn(Color.WHITE, colors)
+        # Xyz has no valid chars, so 1 part-level warning
+        self.assertEqual(len(log.output), 1)
+        self.assertIn("Xyz", log.output[0])
+
+    def test_parse_color_string_all_invalid(self):
+        """Test that fully invalid input returns empty list with warnings."""
+        with self.assertLogs(level="WARNING") as log:
+            colors = self.tcgplayer._parse_tcgplayer_color_string("XYZ")
+        self.assertEqual(len(colors), 0)
+        # 1 part-level warning (no valid chars found)
+        self.assertEqual(len(log.output), 1)
+
+    def test_parse_color_string_single_char_no_comma(self):
+        """Test parsing single character codes without comma."""
+        colors = self.tcgplayer._parse_tcgplayer_color_string("WUBRG")
+        self.assertEqual(len(colors), 5)
+        self.assertIn(Color.WHITE, colors)
+        self.assertIn(Color.BLUE, colors)
+        self.assertIn(Color.BLACK, colors)
+        self.assertIn(Color.RED, colors)
+        self.assertIn(Color.GREEN, colors)
+
     def test_extract_type_line_valid_creature(self):
         """Test _extract_type_line with a valid creature type.
 
