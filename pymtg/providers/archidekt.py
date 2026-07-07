@@ -23,7 +23,7 @@ from typing import Any
 import requests
 
 from pymtg.auth.session import SessionAuthHandler
-from pymtg.exceptions import InvalidQueryError, NetworkError, NotFoundError
+from pymtg.exceptions import APIError, InvalidQueryError, NetworkError, NotFoundError
 from pymtg.models.card import Card, CardFace
 from pymtg.models.deck import Deck
 from pymtg.models.enums import Board, Color, Format, Rarity, SetType
@@ -256,15 +256,20 @@ class Archidekt(BaseProvider):
             response = self.http_client.get("/api/cards/", params=params)
             data = self._handle_response(response, "cards")
 
-            if not data:
-                return []
+            try:
+                if not data:
+                    return []
 
-            # Parse card results
-            cards = []
-            for card_data in data:
-                cards.append(self._parse_card(card_data))
+                # Parse card results
+                cards = []
+                for card_data in data:
+                    cards.append(self._parse_card(card_data))
 
-            return cards
+                return cards
+
+            except (KeyError, ValueError, TypeError) as e:
+                logger.error(f"Data parsing error during Archidekt search: {e}")
+                raise APIError(f"Failed to parse search response: {e}") from e
 
         except requests.exceptions.RequestException as e:
             logger.error(f"Network error during Archidekt search: {e}")
