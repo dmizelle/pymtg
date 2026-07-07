@@ -141,14 +141,13 @@ class SessionAuthHandler(BaseAuthHandler):
                 "Network error during authentication",
                 original_exception=e,
             ) from e
-        except (AuthenticationError, ValueError, KeyError, TypeError):
-            # Clean up credentials on authentication failure
-            self._username = None
-            self._password = None
-            raise
         finally:
             if not session_stored:
                 auth_session.close()
+            # Always clean up credentials on failure
+            if not self._authenticated:
+                self._username = None
+                self._password = None
 
     def is_authenticated(self) -> bool:
         """Check if authentication is valid.
