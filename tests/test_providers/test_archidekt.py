@@ -1088,6 +1088,36 @@ class TestArchidektParseDeck(unittest.TestCase):
             self.assertEqual(len(cards), 1)
             self.assertEqual(mock_parse_card.call_count, 1)
 
+    def test_parse_deck_unknown_format_logs_warning(self):
+        """Test that unknown deck format logs a warning and defaults to COMMANDER.
+
+        This test verifies that when an unknown deck format is encountered,
+        a warning is logged and the deck defaults to COMMANDER format.
+        """
+        archidekt = Archidekt()
+
+        with patch.object(archidekt, "_parse_card") as mock_parse_card:
+            mock_parse_card.return_value = Card(
+                id="card1", name="Card 1", source="archidekt"
+            )
+
+            data = {
+                "id": "deck-789",
+                "name": "Test Deck",
+                "format": "unknown_format",
+                "cards": [{"quantity": 1, "card": {"id": "card1"}, "board": "main"}],
+            }
+
+            with self.assertLogs(level="WARNING") as log:
+                deck = archidekt._parse_deck(data)
+
+            # Verify the deck was created with COMMANDER format
+            self.assertEqual(deck.format, Format.COMMANDER)
+            # Verify the warning was logged
+            self.assertTrue(
+                any("Unknown deck format" in record.message for record in log.records)
+            )
+
 
 class TestArchidektBuildSearchQuery(unittest.TestCase):
     """Test Archidekt._build_search_query() method."""

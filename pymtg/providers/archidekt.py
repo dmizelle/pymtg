@@ -864,6 +864,9 @@ class Archidekt(BaseProvider):
         try:
             deck_format = Format[format_str]
         except (KeyError, TypeError):
+            logger.warning(
+                "Unknown deck format %s, defaulting to COMMANDER", format_str
+            )
             deck_format = Format.COMMANDER  # Default if unknown
 
         # Get deck description
