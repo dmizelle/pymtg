@@ -67,12 +67,13 @@ class SessionAuthHandler(BaseAuthHandler):
             AuthenticationError: If authentication fails.
             NetworkError: If there is a network error.
         """
-        self._username = username
-        self._password = password
-
         auth_session = requests.Session()
         session_stored = False
         try:
+            # Store credentials temporarily
+            self._username = username
+            self._password = password
+
             # First, get the login page to retrieve CSRF token
             login_url = f"{self.base_url}{self.login_endpoint}"
             logger.debug(f"Getting CSRF token from {login_url}")
@@ -136,6 +137,11 @@ class SessionAuthHandler(BaseAuthHandler):
                 "Network error during authentication",
                 original_exception=e,
             ) from e
+        except Exception:
+            # Clean up credentials on any authentication failure
+            self._username = None
+            self._password = None
+            raise
         finally:
             if not session_stored:
                 auth_session.close()
