@@ -847,8 +847,8 @@ class Cardmarket(BaseProvider):
             )
             return card
 
-        except Exception as e:
-            logger.error(f"Failed to create Card object: {e}")
+        except (ValueError, TypeError, KeyError) as e:
+            logger.error(f"Failed to create Card object: {type(e).__name__}: {e}")
             # Return a minimal card with required fields
             return Card(
                 id=card_id,
