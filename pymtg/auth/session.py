@@ -144,8 +144,8 @@ class SessionAuthHandler(BaseAuthHandler):
         finally:
             if not session_stored:
                 auth_session.close()
-            # Always clean up credentials on failure
-            if not self._authenticated:
+                # Reset authenticated flag and clean up credentials on failure
+                self._authenticated = False
                 self._username = None
                 self._password = None
 
