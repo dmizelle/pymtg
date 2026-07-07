@@ -67,6 +67,10 @@ class SessionAuthHandler(BaseAuthHandler):
             AuthenticationError: If authentication fails.
             NetworkError: If there is a network error.
         """
+        # Initialize credentials to None to ensure cleanup on any failure
+        self._username = None
+        self._password = None
+
         auth_session = requests.Session()
         session_stored = False
         try:
