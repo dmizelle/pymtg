@@ -533,15 +533,29 @@ class TestArchidektSearch(unittest.TestCase):
     def test_search_data_parsing_error_raises_apierror(
         self, mock_http_client, mock_handle_response
     ):
-        """Test that APIError is raised on data parsing error."""
-        # Mock _handle_response to raise a KeyError
-        mock_handle_response.side_effect = KeyError("missing_key")
+        """Test that APIError is raised on data parsing errors.
 
+        This test verifies that KeyError, ValueError, and TypeError
+        from data parsing are caught and converted to APIError.
+        """
         archidekt = Archidekt()
 
+        # Test KeyError
+        mock_handle_response.side_effect = KeyError("missing_key")
         with self.assertRaises(APIError) as context:
             archidekt.search(name="test")
+        self.assertIn("Failed to parse search response", str(context.exception))
 
+        # Test ValueError
+        mock_handle_response.side_effect = ValueError("invalid_value")
+        with self.assertRaises(APIError) as context:
+            archidekt.search(name="test")
+        self.assertIn("Failed to parse search response", str(context.exception))
+
+        # Test TypeError
+        mock_handle_response.side_effect = TypeError("invalid_type")
+        with self.assertRaises(APIError) as context:
+            archidekt.search(name="test")
         self.assertIn("Failed to parse search response", str(context.exception))
 
 
