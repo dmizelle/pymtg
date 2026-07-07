@@ -176,11 +176,14 @@ class BaseProvider(ABC):
             A Deck object for the specified deck.
 
         Raises:
+            ValueError: If deck_id is empty or None.
             NotFoundError: If the deck is not found.
             NetworkError: If there is a network error.
             APIError: If the API returns an error.
             NotImplementedError: If the provider doesn't support deck retrieval.
         """
+        if not deck_id:
+            raise ValueError("deck_id cannot be empty or None")
         raise NotImplementedError(f"{self.name} does not support deck retrieval")
 
     def get_user_decks(self, user_id: str | None = None, **kwargs: Any) -> list[Deck]:
