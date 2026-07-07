@@ -137,8 +137,8 @@ class SessionAuthHandler(BaseAuthHandler):
                 "Network error during authentication",
                 original_exception=e,
             ) from e
-        except Exception:
-            # Clean up credentials on any authentication failure
+        except (AuthenticationError, ValueError, KeyError, TypeError):
+            # Clean up credentials on authentication failure
             self._username = None
             self._password = None
             raise
