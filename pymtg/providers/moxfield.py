@@ -224,7 +224,7 @@ class Moxfield(BaseProvider):
             A list of Card objects matching the search criteria.
 
         Raises:
-            InvalidQueryError: If the search parameters are invalid.
+            NotFoundError: If the deck is not found.
             NetworkError: If there is a network error.
             APIError: If the API returns an error.
             AuthenticationError: If API key is not provided.
@@ -445,7 +445,14 @@ class Moxfield(BaseProvider):
             NetworkError: If there is a network error.
             APIError: If the API returns an error.
             AuthenticationError: If API key is not provided.
+            InvalidQueryError: If deck_id is not provided.
         """
+        if not deck_id:
+            raise InvalidQueryError(
+                "deck_id is required for Moxfield.get_deck()",
+                provider=self.name,
+            )
+
         if not self.is_authenticated():
             raise AuthenticationError(
                 "Moxfield requires a Parse.bot API key",

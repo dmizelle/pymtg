@@ -396,7 +396,14 @@ class Archidekt(BaseProvider):
             NetworkError: If there is a network error.
             APIError: If the API returns an error.
             AuthenticationError: If the deck is private and authentication fails.
+            InvalidQueryError: If deck_id is not provided.
         """
+        if not deck_id:
+            raise InvalidQueryError(
+                "deck_id is required for Archidekt.get_deck()",
+                provider=self.name,
+            )
+
         try:
             response = self.http_client.get(f"/api/decks/{deck_id}/")
             data = self._handle_response(response, "deck")
