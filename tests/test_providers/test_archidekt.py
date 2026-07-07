@@ -17,6 +17,7 @@ import requests
 
 from pymtg.auth.session import SessionAuthHandler
 from pymtg.exceptions import (
+    APIError,
     AuthenticationError,
     NetworkError,
     NotFoundError,
@@ -526,6 +527,22 @@ class TestArchidektSearch(unittest.TestCase):
             archidekt.search(name="test")
 
         self.assertIn("Network error during search", str(context.exception))
+
+    @patch.object(Archidekt, "_handle_response")
+    @patch.object(Archidekt, "http_client")
+    def test_search_data_parsing_error_raises_apierror(
+        self, mock_http_client, mock_handle_response
+    ):
+        """Test that APIError is raised on data parsing error."""
+        # Mock _handle_response to raise a KeyError
+        mock_handle_response.side_effect = KeyError("missing_key")
+
+        archidekt = Archidekt()
+
+        with self.assertRaises(APIError) as context:
+            archidekt.search(name="test")
+
+        self.assertIn("Failed to parse search response", str(context.exception))
 
 
 class TestArchidektSearchSyntax(unittest.TestCase):
