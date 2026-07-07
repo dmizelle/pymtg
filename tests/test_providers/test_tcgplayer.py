@@ -18,6 +18,7 @@ from pymtg.exceptions import (
     InvalidQueryError,
     NetworkError,
     NotFoundError,
+    ParsingError,
     RateLimitError,
 )
 from pymtg.models.card import Card
@@ -100,6 +101,42 @@ class TestTCGPlayerInitialization(unittest.TestCase):
         repr_str = repr(tcgplayer)
         self.assertIn("TCGPlayer", repr_str)
         self.assertIn("not authenticated", repr_str)
+
+    def test_initialization_empty_client_id_raises_value_error(self):
+        """Test that empty client_id raises ValueError."""
+        with pytest.raises(ValueError) as exc_info:
+            TCGPlayer(client_id="", client_secret="test_secret")
+        assert "client_id cannot be empty" in str(exc_info.value)
+
+    def test_initialization_empty_client_secret_raises_value_error(self):
+        """Test that empty client_secret raises ValueError."""
+        with pytest.raises(ValueError) as exc_info:
+            TCGPlayer(client_id="test_id", client_secret="")
+        assert "client_secret cannot be empty" in str(exc_info.value)
+
+    def test_initialization_whitespace_client_id_raises_value_error(self):
+        """Test that whitespace-only client_id raises ValueError."""
+        with pytest.raises(ValueError) as exc_info:
+            TCGPlayer(client_id="   ", client_secret="test_secret")
+        assert "client_id cannot be empty" in str(exc_info.value)
+
+    def test_initialization_whitespace_client_secret_raises_value_error(self):
+        """Test that whitespace-only client_secret raises ValueError."""
+        with pytest.raises(ValueError) as exc_info:
+            TCGPlayer(client_id="test_id", client_secret="   ")
+        assert "client_secret cannot be empty" in str(exc_info.value)
+
+    def test_initialization_non_string_client_id_raises_type_error(self):
+        """Test that non-string client_id raises TypeError."""
+        with pytest.raises(TypeError) as exc_info:
+            TCGPlayer(client_id=123, client_secret="test_secret")  # type: ignore
+        assert "client_id must be a string or None" in str(exc_info.value)
+
+    def test_initialization_non_string_client_secret_raises_type_error(self):
+        """Test that non-string client_secret raises TypeError."""
+        with pytest.raises(TypeError) as exc_info:
+            TCGPlayer(client_id="test_id", client_secret=123)  # type: ignore
+        assert "client_secret must be a string or None" in str(exc_info.value)
 
 
 class TestTCGPlayerAuthenticationRequired(unittest.TestCase):
@@ -792,7 +829,7 @@ class TestTCGPlayerErrorHandling(unittest.TestCase):
                 ):
                     with pytest.raises(AuthenticationError) as exc_info:
                         self.tcgplayer._make_request("GET", "/v2/catalog/products")
-
+                        
         error = exc_info.value
         assert error.status_code == 401
         assert error.provider == "tcgplayer"
@@ -949,6 +986,30 @@ class TestTCGPlayerResponseParsing(unittest.TestCase):
             colors[0], Color.WHITE
         )  # Use enum instance, not class attribute
 
+    def test_parse_card_data_negative_cmc_logs_warning(self):
+        """Test that negative CMC values log a warning and set to None."""
+        data = {
+            "productId": 12345,
+            "name": "Test Card",
+            "convertedManaCost": "-2",
+        }
+        with self.assertLogs(level="WARNING") as log:
+            card = self.tcgplayer._parse_card_data(data)
+        self.assertIsNone(card.cmc)
+        self.assertTrue(any("Negative CMC" in m for m in log.output))
+
+    def test_parse_card_data_invalid_cmc_logs_warning(self):
+        """Test that invalid CMC values log a warning and set to None."""
+        data = {
+            "productId": 12345,
+            "name": "Test Card",
+            "convertedManaCost": "not_a_number",
+        }
+        with self.assertLogs(level="WARNING") as log:
+            card = self.tcgplayer._parse_card_data(data)
+        self.assertIsNone(card.cmc)
+        self.assertTrue(any("Invalid CMC" in m for m in log.output))
+
     def test_parse_card_data_minimal(self):
         """Test parsing card data with minimal fields."""
         data = {
@@ -982,6 +1043,41 @@ class TestTCGPlayerResponseParsing(unittest.TestCase):
         """Test parsing empty color string."""
         colors = self.tcgplayer._parse_tcgplayer_color_string("")
         self.assertEqual(len(colors), 0)
+
+    def test_parse_color_string_mixed_format(self):
+        """Test parsing mixed format color string (single char + names)."""
+        colors = self.tcgplayer._parse_tcgplayer_color_string("W, Blue")
+        self.assertEqual(len(colors), 2)
+        self.assertIn(Color.WHITE, colors)
+        self.assertIn(Color.BLUE, colors)
+
+    def test_parse_color_string_unknown_logs_warning(self):
+        """Test that unknown color values log a warning."""
+        with self.assertLogs(level="WARNING") as log:
+            colors = self.tcgplayer._parse_tcgplayer_color_string("W, Xyz")
+        self.assertEqual(len(colors), 1)
+        self.assertIn(Color.WHITE, colors)
+        # Xyz has no valid chars, so 1 part-level warning
+        self.assertEqual(len(log.output), 1)
+        self.assertIn("Xyz", log.output[0])
+
+    def test_parse_color_string_all_invalid(self):
+        """Test that fully invalid input returns empty list with warnings."""
+        with self.assertLogs(level="WARNING") as log:
+            colors = self.tcgplayer._parse_tcgplayer_color_string("XYZ")
+        self.assertEqual(len(colors), 0)
+        # 1 part-level warning (no valid chars found)
+        self.assertEqual(len(log.output), 1)
+
+    def test_parse_color_string_single_char_no_comma(self):
+        """Test parsing single character codes without comma."""
+        colors = self.tcgplayer._parse_tcgplayer_color_string("WUBRG")
+        self.assertEqual(len(colors), 5)
+        self.assertIn(Color.WHITE, colors)
+        self.assertIn(Color.BLUE, colors)
+        self.assertIn(Color.BLACK, colors)
+        self.assertIn(Color.RED, colors)
+        self.assertIn(Color.GREEN, colors)
 
     def test_extract_type_line_valid_creature(self):
         """Test _extract_type_line with a valid creature type.
@@ -1124,6 +1220,46 @@ class TestTCGPlayerResponseParsing(unittest.TestCase):
         }
         card = self.tcgplayer._parse_card_data(data)
         self.assertIsNone(card.type_line)
+
+
+class TestTCGPlayerParsingError(unittest.TestCase):
+    """Test TCGPlayer ParsingError handling."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.tcgplayer = TCGPlayer()
+
+    def test_parse_card_data_raises_parsing_error_on_failure(self):
+        """Test that _parse_card_data raises ParsingError on card creation failure."""
+        # Create data that will cause Card creation to fail
+        # by providing None for required fields
+        data = {
+            "productId": None,
+            "name": None,
+            "categoryName": "LEA",
+            "type": "Creature",
+        }
+
+        with self.assertRaises(ParsingError) as ctx:
+            self.tcgplayer._parse_card_data(data)
+
+        self.assertIn("Failed to parse card data", str(ctx.exception))
+        self.assertEqual(ctx.exception.provider, "tcgplayer")
+
+    def test_parsing_error_includes_raw_data(self):
+        """Test that ParsingError includes raw data for debugging."""
+        data = {
+            "productId": None,
+            "name": None,
+            "categoryName": "LEA",
+            "type": "Creature",
+        }
+
+        with self.assertRaises(ParsingError) as ctx:
+            self.tcgplayer._parse_card_data(data)
+
+        self.assertIn("Raw data:", str(ctx.exception))
+        self.assertEqual(ctx.exception.raw_data, data)
 
 
 if __name__ == "__main__":

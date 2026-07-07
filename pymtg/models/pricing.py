@@ -107,9 +107,9 @@ class ScryfallPricing(_ProviderPricingBase):
 
     Scryfall provides pricing in multiple currencies and for different
     print variations (normal, foil, etched). The ``CURRENCIES``
-    ClassVar declares the supported currency codes (usd, eur, tix).
-    Use ``get_normal_print_currencies()`` to retrieve the normal-print
-    prices for these currencies.
+    ClassVar declares the supported currency codes (usd, eur, tix, cad,
+    gbp, jpy, cny). Use ``get_normal_print_currencies()`` to retrieve
+    the normal-print prices for these currencies.
 
     Attributes:
         usd: Price in USD for normal prints.
@@ -118,11 +118,27 @@ class ScryfallPricing(_ProviderPricingBase):
         eur: Price in EUR for normal prints.
         eur_foil: Price in EUR for foil prints.
         tix: Price in MTGO tix for normal prints.
+        cad: Price in CAD for normal prints.
+        cad_foil: Price in CAD for foil prints.
+        gbp: Price in GBP for normal prints.
+        gbp_foil: Price in GBP for foil prints.
+        jpy: Price in JPY for normal prints.
+        jpy_foil: Price in JPY for foil prints.
+        cny: Price in CNY for normal prints.
+        cny_foil: Price in CNY for foil prints.
     """
 
     # Currency codes supported by this provider's pricing model. If
     # modified, update the class docstring and Attributes section to match.
-    CURRENCIES: ClassVar[tuple[str, ...]] = ("usd", "eur", "tix")
+    CURRENCIES: ClassVar[tuple[str, ...]] = (
+        "usd",
+        "eur",
+        "tix",
+        "cad",
+        "gbp",
+        "jpy",
+        "cny",
+    )
 
     usd: float | None = None
     usd_foil: float | None = None
@@ -130,6 +146,14 @@ class ScryfallPricing(_ProviderPricingBase):
     eur: float | None = None
     eur_foil: float | None = None
     tix: float | None = None
+    cad: float | None = None
+    cad_foil: float | None = None
+    gbp: float | None = None
+    gbp_foil: float | None = None
+    jpy: float | None = None
+    jpy_foil: float | None = None
+    cny: float | None = None
+    cny_foil: float | None = None
 
     @classmethod
     def __pydantic_init_subclass__(cls, **kwargs: object) -> None:

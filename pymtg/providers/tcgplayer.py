@@ -25,6 +25,7 @@ from pymtg.exceptions import (
     InvalidQueryError,
     NetworkError,
     NotFoundError,
+    ParsingError,
     RateLimitError,
 )
 from pymtg.models.card import Card
@@ -109,7 +110,20 @@ class TCGPlayer(BaseProvider):
 
         Raises:
             AuthenticationError: If authentication fails during initialization.
+            ValueError: If client_id or client_secret are provided but empty.
+            TypeError: If client_id or client_secret are not strings.
         """
+        # Validate OAuth2 credentials
+        if client_id is not None and not isinstance(client_id, str):
+            raise TypeError("client_id must be a string or None")
+        if client_id is not None and client_id.strip() == "":
+            raise ValueError("client_id cannot be empty")
+
+        if client_secret is not None and not isinstance(client_secret, str):
+            raise TypeError("client_secret must be a string or None")
+        if client_secret is not None and client_secret.strip() == "":
+            raise ValueError("client_secret cannot be empty")
+
         # Store OAuth2 credentials before calling super().__init__()
         # This is needed because _initialize() is called during super().__init__()
         self.client_id = client_id
@@ -856,6 +870,9 @@ class TCGPlayer(BaseProvider):
         Returns:
             Normalized Card object.
 
+        Raises:
+            ParsingError: If the card data cannot be parsed into a Card object.
+
         Note:
             TCGPlayer data needs to be mapped to the normalized Card model.
             This method handles the mapping from TCGPlayer-specific fields.
@@ -933,7 +950,19 @@ class TCGPlayer(BaseProvider):
         if mana_cost_str is not None:
             try:
                 cmc = float(mana_cost_str)
+                if cmc < 0:
+                    logger.warning(
+                        "Negative CMC value %r for card %r; setting to None",
+                        cmc,
+                        data.get("name", ""),
+                    )
+                    cmc = None
             except (ValueError, TypeError):
+                logger.warning(
+                    "Invalid CMC value %r for card %r; setting to None",
+                    mana_cost_str,
+                    data.get("name", ""),
+                )
                 mana_cost_str = str(mana_cost_str)
                 cmc = None
 
@@ -1005,12 +1034,11 @@ class TCGPlayer(BaseProvider):
 
         except Exception as e:
             logger.error(f"Failed to create Card object: {e}")
-            # Return a minimal card with required fields
-            return Card(
-                id=str(product_id) if product_id else "",
-                name=name,
-                source="tcgplayer",
-            )
+            raise ParsingError(
+                f"Failed to parse card data: {e}",
+                provider=self.name,
+                raw_data=data,
+            ) from e
 
     def _extract_type_line(self, product_type: str) -> str | None:
         """Validates and extracts the card type_line from productType.
@@ -1109,32 +1137,26 @@ class TCGPlayer(BaseProvider):
     def _parse_tcgplayer_color_string(self, color_str: str) -> list[Color]:
         """Parse a TCGPlayer color string into Color enum values.
 
+        Handles comma-separated names ("White, Blue"), single-character codes
+        ("WUBRG"), and mixed formats ("W, Blue"). Logs warnings for unknown
+        color values. Empty parts (e.g., "White,,Blue") are skipped with a
+        warning. Duplicate colors are avoided by checking for existing entries
+        before appending.
+
         Args:
             color_str: Color string from TCGPlayer (e.g., "WUBRG", "White, Blue").
 
         Returns:
-            List of Color enum values.
+            List of Color enum values parsed from the string, without
+            duplicates. Returns an empty list if no valid colors are found.
         """
         from pymtg.models.enums import Color
 
         if not color_str:
             return []
 
-        # Handle comma-separated color names
-        if "," in color_str:
-            color_names = [c.strip().lower() for c in color_str.split(",")]
-            color_map = {
-                "white": Color.WHITE,
-                "blue": Color.BLUE,
-                "black": Color.BLACK,
-                "red": Color.RED,
-                "green": Color.GREEN,
-                "colorless": Color.COLORLESS,
-            }
-            return [color_map.get(c, Color.COLORLESS) for c in color_names]
-
-        # Handle single character codes
-        color_map = {
+        # Single character codes
+        single_char_map = {
             "W": Color.WHITE,
             "U": Color.BLUE,
             "B": Color.BLACK,
@@ -1143,10 +1165,57 @@ class TCGPlayer(BaseProvider):
             "C": Color.COLORLESS,
         }
 
-        colors = []
-        for char in color_str.upper():
-            if char in color_map:
-                colors.append(color_map[char])
+        # Comma-separated color names
+        name_map = {
+            "white": Color.WHITE,
+            "blue": Color.BLUE,
+            "black": Color.BLACK,
+            "red": Color.RED,
+            "green": Color.GREEN,
+            "colorless": Color.COLORLESS,
+        }
+
+        colors: list[Color] = []
+        # Split by comma if present, otherwise treat as single string
+        parts = color_str.split(",") if "," in color_str else [color_str]
+
+        for part in parts:
+            part = part.strip()
+            if not part:
+                logger.warning("Empty color part found in %r; skipping", color_str)
+                continue
+
+            # If part is a single character, try single char code first
+            if len(part) == 1:
+                upper_part = part.upper()
+                if upper_part in single_char_map:
+                    if single_char_map[upper_part] not in colors:
+                        colors.append(single_char_map[upper_part])
+                else:
+                    logger.warning(
+                        "Unknown TCGPlayer color value %r in %r; skipping",
+                        part,
+                        color_str,
+                    )
+                continue
+
+            # Try name map
+            if part.lower() in name_map:
+                if name_map[part.lower()] not in colors:
+                    colors.append(name_map[part.lower()])
+                continue
+
+            # Try each character in the part (e.g., "WUBR" without comma)
+            found = False
+            for char in part.upper():
+                if char in single_char_map:
+                    if single_char_map[char] not in colors:
+                        colors.append(single_char_map[char])
+                    found = True
+            if not found:
+                logger.warning(
+                    "Unknown TCGPlayer color value %r in %r; skipping", part, color_str
+                )
 
         return colors
 

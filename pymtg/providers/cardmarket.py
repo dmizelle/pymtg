@@ -131,6 +131,10 @@ class Cardmarket(BaseProvider):
         self._access_token = access_token
         self._access_token_secret = access_token_secret
 
+        # Rate limit tracking (Cardmarket: 30,000-100,000 requests per day)
+        self._request_count = 0
+        self._rate_limit = 30000
+
         # Call parent constructor which will call _initialize
         super().__init__(**kwargs)
 
@@ -324,7 +328,14 @@ class Cardmarket(BaseProvider):
 
             # Cardmarket uses: name, game, category, etc.
             # For MTG, game would be "Magic" or similar
-            params["game"] = kwargs.get("game", "Magic")
+            game_value = kwargs.get("game")
+            if not isinstance(game_value, str) or not game_value:
+                game_value = "Magic"
+                logger.warning(
+                    "Invalid or missing game parameter for Cardmarket; "
+                    "defaulting to 'Magic'"
+                )
+            params["game"] = game_value
 
             # Handle limit and pagination
             # Cardmarket uses limit and offset
@@ -347,6 +358,8 @@ class Cardmarket(BaseProvider):
             # Cardmarket endpoints require /output.json/ suffix for JSON output
             endpoint = "/ws/v2.0/products/output.json/"
 
+            self._check_rate_limit()
+            self._record_request()
             response = self.http_client.get(endpoint, params=params)
             data = self._handle_response(response, "cards")
 
@@ -429,6 +442,8 @@ class Cardmarket(BaseProvider):
             # Cardmarket endpoints require /output.json/ suffix for JSON output
             endpoint = "/ws/v2.0/products/output.json/"
 
+            self._check_rate_limit()
+            self._record_request()
             response = self.http_client.get(endpoint, params=params)
             data = self._handle_response(response, "cards")
 
@@ -511,6 +526,8 @@ class Cardmarket(BaseProvider):
             # Cardmarket endpoints require /output.json/ suffix for JSON output
             endpoint = "/ws/v2.0/products/find/output.json/"
 
+            self._check_rate_limit()
+            self._record_request()
             response = self.http_client.get(endpoint, params=find_params)
             data = self._handle_response(response, "card")
 
@@ -587,6 +604,8 @@ class Cardmarket(BaseProvider):
             # Cardmarket marketplace/prices endpoint
             endpoint = f"/ws/v2.0/marketplace/prices/{product_id_int}/output.json/"
 
+            self._check_rate_limit()
+            self._record_request()
             response = self.http_client.get(endpoint)
             data = self._handle_response(response, "pricing")
 
@@ -912,7 +931,7 @@ class Cardmarket(BaseProvider):
                     result.get("conditionName", "").lower().replace(" ", "_")
                 )
                 price = result.get("price", 0)
-                if isinstance(price, (int, float)):
+                if isinstance(price, (int, float)) and price >= 0:
                     # Map condition names to our fields
                     if condition in [
                         "near_mint",
@@ -932,6 +951,11 @@ class Cardmarket(BaseProvider):
                         cardmarket_pricing_data["low_ex"] = float(price)
                     elif condition == "low" or condition_name == "low":
                         cardmarket_pricing_data["low"] = float(price)
+                    else:
+                        logger.warning(
+                            f"Unmapped condition '{condition}' "
+                            f"(name: '{condition_name}') in pricing data"
+                        )
         else:
             # Try direct fields
             for field in ["avg1", "avg7", "avg30", "low", "low_ex", "trend"]:
@@ -961,13 +985,19 @@ class Cardmarket(BaseProvider):
         """Check if the rate limit has been exceeded.
 
         Cardmarket has a rate limit of 30,000-100,000 requests per day.
+        Raises RateLimitError when the limit is reached.
 
         Raises:
             RateLimitError: If rate limit is exceeded.
         """
-        # For now, we'll rely on the HTTP client's rate limiting
-        # and the API's own rate limit responses
-        pass
+        if self._request_count >= self._rate_limit:
+            raise RateLimitError(
+                f"Cardmarket rate limit exceeded ({self._rate_limit} requests/day)"
+            )
+
+    def _record_request(self) -> None:
+        """Record that a request was made."""
+        self._request_count += 1
 
     def _handle_response(
         self, response: requests.Response, resource_type: str | None = None

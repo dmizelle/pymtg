@@ -9,6 +9,7 @@ public API that doesn't require authentication for most endpoints.
 """
 
 import logging
+import re
 from typing import Any
 
 import requests
@@ -28,6 +29,12 @@ from pymtg.models.pricing import Pricing, ScryfallPricing
 from pymtg.providers.base import BaseProvider
 
 logger = logging.getLogger(__name__)
+
+# UUID v4 pattern for Scryfall card IDs
+_UUID_PATTERN = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
 
 
 class Scryfall(BaseProvider):
@@ -448,6 +455,13 @@ class Scryfall(BaseProvider):
                 provider=self.name,
             )
 
+        # Validate UUID format
+        if not _UUID_PATTERN.match(card_id):
+            raise InvalidQueryError(
+                f"card_id '{card_id}' is not a valid UUID format",
+                provider=self.name,
+            )
+
         try:
             response = self.http_client.get(f"/cards/{card_id}")
             data = self._handle_response(response, "card")
@@ -570,7 +584,22 @@ class Scryfall(BaseProvider):
             response = self.http_client.get("/cards/autocomplete", params=params)
             data = self._handle_response(response, "autocomplete")
 
-            if not data or "data" not in data:
+            if not data:
+                return []
+
+            # Check for Scryfall error response
+            if isinstance(data, dict) and data.get("object") == "error":
+                raise APIError(
+                    data.get("message", "Unknown Scryfall API error"),
+                    status_code=data.get("status"),
+                    details={
+                        "message": data.get("message", ""),
+                        "code": data.get("code"),
+                        "status": data.get("status"),
+                    },
+                )
+
+            if "data" not in data:
                 return []
 
             return data["data"]
@@ -797,7 +826,7 @@ class Scryfall(BaseProvider):
                     logger.debug(f"Unknown color: {color}")
             return valid_colors if valid_colors else None
 
-    def _parse_pricing(self, pricing_data: dict[str, Any]) -> Pricing:
+    def _parse_pricing(self, pricing_data: dict[str, Any] | None) -> Pricing:
         """Parse Scryfall pricing data into a Pricing object.
 
         Scryfall can return pricing data in different formats:
@@ -811,6 +840,8 @@ class Scryfall(BaseProvider):
         Returns:
             A Pricing object with Scryfall pricing populated.
         """
+        if pricing_data is None:
+            return Pricing(scryfall=ScryfallPricing())
 
         def parse_currency_value(value: Any) -> float | None:
             """Parse a currency value from Scryfall API.
@@ -868,6 +899,14 @@ class Scryfall(BaseProvider):
                 eur=get_price_from_currency_dict("eur", "normal"),
                 eur_foil=get_price_from_currency_dict("eur", "foil"),
                 tix=get_price_from_currency_dict("tix", "normal"),
+                cad=get_price_from_currency_dict("cad", "normal"),
+                cad_foil=get_price_from_currency_dict("cad", "foil"),
+                gbp=get_price_from_currency_dict("gbp", "normal"),
+                gbp_foil=get_price_from_currency_dict("gbp", "foil"),
+                jpy=get_price_from_currency_dict("jpy", "normal"),
+                jpy_foil=get_price_from_currency_dict("jpy", "foil"),
+                cny=get_price_from_currency_dict("cny", "normal"),
+                cny_foil=get_price_from_currency_dict("cny", "foil"),
             ),
             tcgplayer=None,
             cardmarket=None,

@@ -322,6 +322,210 @@ class TestCardmarketSearch:
 
             assert "page must be a positive integer (>= 1)" in str(exc_info.value)
 
+    def test_search_game_defaults_to_magic(self):
+        """Test search defaults game to Magic when not provided."""
+        mock_response_data = {
+            "results": [
+                {
+                    "idProduct": 12345,
+                    "productName": "Black Lotus",
+                    "cardName": "Black Lotus",
+                    "idLanguage": 1,
+                    "idSet": 1,
+                    "idGame": 1,
+                    "idRarity": 1,
+                    "idCardType": 1,
+                    "idSubType": 1,
+                    "idColor": 1,
+                    "idFormat": 1,
+                    "idSetType": 1,
+                    "idSetFormat": 1,
+                    "idCardFace": 1,
+                    "idLayout": 1,
+                    "idCardLayout": 1,
+                    "idCardFaceType": 1,
+                    "idCardFaceLayout": 1,
+                    "idCardFaceLayoutType": 1,
+                    "idCardFaceLayoutSubType": 1,
+                    "idCardFaceLayoutSubTypeType": 1,
+                    "idCardFaceLayoutSubTypeSubType": 1,
+                }
+            ],
+            "numberOfResults": 1,
+            "currentPage": 1,
+            "currentPageResult": 1,
+            "nPages": 1,
+            "actionsWarning": [],
+        }
+        cardmarket = Cardmarket(
+            consumer_key="test_consumer_key",
+            consumer_secret="test_consumer_secret",
+            access_token="test_access_token",
+            access_token_secret="test_access_token_secret",
+        )
+        with patch.object(
+            cardmarket.http_client,
+            "get",
+            return_value=MagicMock(status_code=200, json=lambda: mock_response_data),
+        ) as mock_get:
+            cardmarket.search(name="Black Lotus")
+            call_args = mock_get.call_args
+            assert call_args[1]["params"]["game"] == "Magic"
+
+    def test_search_game_uses_provided_value(self):
+        """Test search uses provided game value."""
+        mock_response_data = {
+            "results": [
+                {
+                    "idProduct": 12345,
+                    "productName": "Test",
+                    "cardName": "Test",
+                    "idLanguage": 1,
+                    "idSet": 1,
+                    "idGame": 1,
+                    "idRarity": 1,
+                    "idCardType": 1,
+                    "idSubType": 1,
+                    "idColor": 1,
+                    "idFormat": 1,
+                    "idSetType": 1,
+                    "idSetFormat": 1,
+                    "idCardFace": 1,
+                    "idLayout": 1,
+                    "idCardLayout": 1,
+                    "idCardFaceType": 1,
+                    "idCardFaceLayout": 1,
+                    "idCardFaceLayoutType": 1,
+                    "idCardFaceLayoutSubType": 1,
+                    "idCardFaceLayoutSubTypeType": 1,
+                    "idCardFaceLayoutSubTypeSubType": 1,
+                }
+            ],
+            "numberOfResults": 1,
+            "currentPage": 1,
+            "currentPageResult": 1,
+            "nPages": 1,
+            "actionsWarning": [],
+        }
+        cardmarket = Cardmarket(
+            consumer_key="test_consumer_key",
+            consumer_secret="test_consumer_secret",
+            access_token="test_access_token",
+            access_token_secret="test_access_token_secret",
+        )
+        with patch.object(
+            cardmarket.http_client,
+            "get",
+            return_value=MagicMock(status_code=200, json=lambda: mock_response_data),
+        ) as mock_get:
+            cardmarket.search(name="Test", game="StarCityGames")
+            call_args = mock_get.call_args
+            assert call_args[1]["params"]["game"] == "StarCityGames"
+
+    def test_search_game_invalid_defaults_to_magic_with_warning(self, caplog):
+        """Test search defaults game to Magic when invalid with warning."""
+        mock_response_data = {
+            "results": [
+                {
+                    "idProduct": 12345,
+                    "productName": "Test",
+                    "cardName": "Test",
+                    "idLanguage": 1,
+                    "idSet": 1,
+                    "idGame": 1,
+                    "idRarity": 1,
+                    "idCardType": 1,
+                    "idSubType": 1,
+                    "idColor": 1,
+                    "idFormat": 1,
+                    "idSetType": 1,
+                    "idSetFormat": 1,
+                    "idCardFace": 1,
+                    "idLayout": 1,
+                    "idCardLayout": 1,
+                    "idCardFaceType": 1,
+                    "idCardFaceLayout": 1,
+                    "idCardFaceLayoutType": 1,
+                    "idCardFaceLayoutSubType": 1,
+                    "idCardFaceLayoutSubTypeType": 1,
+                    "idCardFaceLayoutSubTypeSubType": 1,
+                }
+            ],
+            "numberOfResults": 1,
+            "currentPage": 1,
+            "currentPageResult": 1,
+            "nPages": 1,
+            "actionsWarning": [],
+        }
+        cardmarket = Cardmarket(
+            consumer_key="test_consumer_key",
+            consumer_secret="test_consumer_secret",
+            access_token="test_access_token",
+            access_token_secret="test_access_token_secret",
+        )
+        with patch.object(
+            cardmarket.http_client,
+            "get",
+            return_value=MagicMock(status_code=200, json=lambda: mock_response_data),
+        ) as mock_get:
+            cardmarket.search(name="Test", game=123)
+            call_args = mock_get.call_args
+            assert call_args[1]["params"]["game"] == "Magic"
+            assert any(
+                "Invalid or missing game parameter" in record.message
+                for record in caplog.records
+            )
+
+    def test_search_game_empty_string_defaults_to_magic(self):
+        """Test search defaults game to Magic when empty string."""
+        mock_response_data = {
+            "results": [
+                {
+                    "idProduct": 12345,
+                    "productName": "Test",
+                    "cardName": "Test",
+                    "idLanguage": 1,
+                    "idSet": 1,
+                    "idGame": 1,
+                    "idRarity": 1,
+                    "idCardType": 1,
+                    "idSubType": 1,
+                    "idColor": 1,
+                    "idFormat": 1,
+                    "idSetType": 1,
+                    "idSetFormat": 1,
+                    "idCardFace": 1,
+                    "idLayout": 1,
+                    "idCardLayout": 1,
+                    "idCardFaceType": 1,
+                    "idCardFaceLayout": 1,
+                    "idCardFaceLayoutType": 1,
+                    "idCardFaceLayoutSubType": 1,
+                    "idCardFaceLayoutSubTypeType": 1,
+                    "idCardFaceLayoutSubTypeSubType": 1,
+                }
+            ],
+            "numberOfResults": 1,
+            "currentPage": 1,
+            "currentPageResult": 1,
+            "nPages": 1,
+            "actionsWarning": [],
+        }
+        cardmarket = Cardmarket(
+            consumer_key="test_consumer_key",
+            consumer_secret="test_consumer_secret",
+            access_token="test_access_token",
+            access_token_secret="test_access_token_secret",
+        )
+        with patch.object(
+            cardmarket.http_client,
+            "get",
+            return_value=MagicMock(status_code=200, json=lambda: mock_response_data),
+        ) as mock_get:
+            cardmarket.search(name="Test", game="")
+            call_args = mock_get.call_args
+            assert call_args[1]["params"]["game"] == "Magic"
+
 
 class TestCardmarketGetCard:
     """Tests for Cardmarket get_card functionality."""
@@ -804,6 +1008,62 @@ class TestCardmarketParseCard:
         assert isinstance(pricing, Pricing)
         assert pricing.cardmarket is not None
 
+    def test_parse_pricing_negative_price_skipped(self):
+        """Test that negative prices are skipped in pricing parsing."""
+        cardmarket = Cardmarket(
+            consumer_key="test_consumer_key",
+            consumer_secret="test_consumer_secret",
+            access_token="test_access_token",
+            access_token_secret="test_access_token_secret",
+        )
+
+        pricing_data = {
+            "results": [
+                {
+                    "price": -5.0,
+                    "conditionName": "Near Mint",
+                },
+                {
+                    "price": 10.50,
+                    "conditionName": "Near Mint",
+                },
+            ]
+        }
+
+        pricing = cardmarket._parse_pricing(pricing_data)
+
+        assert isinstance(pricing, Pricing)
+        assert pricing.cardmarket is not None
+        # Negative price should be skipped, only valid price used
+        assert pricing.cardmarket.avg1 == 10.50
+
+    def test_parse_pricing_unmapped_condition_warning(self, caplog):
+        """Test that unmapped conditions log a warning."""
+        import logging
+
+        cardmarket = Cardmarket(
+            consumer_key="test_consumer_key",
+            consumer_secret="test_consumer_secret",
+            access_token="test_access_token",
+            access_token_secret="test_access_token_secret",
+        )
+
+        pricing_data = {
+            "results": [
+                {
+                    "price": 10.50,
+                    "condition": "damaged",
+                    "conditionName": "Damaged",
+                },
+            ]
+        }
+
+        with caplog.at_level(logging.WARNING, logger="pymtg.providers.cardmarket"):
+            pricing = cardmarket._parse_pricing(pricing_data)
+
+        assert isinstance(pricing, Pricing)
+        assert "Unmapped condition 'damaged'" in caplog.text
+
     @pytest.mark.parametrize(
         ("rarity_str", "expected_rarity"),
         [
@@ -1191,3 +1451,83 @@ class TestOAuth1Handler:
         assert handler.access_token is None
         assert handler.access_token_secret is None
         assert not handler.is_authenticated()
+
+
+class TestCardmarketRateLimiting:
+    """Tests for Cardmarket rate limit tracking."""
+
+    def test_rate_limit_initialization(self):
+        """Test that rate limit attributes are initialized correctly."""
+        cardmarket = Cardmarket()
+
+        assert cardmarket._request_count == 0
+        assert cardmarket._rate_limit == 30000
+
+    def test_record_request_increments_counter(self):
+        """Test that _record_request increments the request counter."""
+        cardmarket = Cardmarket()
+
+        cardmarket._record_request()
+        assert cardmarket._request_count == 1
+
+        cardmarket._record_request()
+        assert cardmarket._request_count == 2
+
+    def test_check_rate_limit_raises_when_exceeded(self):
+        """Test that _check_rate_limit raises RateLimitError when limit is reached."""
+        cardmarket = Cardmarket()
+        cardmarket._rate_limit = 2
+        cardmarket._request_count = 2
+
+        with pytest.raises(RateLimitError):
+            cardmarket._check_rate_limit()
+
+    def test_check_rate_limit_passes_when_below_limit(self):
+        """Test that _check_rate_limit does not raise when below limit."""
+        cardmarket = Cardmarket()
+        cardmarket._rate_limit = 100
+        cardmarket._request_count = 50
+
+        # Should not raise
+        cardmarket._check_rate_limit()
+
+    def test_check_rate_limit_passes_one_below_limit(self):
+        """Test that _check_rate_limit does not raise when one below limit."""
+        cardmarket = Cardmarket()
+        cardmarket._rate_limit = 100
+        cardmarket._request_count = 99
+
+        # Should not raise (only raises when >= limit)
+        cardmarket._check_rate_limit()
+
+    def test_check_rate_limit_raises_at_limit(self):
+        """Test that _check_rate_limit raises when count >= limit."""
+        cardmarket = Cardmarket()
+        cardmarket._rate_limit = 100
+        cardmarket._request_count = 100
+
+        with pytest.raises(RateLimitError) as exc_info:
+            cardmarket._check_rate_limit()
+
+        assert "rate limit exceeded" in str(exc_info.value).lower()
+
+    def test_record_and_check_rate_limit_interaction(self):
+        """Test that _record_request and _check_rate_limit work together."""
+        cardmarket = Cardmarket()
+        cardmarket._rate_limit = 3
+
+        # Record requests up to limit
+        for _ in range(3):
+            cardmarket._record_request()
+
+        # Should raise now
+        with pytest.raises(RateLimitError):
+            cardmarket._check_rate_limit()
+
+    def test_check_rate_limit_zero_limit(self):
+        """Test that _check_rate_limit raises immediately when limit is 0."""
+        cardmarket = Cardmarket()
+        cardmarket._rate_limit = 0
+
+        with pytest.raises(RateLimitError):
+            cardmarket._check_rate_limit()

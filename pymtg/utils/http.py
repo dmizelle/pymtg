@@ -38,14 +38,14 @@ class HTTPClient:
     def __init__(
         self,
         base_url: str,
-        timeout: int = 30,
+        timeout: float = 30.0,
         user_agent: str | None = None,
     ) -> None:
         """Initialize an HTTPClient.
 
         Args:
             base_url: The base URL for the API. Must start with http:// or https://.
-            timeout: Request timeout in seconds. Defaults to 30.
+            timeout: Request timeout in seconds. Defaults to 30.0.
             user_agent: User-Agent string to use for requests.
                 Defaults to the pymtg default User-Agent.
 
