@@ -4,7 +4,7 @@ This module tests the base provider functionality including response handling,
 rate limiting, and error conditions that are common across all providers.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -55,25 +55,17 @@ class MockProvider(BaseProvider):
         """Mock refresh."""
         pass
 
-    def search(self, query: str, **kwargs) -> list:
-        """Mock search."""
+    def search(self, **kwargs: Any) -> list:
+        """Mock search. Required by BaseProvider abstract interface."""
         return []
 
-    def search_syntax(self, query: str, **kwargs) -> dict:
-        """Mock syntax search."""
-        return {}
-
-    def get_card(self, card_id: str, **kwargs) -> dict:
-        """Mock get_card."""
-        return {}
-
-    def get_pricing(self, card_id: str, **kwargs) -> dict:
-        """Mock get_pricing."""
-        return {}
-
-    def autocomplete(self, query: str, **kwargs) -> list:
-        """Mock autocomplete."""
+    def search_syntax(self, query: str, **kwargs: Any) -> list:
+        """Mock search_syntax. Required by BaseProvider abstract interface."""
         return []
+
+    def get_card(self, card_id: str, **kwargs: Any) -> None:
+        """Mock get_card. Required by BaseProvider abstract interface."""
+        return None
 
 
 class TestHandleResponse:
@@ -164,7 +156,7 @@ class TestHandleResponse:
         response.status_code = 429
 
         # Use a dynamically generated future date to avoid flakiness
-        future_date = datetime.utcnow() + timedelta(days=1)
+        future_date = datetime.now(timezone.utc) + timedelta(days=1)
         http_date = future_date.strftime("%a, %d %b %Y %H:%M:%S GMT")
         response.headers = {"Retry-After": http_date}
 

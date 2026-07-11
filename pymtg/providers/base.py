@@ -365,7 +365,7 @@ class BaseProvider(ABC):
                     retry_after = int(
                         (retry_after_date - datetime.now(timezone.utc)).total_seconds()
                     )
-                except (ValueError, TypeError, ImportError):
+                except (ValueError, TypeError):
                     retry_after = 0
             raise RateLimitError(
                 "Rate limit exceeded",
