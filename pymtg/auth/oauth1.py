@@ -227,12 +227,14 @@ class OAuth1Handler(BaseAuthHandler):
         existing_params = urllib.parse.parse_qs(query_string)  # type: ignore[arg-type]
 
         # Flatten existing params
-        flat_params = {}
+        # OAuth1 allows comma-separated values for parameters with multiple values
+        flat_params: dict[str, str] = {}
         for key, values in existing_params.items():
+            str_key = str(key)
             if len(values) == 1:
-                flat_params[key] = values[0]
+                flat_params[str_key] = str(values[0])
             else:
-                flat_params[key] = values
+                flat_params[str_key] = ",".join(str(v) for v in values)  # type: ignore[arg-type]
 
         # Merge OAuth params with existing params
         all_params = {**flat_params, **oauth_params}
