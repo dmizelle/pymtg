@@ -4,6 +4,7 @@ This module tests the base provider functionality including response handling,
 rate limiting, and error conditions that are common across all providers.
 """
 
+from datetime import datetime
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -21,7 +22,13 @@ from pymtg.utils.http import HTTPClient
 
 
 class MockProvider(BaseProvider):
-    """Concrete implementation of BaseProvider for testing."""
+    """Concrete implementation of BaseProvider for testing.
+
+    Note: We cannot call super().__init__() because BaseProvider.__init__()
+    looks up config from PROVIDER_CONFIGS using self.__class__.__name__.lower(),
+    which would be "mockprovider" - not a valid provider. We manually initialize
+    all required attributes instead.
+    """
 
     def __init__(self, name: str = "test", base_url: str = "https://test.com"):
         """Initialize mock provider.
@@ -164,6 +171,15 @@ class TestHandleResponse:
         assert exc_info.value.status_code == 429
         assert exc_info.value.retry_after is not None
         assert exc_info.value.retry_after > 0
+
+        # Verify the parsed date is correct by comparing with expected delta
+        retry_after_date = datetime.strptime(
+            "Wed, 21 Oct 2026 07:28:00 GMT", "%a, %d %b %Y %H:%M:%S GMT"
+        )
+        expected_retry_after = int(
+            (retry_after_date - datetime.utcnow()).total_seconds()
+        )
+        assert exc_info.value.retry_after == expected_retry_after
 
     def test_handle_response_429_without_retry_after(self):
         """Test that 429 status code without Retry-After uses default 0."""
