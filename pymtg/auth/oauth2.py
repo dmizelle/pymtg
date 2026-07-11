@@ -221,7 +221,8 @@ class OAuth2ClientCredentialsHandler(BaseAuthHandler):
 
     def clear_auth(self) -> None:
         """Clear authentication credentials."""
-        self.access_token = None
-        self.token_type = None
-        self.expires_at = None
-        self._authenticated = False
+        with self._lock:
+            self.access_token = None
+            self.token_type = None
+            self.expires_at = None
+            self._authenticated = False
