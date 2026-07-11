@@ -181,7 +181,7 @@ class Deck(PyMTGBaseModel):
             True if the deck has cards and format is valid, False otherwise.
         """
         # Basic validation: deck must have at least one card
-        if not self.cards:
+        if self.cards is None or len(self.cards) == 0:
             return False
 
         # Format must be a valid Format enum value if specified
