@@ -199,12 +199,13 @@ class OAuth2ClientCredentialsHandler(BaseAuthHandler):
         Raises:
             AuthenticationError: If refresh fails or no credentials stored.
         """
-        if not self._client_id or not self._client_secret:
-            raise AuthenticationError(
-                "Cannot refresh authentication: no client credentials stored",
-                auth_type="oauth2",
-            )
-        self.authenticate()
+        with self._lock:
+            if not self._client_id or not self._client_secret:
+                raise AuthenticationError(
+                    "Cannot refresh authentication: no client credentials stored",
+                    auth_type="oauth2",
+                )
+            self.authenticate()
 
     def apply_auth(self, session: requests.Session) -> None:
         """Apply authentication to a requests session.
@@ -212,10 +213,11 @@ class OAuth2ClientCredentialsHandler(BaseAuthHandler):
         Args:
             session: The requests.Session to apply authentication to.
         """
-        if self.access_token and self.token_type:
-            session.headers.update(
-                {"Authorization": f"{self.token_type} {self.access_token}"}
-            )
+        with self._lock:
+            if self.access_token and self.token_type:
+                session.headers.update(
+                    {"Authorization": f"{self.token_type} {self.access_token}"}
+                )
 
     def clear_auth(self) -> None:
         """Clear authentication credentials."""
