@@ -189,6 +189,14 @@ class Moxfield(BaseProvider):
         self.auth_handler.authenticate(api_key=api_key)
         self._apply_auth_to_http_client()
 
+    def clear_auth(self) -> None:
+        """Clear authentication credentials.
+
+        Clears the stored API key and resets authentication state.
+        """
+        self._api_key = None
+        self.auth_handler.clear_auth()
+
     def search(
         self,
         name: str | None = None,
