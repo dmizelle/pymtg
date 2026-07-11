@@ -109,6 +109,7 @@ class OAuth2ClientCredentialsHandler(BaseAuthHandler):
                 data=data,
                 auth=auth,
                 headers={"Accept": "application/json"},
+                timeout=30,
             )
 
             if response.status_code != 200:
