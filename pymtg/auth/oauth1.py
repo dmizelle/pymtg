@@ -57,7 +57,7 @@ class OAuth1Handler(BaseAuthHandler):
                 (if already obtained).
             signature_method: The OAuth1 signature method (default: HMAC-SHA1).
         """
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
 
         self._consumer_key = consumer_key
         self._consumer_secret = consumer_secret
@@ -151,12 +151,13 @@ class OAuth1Handler(BaseAuthHandler):
         Returns:
             True if access token and secret are present, False otherwise.
         """
-        return self._authenticated and bool(
-            self._consumer_key
-            and self._consumer_secret
-            and self._access_token
-            and self._access_token_secret
-        )
+        with self._lock:
+            return self._authenticated and bool(
+                self._consumer_key
+                and self._consumer_secret
+                and self._access_token
+                and self._access_token_secret
+            )
 
     def refresh(self) -> None:
         """Refresh OAuth1 authentication.
