@@ -66,4 +66,4 @@ class NoAuthHandler(BaseAuthHandler):
 
         For no-auth providers, this is a no-op.
         """
-        self._authenticated = False
+        pass
