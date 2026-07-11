@@ -397,7 +397,8 @@ class BaseProvider(ABC):
 
     def close(self) -> None:
         """Close the provider's resources."""
-        self.http_client.close()
+        if self.http_client is not None:
+            self.http_client.close()
 
     def __enter__(self) -> "BaseProvider":
         """Enter a context manager.

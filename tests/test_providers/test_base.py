@@ -212,3 +212,24 @@ class TestHandleResponse:
 
         assert exc_info.value.provider == "test"
         assert exc_info.value.status_code == 500
+
+
+class TestClose:
+    """Tests for the close() method."""
+
+    def test_close_with_http_client(self):
+        """Test that close() calls http_client.close() when http_client exists."""
+        provider = MockProvider()
+        provider.http_client = MagicMock()
+
+        provider.close()
+
+        provider.http_client.close.assert_called_once()
+
+    def test_close_without_http_client(self):
+        """Test that close() handles None http_client gracefully."""
+        provider = MockProvider()
+        provider.http_client = None
+
+        # Should not raise AttributeError
+        provider.close()
