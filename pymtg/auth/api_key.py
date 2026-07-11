@@ -68,12 +68,19 @@ class APIKeyAuthHandler(BaseAuthHandler):
         # API keys don't expire, so just verify we still have one
         self._authenticated = self._api_key is not None
 
-    def apply_auth(self, session: requests.Session) -> None:
+    def apply_auth(self, session: requests.Session | None) -> None:
         """Apply authentication to a requests session.
 
         Args:
             session: The requests.Session to apply authentication to.
+
+        Raises:
+            ValueError: If session is None and API key is present.
         """
+        if session is None:
+            if self._api_key:
+                raise ValueError("Cannot apply API key authentication: session is None")
+            return
         if self._api_key:
             if self.header_prefix:
                 header_value = f"{self.header_prefix} {self._api_key}"
