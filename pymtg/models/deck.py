@@ -172,11 +172,24 @@ class Deck(PyMTGBaseModel):
     def is_valid_for_format(self) -> bool:
         """Check if the deck is valid for its declared format.
 
-        Note: This is a placeholder for actual format validation logic.
-        Real validation would require knowledge of format-specific rules.
+        Performs basic validation: checks that the deck has cards and the
+        format is a valid Format enum value. Full format-specific validation
+        (e.g., card legality, deck size limits) would require additional
+        format-specific rules and is not yet implemented.
 
         Returns:
-            True (placeholder - actual validation not implemented).
+            True if the deck has cards and format is valid, False otherwise.
         """
-        # TODO: Implement actual format validation
+        # Basic validation: deck must have at least one card
+        if not self.cards:
+            return False
+
+        # Format must be a valid Format enum value if specified
+        if self.format is not None:
+            try:
+                # This will raise ValueError if format is not a valid enum value
+                Format(self.format)
+            except ValueError:
+                return False
+
         return True
