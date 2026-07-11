@@ -7,6 +7,7 @@ all MTG API providers.
 
 import logging
 from abc import ABC, abstractmethod
+from datetime import datetime
 from typing import Any, Generator
 
 import requests
@@ -350,7 +351,19 @@ class BaseProvider(ABC):
             )
 
         if response.status_code == 429:
-            retry_after = int(response.headers.get("Retry-After", 0))
+            retry_after_header = response.headers.get("Retry-After", "0")
+            try:
+                retry_after = int(retry_after_header)
+            except ValueError:
+                try:
+                    retry_after_date = datetime.strptime(
+                        retry_after_header, "%a, %d %b %Y %H:%M:%S GMT"
+                    )
+                    retry_after = int(
+                        (retry_after_date - datetime.utcnow()).total_seconds()
+                    )
+                except (ValueError, TypeError):
+                    retry_after = 0
             raise RateLimitError(
                 "Rate limit exceeded",
                 provider=self.name,
