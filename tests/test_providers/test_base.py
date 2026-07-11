@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from pymtg.config import ProviderConfig
 from pymtg.exceptions import (
     APIError,
     AuthenticationError,
@@ -31,7 +32,7 @@ class MockProvider(BaseProvider):
         """
         self.name = name
         self.base_url = base_url
-        self.config = None  # type: ignore[assignment]
+        self.config = ProviderConfig(name="test")
         self.http_client: HTTPClient | None = None
         self.rate_limit: dict[str, Any] = {}
 
@@ -177,6 +178,19 @@ class TestHandleResponse:
         assert exc_info.value.provider == "test"
         assert exc_info.value.status_code == 429
         assert exc_info.value.retry_after is None
+
+    def test_handle_response_400_raises_api_error(self):
+        """Test that 400 status code raises APIError."""
+        provider = MockProvider()
+        response = MagicMock()
+        response.status_code = 400
+        response.headers = {}
+
+        with pytest.raises(APIError) as exc_info:
+            provider._handle_response(response)
+
+        assert exc_info.value.provider == "test"
+        assert exc_info.value.status_code == 400
 
     def test_handle_response_500_raises_api_error(self):
         """Test that 500 status code raises APIError."""
