@@ -4,6 +4,7 @@ This module provides the APIKeyAuthHandler for providers like Deckbox
 that use API key-based authentication.
 """
 
+import threading
 from typing import Any
 
 import requests
@@ -37,6 +38,8 @@ class APIKeyAuthHandler(BaseAuthHandler):
             header_prefix: Optional prefix for the API key
                 (e.g., "Bearer", "Token").
         """
+        self._lock = threading.Lock()
+
         self.header_name = header_name
         self.header_prefix = header_prefix
         self._api_key: str | None = None
@@ -49,8 +52,9 @@ class APIKeyAuthHandler(BaseAuthHandler):
             api_key: The API key for authentication.
             **kwargs: Additional authentication parameters.
         """
-        self._api_key = api_key
-        self._authenticated = api_key is not None and api_key != ""
+        with self._lock:
+            self._api_key = api_key
+            self._authenticated = api_key is not None and api_key != ""
 
     def is_authenticated(self) -> bool:
         """Check if authentication is valid.
@@ -65,8 +69,9 @@ class APIKeyAuthHandler(BaseAuthHandler):
 
         For API key authentication, this is a no-op since API keys don't expire.
         """
-        # API keys don't expire, so just verify we still have one
-        self._authenticated = self._api_key is not None
+        with self._lock:
+            # API keys don't expire, so just verify we still have one
+            self._authenticated = self._api_key is not None
 
     def apply_auth(self, session: requests.Session) -> None:
         """Apply authentication to a requests session.
@@ -88,8 +93,9 @@ class APIKeyAuthHandler(BaseAuthHandler):
 
     def clear_auth(self) -> None:
         """Clear authentication credentials."""
-        self._api_key = None
-        self._authenticated = False
+        with self._lock:
+            self._api_key = None
+            self._authenticated = False
 
     @property
     def api_key(self) -> str | None:
