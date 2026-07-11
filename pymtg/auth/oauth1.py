@@ -9,6 +9,7 @@ import hashlib
 import hmac
 import logging
 import secrets
+import threading
 import time
 from typing import Any
 from urllib.parse import quote
@@ -56,6 +57,8 @@ class OAuth1Handler(BaseAuthHandler):
                 (if already obtained).
             signature_method: The OAuth1 signature method (default: HMAC-SHA1).
         """
+        self._lock = threading.Lock()
+
         self._consumer_key = consumer_key
         self._consumer_secret = consumer_secret
         self._access_token = access_token
@@ -97,49 +100,50 @@ class OAuth1Handler(BaseAuthHandler):
                 pairs are provided (e.g. consumer_key without
                 consumer_secret).
         """
-        # Validate credential pairs before any updates to prevent
-        # inconsistent state where one credential in a pair is updated
-        # while the other retains its previous value.
-        if (consumer_key is not None) != (consumer_secret is not None):
-            raise AuthenticationError(
-                "consumer_key and consumer_secret must be provided "
-                "together; partial updates are not allowed",
-                auth_type="oauth1",
-            )
-        if (access_token is not None) != (access_token_secret is not None):
-            raise AuthenticationError(
-                "access_token and access_token_secret must be provided "
-                "together; partial updates are not allowed",
-                auth_type="oauth1",
-            )
+        with self._lock:
+            # Validate credential pairs before any updates to prevent
+            # inconsistent state where one credential in a pair is updated
+            # while the other retains its previous value.
+            if (consumer_key is not None) != (consumer_secret is not None):
+                raise AuthenticationError(
+                    "consumer_key and consumer_secret must be provided "
+                    "together; partial updates are not allowed",
+                    auth_type="oauth1",
+                )
+            if (access_token is not None) != (access_token_secret is not None):
+                raise AuthenticationError(
+                    "access_token and access_token_secret must be provided "
+                    "together; partial updates are not allowed",
+                    auth_type="oauth1",
+                )
 
-        # Update stored credentials
-        self._consumer_key = consumer_key or self._consumer_key
-        self._consumer_secret = consumer_secret or self._consumer_secret
-        self._access_token = access_token or self._access_token
-        self._access_token_secret = access_token_secret or self._access_token_secret
+            # Update stored credentials
+            self._consumer_key = consumer_key or self._consumer_key
+            self._consumer_secret = consumer_secret or self._consumer_secret
+            self._access_token = access_token or self._access_token
+            self._access_token_secret = access_token_secret or self._access_token_secret
 
-        # Validate required credentials
-        if not self._consumer_key or not self._consumer_secret:
-            raise AuthenticationError(
-                "Consumer key and consumer secret are required for "
-                "OAuth1 authentication",
-                auth_type="oauth1",
-            )
+            # Validate required credentials
+            if not self._consumer_key or not self._consumer_secret:
+                raise AuthenticationError(
+                    "Consumer key and consumer secret are required for "
+                    "OAuth1 authentication",
+                    auth_type="oauth1",
+                )
 
-        # For OAuth1, we typically need the access token/secret pre-obtained
-        # If they're provided, we're authenticated
-        if self._access_token and self._access_token_secret:
-            self._authenticated = True
-            logger.info("OAuth1 authentication configured successfully")
-        else:
-            # In some cases, we might implement the full OAuth1 flow
-            # But for Cardmarket, the user provides the pre-obtained tokens
-            self._authenticated = False
-            logger.warning(
-                "OAuth1 access token/secret not provided. "
-                "Some endpoints may require authenticated requests."
-            )
+            # For OAuth1, we typically need the access token/secret pre-obtained
+            # If they're provided, we're authenticated
+            if self._access_token and self._access_token_secret:
+                self._authenticated = True
+                logger.info("OAuth1 authentication configured successfully")
+            else:
+                # In some cases, we might implement the full OAuth1 flow
+                # But for Cardmarket, the user provides the pre-obtained tokens
+                self._authenticated = False
+                logger.warning(
+                    "OAuth1 access token/secret not provided. "
+                    "Some endpoints may require authenticated requests."
+                )
 
     def is_authenticated(self) -> bool:
         """Check if authentication is valid.
@@ -324,11 +328,12 @@ class OAuth1Handler(BaseAuthHandler):
 
     def clear_auth(self) -> None:
         """Clear OAuth1 authentication credentials."""
-        self._consumer_key = None
-        self._consumer_secret = None
-        self._access_token = None
-        self._access_token_secret = None
-        self._authenticated = False
+        with self._lock:
+            self._consumer_key = None
+            self._consumer_secret = None
+            self._access_token = None
+            self._access_token_secret = None
+            self._authenticated = False
 
     @property
     def consumer_key(self) -> str | None:
