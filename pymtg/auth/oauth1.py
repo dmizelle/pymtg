@@ -212,83 +212,135 @@ class OAuth1Handler(BaseAuthHandler):
                 return request
 
             # Generate OAuth1 parameters
-            oauth_params = {
-                "oauth_consumer_key": self._consumer_key,
-                "oauth_token": self._access_token,
-                "oauth_signature_method": self.signature_method,
-                "oauth_timestamp": str(int(time.time())),
-                "oauth_nonce": self._generate_nonce(),
-                "oauth_version": "1.0",
-            }
+            oauth_params = self._generate_oauth_params()
 
-            # Get the base URL and parameters
-            url = request.url
-            method = request.method
+            # Parse and merge with existing query parameters
+            all_params = self._merge_with_existing_params(
+                str(request.url), oauth_params
+            )
 
-            # Parse existing query parameters
-
-            parsed_url = urlparse(url)
-            query_string = parsed_url.query or ""
-            existing_params = parse_qs(query_string)  # type: ignore[arg-type]
-
-            # Flatten existing params
-            # OAuth1 allows comma-separated values for parameters with multiple values
-            flat_params: dict[str, str] = {}
-            for key, values in existing_params.items():
-                str_key = str(key)
-                if len(values) == 1:
-                    flat_params[str_key] = str(values[0])
-                else:
-                    flat_params[str_key] = ",".join(str(v) for v in values)  # type: ignore[arg-type]
-
-            # Merge OAuth params with existing params
-            all_params = {**flat_params, **oauth_params}
-
-            # Build the signature base string
-            # Sort parameters by key
-            sorted_params = sorted(all_params.items())
-
-            # URL encode parameters
-            encoded_params = []
-            for key, value in sorted_params:
-                encoded_key = quote(str(key), safe="-._~")
-                encoded_value = quote(str(value), safe="-._~")
-                encoded_params.append(f"{encoded_key}={encoded_value}")
-
-            param_string = "&".join(encoded_params)
-
-            # Build base string
-            base_url = f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path}"
-            method_upper = method.upper() if method else ""
-            base_string = (
-                f"{method_upper}&{quote(str(base_url), safe='')}&"
-                f"{quote(str(param_string), safe='')}"
+            # Build signature base string
+            base_string = self._build_signature_base_string(
+                request.method or "GET", str(request.url), all_params
             )
 
             # Generate signature
-            signing_key = (
-                f"{quote(str(self._consumer_secret), safe='')}&"
-                f"{quote(str(self._access_token_secret), safe='')}"
-            )
-            signature = self._generate_signature(base_string, signing_key)
-
-            # Add signature to OAuth params
+            signature = self._generate_request_signature(base_string)
             oauth_params["oauth_signature"] = signature
 
-            # Build Authorization header
-            auth_header_parts = []
-            for key in sorted(oauth_params.keys()):
-                value = oauth_params[key]
-                auth_header_parts.append(
-                    f'{quote(key, safe="")}="{quote(str(value), safe="")}"'
-                )
-
-            auth_header = f"OAuth {', '.join(auth_header_parts)}"
-
-            # Add Authorization header to request
+            # Build and apply Authorization header
+            auth_header = self._build_oauth_header(oauth_params)
             request.headers["Authorization"] = auth_header
 
             return request
+
+    def _generate_oauth_params(self) -> dict[str, str | None]:
+        """Generate OAuth1 parameters for request signing.
+
+        Returns:
+            Dictionary of OAuth1 parameters.
+        """
+        return {
+            "oauth_consumer_key": self._consumer_key,
+            "oauth_token": self._access_token,
+            "oauth_signature_method": self.signature_method,
+            "oauth_timestamp": str(int(time.time())),
+            "oauth_nonce": self._generate_nonce(),
+            "oauth_version": "1.0",
+        }
+
+    def _merge_with_existing_params(
+        self, url: str, oauth_params: dict[str, str | None]
+    ) -> dict[str, str]:
+        """Merge OAuth1 params with existing query parameters from URL.
+
+        Args:
+            url: The request URL.
+            oauth_params: OAuth1 parameters to merge.
+
+        Returns:
+            Merged parameters dictionary.
+        """
+        parsed_url = urlparse(url)
+        query_string = parsed_url.query or ""
+        existing_params = parse_qs(query_string)  # type: ignore[arg-type]
+
+        # Flatten existing params (OAuth1 allows comma-separated values)
+        flat_params: dict[str, str] = {}
+        for key, values in existing_params.items():
+            str_key = str(key)
+            if len(values) == 1:
+                flat_params[str_key] = str(values[0])
+            else:
+                flat_params[str_key] = ",".join(str(v) for v in values)  # type: ignore[arg-type]
+
+        return {k: str(v) for k, v in {**flat_params, **oauth_params}.items()}
+
+    def _build_signature_base_string(
+        self, method: str, url: str, params: dict[str, str]
+    ) -> str:
+        """Build the OAuth1 signature base string.
+
+        Args:
+            method: HTTP method.
+            url: Request URL.
+            params: Parameters to include in signature.
+
+        Returns:
+            The signature base string.
+        """
+        # Sort parameters by key
+        sorted_params = sorted(params.items())
+
+        # URL encode parameters
+        encoded_params = []
+        for key, value in sorted_params:
+            encoded_key = quote(str(key), safe="-._~")
+            encoded_value = quote(str(value), safe="-._~")
+            encoded_params.append(f"{encoded_key}={encoded_value}")
+
+        param_string = "&".join(encoded_params)
+
+        # Build base string
+        parsed_url = urlparse(url)
+        base_url = f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path}"
+        method_upper = method.upper() if method else ""
+        return (
+            f"{method_upper}&{quote(str(base_url), safe='')}&"
+            f"{quote(str(param_string), safe='')}"
+        )
+
+    def _generate_request_signature(self, base_string: str) -> str:
+        """Generate the OAuth1 signature for a request.
+
+        Args:
+            base_string: The signature base string.
+
+        Returns:
+            The generated signature.
+        """
+        signing_key = (
+            f"{quote(str(self._consumer_secret), safe='')}&"
+            f"{quote(str(self._access_token_secret), safe='')}"
+        )
+        return self._generate_signature(base_string, signing_key)
+
+    def _build_oauth_header(self, oauth_params: dict[str, Any]) -> str:
+        """Build the OAuth1 Authorization header.
+
+        Args:
+            oauth_params: OAuth1 parameters including signature.
+
+        Returns:
+            The Authorization header value.
+        """
+        auth_header_parts = []
+        for key in sorted(oauth_params.keys()):
+            value = oauth_params[key]
+            auth_header_parts.append(
+                f'{quote(key, safe="")}="{quote(str(value), safe="")}"'
+            )
+        return f"OAuth {', '.join(auth_header_parts)}"
 
     def _generate_nonce(self) -> str:
         """Generate a random nonce for OAuth1 requests.
