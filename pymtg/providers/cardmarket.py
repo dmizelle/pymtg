@@ -995,10 +995,11 @@ class Cardmarket(BaseProvider):
         Raises:
             RateLimitError: If rate limit is exceeded.
         """
-        if self._request_count >= self._rate_limit:
-            raise RateLimitError(
-                f"Cardmarket rate limit exceeded ({self._rate_limit} requests/day)"
-            )
+        with self._lock:
+            if self._request_count >= self._rate_limit:
+                raise RateLimitError(
+                    f"Cardmarket rate limit exceeded ({self._rate_limit} requests/day)"
+                )
 
     def _record_request(self) -> None:
         """Record that a request was made."""
@@ -1142,7 +1143,7 @@ class Cardmarket(BaseProvider):
         """Close the provider's resources."""
         with self._lock:
             self.auth_handler.clear_auth()
-            super().close()
+        super().close()
 
     def __repr__(self) -> str:
         """Return a string representation of the Cardmarket provider.

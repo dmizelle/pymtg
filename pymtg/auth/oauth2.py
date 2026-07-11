@@ -181,14 +181,15 @@ class OAuth2ClientCredentialsHandler(BaseAuthHandler):
         Returns:
             True if access token is present and not expired, False otherwise.
         """
-        if not self._authenticated or not self.access_token:
-            return False
+        with self._lock:
+            if not self._authenticated or not self.access_token:
+                return False
 
-        # Check if token is expired
-        if self.expires_at and datetime.now() >= self.expires_at:
-            return False
+            # Check if token is expired
+            if self.expires_at and datetime.now() >= self.expires_at:
+                return False
 
-        return True
+            return True
 
     def refresh(self) -> None:
         """Refresh authentication.

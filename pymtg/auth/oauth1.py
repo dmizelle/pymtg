@@ -12,7 +12,7 @@ import secrets
 import threading
 import time
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote, urlparse
 
 import requests
 
@@ -226,11 +226,10 @@ class OAuth1Handler(BaseAuthHandler):
             method = request.method
 
             # Parse existing query parameters
-            import urllib.parse
 
-            parsed_url = urllib.parse.urlparse(url)
+            parsed_url = urlparse(url)
             query_string = parsed_url.query or ""
-            existing_params = urllib.parse.parse_qs(query_string)  # type: ignore[arg-type]
+            existing_params = parse_qs(query_string)  # type: ignore[arg-type]
 
             # Flatten existing params
             # OAuth1 allows comma-separated values for parameters with multiple values
