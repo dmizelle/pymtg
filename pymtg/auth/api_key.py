@@ -62,7 +62,8 @@ class APIKeyAuthHandler(BaseAuthHandler):
         Returns:
             True if API key is present, False otherwise.
         """
-        return self._authenticated and self._api_key is not None
+        with self._lock:
+            return self._authenticated and self._api_key is not None
 
     def refresh(self) -> None:
         """Refresh authentication.
@@ -82,14 +83,15 @@ class APIKeyAuthHandler(BaseAuthHandler):
         Raises:
             ValueError: If session is None.
         """
-        if session is None:
-            raise ValueError("Cannot apply API key authentication: session is None")
-        if self._api_key:
-            if self.header_prefix:
-                header_value = f"{self.header_prefix} {self._api_key}"
-            else:
-                header_value = self._api_key
-            session.headers.update({self.header_name: header_value})
+        with self._lock:
+            if session is None:
+                raise ValueError("Cannot apply API key authentication: session is None")
+            if self._api_key:
+                if self.header_prefix:
+                    header_value = f"{self.header_prefix} {self._api_key}"
+                else:
+                    header_value = self._api_key
+                session.headers.update({self.header_name: header_value})
 
     def clear_auth(self) -> None:
         """Clear authentication credentials."""

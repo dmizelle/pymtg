@@ -174,6 +174,8 @@ class TCGPlayer(BaseProvider):
     ) -> None:
         """Authenticate with TCGPlayer using OAuth2 client credentials.
 
+        Thread-safe: Uses a lock to prevent race conditions during authentication.
+
         Args:
             client_id: OAuth2 client ID (overrides stored value).
             client_secret: OAuth2 client secret (overrides stored value).

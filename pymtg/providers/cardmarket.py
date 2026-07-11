@@ -255,7 +255,7 @@ class Cardmarket(BaseProvider):
                 self._access_token_secret,
             )
             self._apply_auth_to_http_client()
-        logger.info("Cardmarket OAuth1 authentication successful")
+            logger.info("Cardmarket OAuth1 authentication successful")
 
     def search(
         self,
