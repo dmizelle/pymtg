@@ -82,12 +82,12 @@ class TestColorEnum:
         assert Color.ESPER.value == "WUB"
         assert Color.GRIXIS.value == "UBR"
         assert Color.JUND.value == "BRG"
-        assert Color.NAYA.value == "RGW"
+        assert Color.NAYA.value == "WRG"
         assert Color.ABZAN.value == "WBG"
         assert Color.JESKAI.value == "WUR"
-        assert Color.SULTIA.value == "URG"
-        assert Color.MARDEK.value == "BWG"
-        assert Color.TEMPO.value == "GWU"
+        assert Color.SULTAI.value == "UBG"
+        assert Color.MARDU.value == "WRG"
+        assert Color.TEMUR.value == "URG"
 
     def test_color_four_color_combinations(self) -> None:
         """Test that four-color combination values are correct."""
