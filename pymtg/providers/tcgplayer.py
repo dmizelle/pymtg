@@ -13,6 +13,7 @@ Note:
 """
 
 import logging
+import threading
 from typing import Any, Generator
 
 import requests
@@ -124,6 +125,9 @@ class TCGPlayer(BaseProvider):
         if client_secret is not None and client_secret.strip() == "":
             raise ValueError("client_secret cannot be empty")
 
+        # Initialize thread safety lock
+        self._auth_lock = threading.Lock()
+
         # Store OAuth2 credentials before calling super().__init__()
         # This is needed because _initialize() is called during super().__init__()
         self.client_id = client_id
@@ -179,30 +183,33 @@ class TCGPlayer(BaseProvider):
             AuthenticationError: If authentication fails.
             NetworkError: If there is a network error during authentication.
         """
-        # Update stored credentials if provided
-        if client_id:
-            self.client_id = client_id
-        if client_secret:
-            self.client_secret = client_secret
-        if scope:
-            self.scope = scope
+        with self._auth_lock:
+            # Update stored credentials if provided
+            if client_id:
+                self.client_id = client_id
+            if client_secret:
+                self.client_secret = client_secret
+            if scope:
+                self.scope = scope
 
-        # Update auth handler credentials
-        self.auth_handler._client_id = self.client_id or self.auth_handler._client_id
-        self.auth_handler._client_secret = (
-            self.client_secret or self.auth_handler._client_secret
-        )
-        self.auth_handler._scope = self.scope or self.auth_handler._scope
+            # Update auth handler credentials
+            self.auth_handler._client_id = (
+                self.client_id or self.auth_handler._client_id
+            )
+            self.auth_handler._client_secret = (
+                self.client_secret or self.auth_handler._client_secret
+            )
+            self.auth_handler._scope = self.scope or self.auth_handler._scope
 
-        # Authenticate using the handler
-        self.auth_handler.authenticate(
-            client_id=self.client_id,
-            client_secret=self.client_secret,
-            scope=self.scope,
-        )
+            # Authenticate using the handler
+            self.auth_handler.authenticate(
+                client_id=self.client_id,
+                client_secret=self.client_secret,
+                scope=self.scope,
+            )
 
-        # Apply authentication to HTTP client's session
-        self.auth_handler.apply_auth(self.http_client.session)
+            # Apply authentication to HTTP client's session
+            self.auth_handler.apply_auth(self.http_client.session)
 
         logger.info("TCGPlayer authentication successful")
 
@@ -220,8 +227,9 @@ class TCGPlayer(BaseProvider):
         Raises:
             AuthenticationError: If refresh fails or no credentials stored.
         """
-        self.auth_handler.refresh()
-        self.auth_handler.apply_auth(self.http_client.session)
+        with self._auth_lock:
+            self.auth_handler.refresh()
+            self.auth_handler.apply_auth(self.http_client.session)
         logger.info("TCGPlayer token refreshed successfully")
 
     def search(
@@ -661,6 +669,7 @@ class TCGPlayer(BaseProvider):
         """Check if the provider is authenticated.
 
         If credentials are provided but not yet authenticated, attempts to authenticate.
+        Uses lock to prevent race conditions on concurrent authentication attempts.
 
         Raises:
             AuthenticationError: If not authenticated and cannot authenticate.
@@ -668,17 +677,20 @@ class TCGPlayer(BaseProvider):
         if not self.is_authenticated():
             # If we have credentials, try to authenticate
             if self.client_id and self.client_secret:
-                try:
-                    self.authenticate()
-                except (AuthenticationError, NetworkError):
-                    # If auto-authentication fails, raise AuthenticationError
-                    raise AuthenticationError(
-                        "Authentication required for TCGPlayer API. "
-                        "Please provide valid client_id and client_secret. "
-                        "Apply for access at https://docs.tcgplayer.com",
-                        auth_type="oauth2",
-                        provider=self.name,
-                    )
+                with self._auth_lock:
+                    # Double-check after acquiring lock
+                    if not self.is_authenticated():
+                        try:
+                            self.authenticate()
+                        except (AuthenticationError, NetworkError):
+                            # If auto-authentication fails, raise AuthenticationError
+                            raise AuthenticationError(
+                                "Authentication required for TCGPlayer API. "
+                                "Please provide valid client_id and client_secret. "
+                                "Apply for access at https://docs.tcgplayer.com",
+                                auth_type="oauth2",
+                                provider=self.name,
+                            )
             else:
                 raise AuthenticationError(
                     "Authentication required for TCGPlayer API. "
