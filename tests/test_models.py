@@ -1302,10 +1302,34 @@ class TestDeck:
         assert len(unique_cards) == 2
 
     def test_deck_is_valid_for_format(self) -> None:
-        """Test Deck is_valid_for_format method (placeholder)."""
-        deck = Deck(id="deck-id", name="Test Deck")
-        # This is a placeholder that always returns True
-        assert deck.is_valid_for_format() is True
+        """Test Deck is_valid_for_format method."""
+        from pymtg.models.enums import Format
+
+        # Deck with no cards should be invalid
+        deck_no_cards = Deck(id="deck-id", name="Test Deck")
+        assert deck_no_cards.is_valid_for_format() is False
+
+        # Deck with cards and valid format should be valid
+        deck_with_cards = Deck(
+            id="deck-id",
+            name="Test Deck",
+            format=Format.STANDARD,
+            cards=[
+                DeckCard(card=Card(id="1", name="Lightning Bolt"), count=4),
+                DeckCard(card=Card(id="2", name="Mountain"), count=20),
+            ],
+        )
+        assert deck_with_cards.is_valid_for_format() is True
+
+        # Deck with cards and no format should be valid
+        deck_no_format = Deck(
+            id="deck-id",
+            name="Test Deck",
+            cards=[
+                DeckCard(card=Card(id="1", name="Lightning Bolt"), count=4),
+            ],
+        )
+        assert deck_no_format.is_valid_for_format() is True
 
 
 class TestSet:
