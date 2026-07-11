@@ -40,9 +40,9 @@ class Color(StrEnum):
         NAYA: Naya color combination (RGW).
         ABZAN: Abzan color combination (WBG).
         JESKAI: Jeskai color combination (WUR).
-        SULTIA: Sultai color combination (URG).
-        MARDEK: Mardu color combination (RGW).
-        TEMPO: Tempo color combination (GWU).
+        SULTAI: Sultai color combination (UBG).
+        MARDU: Mardu color combination (RGW).
+        TEMUR: Temur color combination (URG).
         WUBR: Four-color combination (WUBR).
         WUBG: Four-color combination (WUBG).
         WURG: Four-color combination (WURG).
@@ -76,12 +76,12 @@ class Color(StrEnum):
     ESPER = "WUB"
     GRIXIS = "UBR"
     JUND = "BRG"
-    NAYA = "RGW"
+    NAYA = "WRG"
     ABZAN = "WBG"
     JESKAI = "WUR"
-    SULTIA = "URG"
-    MARDEK = "BWG"
-    TEMPO = "GWU"
+    SULTAI = "UBG"
+    MARDU = "WRG"
+    TEMUR = "URG"
 
     # Four-color combinations
     WUBR = "WUBR"

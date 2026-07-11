@@ -116,14 +116,9 @@ class Deck(PyMTGBaseModel):
         Returns:
             Total count of all cards in the main deck, sideboard, and maybe board.
         """
-        total = 0
-        for card in self.get_main_deck_cards():
-            total += card.count
-        for card in self.get_sideboard_cards():
-            total += card.count
-        for card in self.get_maybeboard_cards():
-            total += card.count
-        return total
+        if self.cards is None:
+            return 0
+        return sum(card.count for card in self.cards)
 
     def get_card_count(self, card_name: str) -> int:
         """Get the number of copies of a specific card in the deck.

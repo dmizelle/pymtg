@@ -5,6 +5,7 @@ TCGPlayer that use OAuth2 client credentials flow.
 """
 
 import logging
+import threading
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -48,6 +49,7 @@ class OAuth2ClientCredentialsHandler(BaseAuthHandler):
             client_secret: The OAuth2 client secret.
             scope: The scope of the access token.
         """
+        self._lock = threading.Lock()
         self.token_url = token_url
         self._client_id = client_id
         self._client_secret = client_secret
@@ -82,95 +84,96 @@ class OAuth2ClientCredentialsHandler(BaseAuthHandler):
             AuthenticationError: If authentication fails.
             NetworkError: If there is a network error.
         """
-        self._client_id = client_id or self._client_id
-        self._client_secret = client_secret or self._client_secret
-        self._scope = kwargs.get("scope", self._scope)
+        with self._lock:
+            self._client_id = client_id or self._client_id
+            self._client_secret = client_secret or self._client_secret
+            self._scope = kwargs.get("scope", self._scope)
 
-        if not self._client_id or not self._client_secret:
-            raise AuthenticationError(
-                "Client ID and client secret are required for OAuth2 authentication",
-                auth_type="oauth2",
-            )
-
-        try:
-            # Prepare token request
-            data = {
-                "grant_type": "client_credentials",
-            }
-            if self._scope:
-                data["scope"] = self._scope
-
-            auth = (self._client_id, self._client_secret)
-
-            # Request token
-            logger.debug(f"Requesting OAuth2 token from {self.token_url}")
-            response = requests.post(
-                self.token_url,
-                data=data,
-                auth=auth,
-                headers={"Accept": "application/json"},
-                timeout=30,
-            )
-
-            if response.status_code != 200:
-                try:
-                    response_data = response.json()
-                    error = response_data.get("error", "Unknown error")
-                    error_description = response_data.get("error_description", "")
-                except ValueError:
-                    error = "Invalid JSON response"
-                    error_description = ""
+            if not self._client_id or not self._client_secret:
                 raise AuthenticationError(
-                    f"OAuth2 token request failed: {error} - {error_description}",
+                    "Client ID and client secret are required for OAuth2 authentication",
                     auth_type="oauth2",
-                    status_code=response.status_code,
                 )
 
-            # Parse token data into locals first so that a parsing failure
-            # cannot leave the handler in a half-updated (inconsistent) state.
-            # Only once all fields are successfully parsed do we commit them to
-            # instance attributes, making the update atomic.
             try:
-                token_data = response.json()
-            except ValueError as e:
-                raise AuthenticationError(
-                    f"Invalid JSON response from token endpoint: {e}",
-                    auth_type="oauth2",
-                    status_code=response.status_code,
+                # Prepare token request
+                data = {
+                    "grant_type": "client_credentials",
+                }
+                if self._scope:
+                    data["scope"] = self._scope
+
+                auth = (self._client_id, self._client_secret)
+
+                # Request token
+                logger.debug(f"Requesting OAuth2 token from {self.token_url}")
+                response = requests.post(
+                    self.token_url,
+                    data=data,
+                    auth=auth,
+                    headers={"Accept": "application/json"},
+                    timeout=30,
                 )
 
-            # Validate required fields before updating state
-            if not token_data.get("access_token"):
-                raise AuthenticationError(
-                    "Missing access_token in token response",
-                    auth_type="oauth2",
-                )
+                if response.status_code != 200:
+                    try:
+                        response_data = response.json()
+                        error = response_data.get("error", "Unknown error")
+                        error_description = response_data.get("error_description", "")
+                    except ValueError:
+                        error = "Invalid JSON response"
+                        error_description = ""
+                    raise AuthenticationError(
+                        f"OAuth2 token request failed: {error} - {error_description}",
+                        auth_type="oauth2",
+                        status_code=response.status_code,
+                    )
 
-            new_access_token = token_data.get("access_token")
-            new_token_type = token_data.get("token_type", "Bearer")
+                # Parse token data into locals first so that a parsing failure
+                # cannot leave the handler in a half-updated (inconsistent) state.
+                # Only once all fields are successfully parsed do we commit them to
+                # instance attributes, making the update atomic.
+                try:
+                    token_data = response.json()
+                except ValueError as e:
+                    raise AuthenticationError(
+                        f"Invalid JSON response from token endpoint: {e}",
+                        auth_type="oauth2",
+                        status_code=response.status_code,
+                    )
 
-            # Calculate expiration time. timedelta() raises TypeError if
-            # expires_in is a non-numeric type (e.g. a string); computing it
-            # before any state is updated prevents a partial write.
-            expires_in = token_data.get("expires_in")
-            if expires_in:
-                new_expires_at = datetime.now() + timedelta(seconds=expires_in)
-            else:
-                new_expires_at = None
+                # Validate required fields before updating state
+                if not token_data.get("access_token"):
+                    raise AuthenticationError(
+                        "Missing access_token in token response",
+                        auth_type="oauth2",
+                    )
 
-            # Commit all related state fields atomically.
-            self.access_token = new_access_token
-            self.token_type = new_token_type
-            self.expires_at = new_expires_at
-            self._authenticated = True
-            logger.info("OAuth2 authentication successful")
+                new_access_token = token_data.get("access_token")
+                new_token_type = token_data.get("token_type", "Bearer")
 
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Network error during OAuth2 authentication: {e}")
-            raise NetworkError(
-                "Network error during OAuth2 authentication",
-                original_exception=e,
-            ) from e
+                # Calculate expiration time. timedelta() raises TypeError if
+                # expires_in is a non-numeric type (e.g. a string); computing it
+                # before any state is updated prevents a partial write.
+                expires_in = token_data.get("expires_in")
+                if expires_in:
+                    new_expires_at = datetime.now() + timedelta(seconds=expires_in)
+                else:
+                    new_expires_at = None
+
+                # Commit all related state fields atomically.
+                self.access_token = new_access_token
+                self.token_type = new_token_type
+                self.expires_at = new_expires_at
+                self._authenticated = True
+                logger.info("OAuth2 authentication successful")
+
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Network error during OAuth2 authentication: {e}")
+                raise NetworkError(
+                    "Network error during OAuth2 authentication",
+                    original_exception=e,
+                ) from e
 
     def is_authenticated(self) -> bool:
         """Check if authentication is valid.
@@ -178,14 +181,15 @@ class OAuth2ClientCredentialsHandler(BaseAuthHandler):
         Returns:
             True if access token is present and not expired, False otherwise.
         """
-        if not self._authenticated or not self.access_token:
-            return False
+        with self._lock:
+            if not self._authenticated or not self.access_token:
+                return False
 
-        # Check if token is expired
-        if self.expires_at and datetime.now() >= self.expires_at:
-            return False
+            # Check if token is expired
+            if self.expires_at and datetime.now() >= self.expires_at:
+                return False
 
-        return True
+            return True
 
     def refresh(self) -> None:
         """Refresh authentication.
@@ -195,12 +199,13 @@ class OAuth2ClientCredentialsHandler(BaseAuthHandler):
         Raises:
             AuthenticationError: If refresh fails or no credentials stored.
         """
-        if not self._client_id or not self._client_secret:
-            raise AuthenticationError(
-                "Cannot refresh authentication: no client credentials stored",
-                auth_type="oauth2",
-            )
-        self.authenticate()
+        with self._lock:
+            if not self._client_id or not self._client_secret:
+                raise AuthenticationError(
+                    "Cannot refresh authentication: no client credentials stored",
+                    auth_type="oauth2",
+                )
+            self.authenticate()
 
     def apply_auth(self, session: requests.Session) -> None:
         """Apply authentication to a requests session.
@@ -208,14 +213,16 @@ class OAuth2ClientCredentialsHandler(BaseAuthHandler):
         Args:
             session: The requests.Session to apply authentication to.
         """
-        if self.access_token and self.token_type:
-            session.headers.update(
-                {"Authorization": f"{self.token_type} {self.access_token}"}
-            )
+        with self._lock:
+            if self.access_token and self.token_type:
+                session.headers.update(
+                    {"Authorization": f"{self.token_type} {self.access_token}"}
+                )
 
     def clear_auth(self) -> None:
         """Clear authentication credentials."""
-        self.access_token = None
-        self.token_type = None
-        self.expires_at = None
-        self._authenticated = False
+        with self._lock:
+            self.access_token = None
+            self.token_type = None
+            self.expires_at = None
+            self._authenticated = False

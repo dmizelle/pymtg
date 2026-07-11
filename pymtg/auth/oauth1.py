@@ -9,9 +9,10 @@ import hashlib
 import hmac
 import logging
 import secrets
+import threading
 import time
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote, urlparse
 
 import requests
 
@@ -56,6 +57,8 @@ class OAuth1Handler(BaseAuthHandler):
                 (if already obtained).
             signature_method: The OAuth1 signature method (default: HMAC-SHA1).
         """
+        self._lock = threading.RLock()
+
         self._consumer_key = consumer_key
         self._consumer_secret = consumer_secret
         self._access_token = access_token
@@ -97,49 +100,50 @@ class OAuth1Handler(BaseAuthHandler):
                 pairs are provided (e.g. consumer_key without
                 consumer_secret).
         """
-        # Validate credential pairs before any updates to prevent
-        # inconsistent state where one credential in a pair is updated
-        # while the other retains its previous value.
-        if (consumer_key is not None) != (consumer_secret is not None):
-            raise AuthenticationError(
-                "consumer_key and consumer_secret must be provided "
-                "together; partial updates are not allowed",
-                auth_type="oauth1",
-            )
-        if (access_token is not None) != (access_token_secret is not None):
-            raise AuthenticationError(
-                "access_token and access_token_secret must be provided "
-                "together; partial updates are not allowed",
-                auth_type="oauth1",
-            )
+        with self._lock:
+            # Validate credential pairs before any updates to prevent
+            # inconsistent state where one credential in a pair is updated
+            # while the other retains its previous value.
+            if (consumer_key is not None) != (consumer_secret is not None):
+                raise AuthenticationError(
+                    "consumer_key and consumer_secret must be provided "
+                    "together; partial updates are not allowed",
+                    auth_type="oauth1",
+                )
+            if (access_token is not None) != (access_token_secret is not None):
+                raise AuthenticationError(
+                    "access_token and access_token_secret must be provided "
+                    "together; partial updates are not allowed",
+                    auth_type="oauth1",
+                )
 
-        # Update stored credentials
-        self._consumer_key = consumer_key or self._consumer_key
-        self._consumer_secret = consumer_secret or self._consumer_secret
-        self._access_token = access_token or self._access_token
-        self._access_token_secret = access_token_secret or self._access_token_secret
+            # Update stored credentials
+            self._consumer_key = consumer_key or self._consumer_key
+            self._consumer_secret = consumer_secret or self._consumer_secret
+            self._access_token = access_token or self._access_token
+            self._access_token_secret = access_token_secret or self._access_token_secret
 
-        # Validate required credentials
-        if not self._consumer_key or not self._consumer_secret:
-            raise AuthenticationError(
-                "Consumer key and consumer secret are required for "
-                "OAuth1 authentication",
-                auth_type="oauth1",
-            )
+            # Validate required credentials
+            if not self._consumer_key or not self._consumer_secret:
+                raise AuthenticationError(
+                    "Consumer key and consumer secret are required for "
+                    "OAuth1 authentication",
+                    auth_type="oauth1",
+                )
 
-        # For OAuth1, we typically need the access token/secret pre-obtained
-        # If they're provided, we're authenticated
-        if self._access_token and self._access_token_secret:
-            self._authenticated = True
-            logger.info("OAuth1 authentication configured successfully")
-        else:
-            # In some cases, we might implement the full OAuth1 flow
-            # But for Cardmarket, the user provides the pre-obtained tokens
-            self._authenticated = False
-            logger.warning(
-                "OAuth1 access token/secret not provided. "
-                "Some endpoints may require authenticated requests."
-            )
+            # For OAuth1, we typically need the access token/secret pre-obtained
+            # If they're provided, we're authenticated
+            if self._access_token and self._access_token_secret:
+                self._authenticated = True
+                logger.info("OAuth1 authentication configured successfully")
+            else:
+                # In some cases, we might implement the full OAuth1 flow
+                # But for Cardmarket, the user provides the pre-obtained tokens
+                self._authenticated = False
+                logger.warning(
+                    "OAuth1 access token/secret not provided. "
+                    "Some endpoints may require authenticated requests."
+                )
 
     def is_authenticated(self) -> bool:
         """Check if authentication is valid.
@@ -147,12 +151,13 @@ class OAuth1Handler(BaseAuthHandler):
         Returns:
             True if access token and secret are present, False otherwise.
         """
-        return self._authenticated and bool(
-            self._consumer_key
-            and self._consumer_secret
-            and self._access_token
-            and self._access_token_secret
-        )
+        with self._lock:
+            return self._authenticated and bool(
+                self._consumer_key
+                and self._consumer_secret
+                and self._access_token
+                and self._access_token_secret
+            )
 
     def refresh(self) -> None:
         """Refresh OAuth1 authentication.
@@ -202,88 +207,88 @@ class OAuth1Handler(BaseAuthHandler):
         Returns:
             The signed prepared request.
         """
-        if not self.is_authenticated():
-            return request
+        with self._lock:
+            if not self.is_authenticated():
+                return request
 
-        # Generate OAuth1 parameters
-        oauth_params = {
-            "oauth_consumer_key": self._consumer_key,
-            "oauth_token": self._access_token,
-            "oauth_signature_method": self.signature_method,
-            "oauth_timestamp": str(int(time.time())),
-            "oauth_nonce": self._generate_nonce(),
-            "oauth_version": "1.0",
-        }
+            # Generate OAuth1 parameters
+            oauth_params = {
+                "oauth_consumer_key": self._consumer_key,
+                "oauth_token": self._access_token,
+                "oauth_signature_method": self.signature_method,
+                "oauth_timestamp": str(int(time.time())),
+                "oauth_nonce": self._generate_nonce(),
+                "oauth_version": "1.0",
+            }
 
-        # Get the base URL and parameters
-        url = request.url
-        method = request.method
+            # Get the base URL and parameters
+            url = request.url
+            method = request.method
 
-        # Parse existing query parameters
-        import urllib.parse
+            # Parse existing query parameters
 
-        parsed_url = urllib.parse.urlparse(url)
-        query_string = parsed_url.query or ""
-        existing_params = urllib.parse.parse_qs(query_string)  # type: ignore[arg-type]
+            parsed_url = urlparse(url)
+            query_string = parsed_url.query or ""
+            existing_params = parse_qs(query_string)  # type: ignore[arg-type]
 
-        # Flatten existing params
-        # OAuth1 allows comma-separated values for parameters with multiple values
-        flat_params: dict[str, str] = {}
-        for key, values in existing_params.items():
-            str_key = str(key)
-            if len(values) == 1:
-                flat_params[str_key] = str(values[0])
-            else:
-                flat_params[str_key] = ",".join(str(v) for v in values)  # type: ignore[arg-type]
+            # Flatten existing params
+            # OAuth1 allows comma-separated values for parameters with multiple values
+            flat_params: dict[str, str] = {}
+            for key, values in existing_params.items():
+                str_key = str(key)
+                if len(values) == 1:
+                    flat_params[str_key] = str(values[0])
+                else:
+                    flat_params[str_key] = ",".join(str(v) for v in values)  # type: ignore[arg-type]
 
-        # Merge OAuth params with existing params
-        all_params = {**flat_params, **oauth_params}
+            # Merge OAuth params with existing params
+            all_params = {**flat_params, **oauth_params}
 
-        # Build the signature base string
-        # Sort parameters by key
-        sorted_params = sorted(all_params.items())
+            # Build the signature base string
+            # Sort parameters by key
+            sorted_params = sorted(all_params.items())
 
-        # URL encode parameters
-        encoded_params = []
-        for key, value in sorted_params:
-            encoded_key = quote(str(key), safe="-._~")
-            encoded_value = quote(str(value), safe="-._~")
-            encoded_params.append(f"{encoded_key}={encoded_value}")
+            # URL encode parameters
+            encoded_params = []
+            for key, value in sorted_params:
+                encoded_key = quote(str(key), safe="-._~")
+                encoded_value = quote(str(value), safe="-._~")
+                encoded_params.append(f"{encoded_key}={encoded_value}")
 
-        param_string = "&".join(encoded_params)
+            param_string = "&".join(encoded_params)
 
-        # Build base string
-        base_url = f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path}"
-        method_upper = method.upper() if method else ""
-        base_string = (
-            f"{method_upper}&{quote(str(base_url), safe='')}&"
-            f"{quote(str(param_string), safe='')}"
-        )
-
-        # Generate signature
-        signing_key = (
-            f"{quote(str(self._consumer_secret), safe='')}&"
-            f"{quote(str(self._access_token_secret), safe='')}"
-        )
-        signature = self._generate_signature(base_string, signing_key)
-
-        # Add signature to OAuth params
-        oauth_params["oauth_signature"] = signature
-
-        # Build Authorization header
-        auth_header_parts = []
-        for key in sorted(oauth_params.keys()):
-            value = oauth_params[key]
-            auth_header_parts.append(
-                f'{quote(key, safe="")}="{quote(str(value), safe="")}"'
+            # Build base string
+            base_url = f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path}"
+            method_upper = method.upper() if method else ""
+            base_string = (
+                f"{method_upper}&{quote(str(base_url), safe='')}&"
+                f"{quote(str(param_string), safe='')}"
             )
 
-        auth_header = f"OAuth {', '.join(auth_header_parts)}"
+            # Generate signature
+            signing_key = (
+                f"{quote(str(self._consumer_secret), safe='')}&"
+                f"{quote(str(self._access_token_secret), safe='')}"
+            )
+            signature = self._generate_signature(base_string, signing_key)
 
-        # Add Authorization header to request
-        request.headers["Authorization"] = auth_header
+            # Add signature to OAuth params
+            oauth_params["oauth_signature"] = signature
 
-        return request
+            # Build Authorization header
+            auth_header_parts = []
+            for key in sorted(oauth_params.keys()):
+                value = oauth_params[key]
+                auth_header_parts.append(
+                    f'{quote(key, safe="")}="{quote(str(value), safe="")}"'
+                )
+
+            auth_header = f"OAuth {', '.join(auth_header_parts)}"
+
+            # Add Authorization header to request
+            request.headers["Authorization"] = auth_header
+
+            return request
 
     def _generate_nonce(self) -> str:
         """Generate a random nonce for OAuth1 requests.
@@ -324,28 +329,33 @@ class OAuth1Handler(BaseAuthHandler):
 
     def clear_auth(self) -> None:
         """Clear OAuth1 authentication credentials."""
-        self._consumer_key = None
-        self._consumer_secret = None
-        self._access_token = None
-        self._access_token_secret = None
-        self._authenticated = False
+        with self._lock:
+            self._consumer_key = None
+            self._consumer_secret = None
+            self._access_token = None
+            self._access_token_secret = None
+            self._authenticated = False
 
     @property
     def consumer_key(self) -> str | None:
         """Get the consumer key."""
-        return self._consumer_key
+        with self._lock:
+            return self._consumer_key
 
     @property
     def consumer_secret(self) -> str | None:
         """Get the consumer secret."""
-        return self._consumer_secret
+        with self._lock:
+            return self._consumer_secret
 
     @property
     def access_token(self) -> str | None:
         """Get the access token."""
-        return self._access_token
+        with self._lock:
+            return self._access_token
 
     @property
     def access_token_secret(self) -> str | None:
         """Get the access token secret."""
-        return self._access_token_secret
+        with self._lock:
+            return self._access_token_secret

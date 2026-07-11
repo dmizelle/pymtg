@@ -4,6 +4,7 @@ This module provides the NoAuthHandler for providers like Scryfall that
 don't require any authentication.
 """
 
+import threading
 from typing import Any
 
 import requests
@@ -23,7 +24,9 @@ class NoAuthHandler(BaseAuthHandler):
 
     def __init__(self) -> None:
         """Initialize the NoAuthHandler."""
-        self._authenticated = True
+        self._lock = threading.Lock()
+        with self._lock:
+            self._authenticated = True
 
     def authenticate(self, **kwargs: Any) -> None:
         """Authenticate with the provider.
@@ -33,7 +36,8 @@ class NoAuthHandler(BaseAuthHandler):
         Args:
             **kwargs: Unused.
         """
-        self._authenticated = True
+        with self._lock:
+            self._authenticated = True
 
     def is_authenticated(self) -> bool:
         """Check if authentication is valid.
@@ -41,14 +45,16 @@ class NoAuthHandler(BaseAuthHandler):
         Returns:
             Always True for no-auth providers.
         """
-        return self._authenticated
+        with self._lock:
+            return self._authenticated
 
     def refresh(self) -> None:
         """Refresh authentication.
 
         For no-auth providers, this is a no-op.
         """
-        self._authenticated = True
+        with self._lock:
+            self._authenticated = True
 
     def apply_auth(self, session: requests.Session) -> None:
         """Apply authentication to a requests session.
@@ -66,4 +72,4 @@ class NoAuthHandler(BaseAuthHandler):
 
         For no-auth providers, this is a no-op.
         """
-        self._authenticated = False
+        pass

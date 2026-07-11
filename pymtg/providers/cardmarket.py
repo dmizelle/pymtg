@@ -16,6 +16,7 @@ Cardmarket uses OAuth 1.0a for authentication.
 """
 
 import logging
+import threading
 from typing import Any
 
 import requests
@@ -125,6 +126,9 @@ class Cardmarket(BaseProvider):
             New access is currently closed to new developers.
             All four OAuth1 credentials are required for authentication.
         """
+        # Initialize thread safety lock
+        self._lock = threading.Lock()
+
         # Store OAuth1 credentials before calling super().__init__
         self._consumer_key = consumer_key
         self._consumer_secret = consumer_secret
@@ -227,30 +231,31 @@ class Cardmarket(BaseProvider):
             Requires pre-approved Cardmarket developer credentials.
             All four OAuth1 parameters are required.
         """
-        # Update stored credentials
-        self._consumer_key = consumer_key or self._consumer_key
-        self._consumer_secret = consumer_secret or self._consumer_secret
-        self._access_token = access_token or self._access_token
-        self._access_token_secret = access_token_secret or self._access_token_secret
+        with self._lock:
+            # Update stored credentials
+            self._consumer_key = consumer_key or self._consumer_key
+            self._consumer_secret = consumer_secret or self._consumer_secret
+            self._access_token = access_token or self._access_token
+            self._access_token_secret = access_token_secret or self._access_token_secret
 
-        # Recreate auth handler with new credentials
-        self.auth_handler = OAuth1Handler(
-            consumer_key=self._consumer_key,
-            consumer_secret=self._consumer_secret,
-            access_token=self._access_token,
-            access_token_secret=self._access_token_secret,
-            signature_method="HMAC-SHA1",
-        )
+            # Recreate auth handler with new credentials
+            self.auth_handler = OAuth1Handler(
+                consumer_key=self._consumer_key,
+                consumer_secret=self._consumer_secret,
+                access_token=self._access_token,
+                access_token_secret=self._access_token_secret,
+                signature_method="HMAC-SHA1",
+            )
 
-        # Authenticate
-        self.auth_handler.authenticate(
-            self._consumer_key,
-            self._consumer_secret,
-            self._access_token,
-            self._access_token_secret,
-        )
-        self._apply_auth_to_http_client()
-        logger.info("Cardmarket OAuth1 authentication successful")
+            # Authenticate
+            self.auth_handler.authenticate(
+                self._consumer_key,
+                self._consumer_secret,
+                self._access_token,
+                self._access_token_secret,
+            )
+            self._apply_auth_to_http_client()
+            logger.info("Cardmarket OAuth1 authentication successful")
 
     def search(
         self,
@@ -990,14 +995,16 @@ class Cardmarket(BaseProvider):
         Raises:
             RateLimitError: If rate limit is exceeded.
         """
-        if self._request_count >= self._rate_limit:
-            raise RateLimitError(
-                f"Cardmarket rate limit exceeded ({self._rate_limit} requests/day)"
-            )
+        with self._lock:
+            if self._request_count >= self._rate_limit:
+                raise RateLimitError(
+                    f"Cardmarket rate limit exceeded ({self._rate_limit} requests/day)"
+                )
 
     def _record_request(self) -> None:
         """Record that a request was made."""
-        self._request_count += 1
+        with self._lock:
+            self._request_count += 1
 
     def _handle_response(
         self, response: requests.Response, resource_type: str | None = None
@@ -1134,7 +1141,8 @@ class Cardmarket(BaseProvider):
 
     def close(self) -> None:
         """Close the provider's resources."""
-        self.auth_handler.clear_auth()
+        with self._lock:
+            self.auth_handler.clear_auth()
         super().close()
 
     def __repr__(self) -> str:
