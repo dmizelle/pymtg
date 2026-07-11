@@ -339,19 +339,23 @@ class OAuth1Handler(BaseAuthHandler):
     @property
     def consumer_key(self) -> str | None:
         """Get the consumer key."""
-        return self._consumer_key
+        with self._lock:
+            return self._consumer_key
 
     @property
     def consumer_secret(self) -> str | None:
         """Get the consumer secret."""
-        return self._consumer_secret
+        with self._lock:
+            return self._consumer_secret
 
     @property
     def access_token(self) -> str | None:
         """Get the access token."""
-        return self._access_token
+        with self._lock:
+            return self._access_token
 
     @property
     def access_token_secret(self) -> str | None:
         """Get the access token secret."""
-        return self._access_token_secret
+        with self._lock:
+            return self._access_token_secret
