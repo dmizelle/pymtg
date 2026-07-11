@@ -207,88 +207,89 @@ class OAuth1Handler(BaseAuthHandler):
         Returns:
             The signed prepared request.
         """
-        if not self.is_authenticated():
-            return request
+        with self._lock:
+            if not self.is_authenticated():
+                return request
 
-        # Generate OAuth1 parameters
-        oauth_params = {
-            "oauth_consumer_key": self._consumer_key,
-            "oauth_token": self._access_token,
-            "oauth_signature_method": self.signature_method,
-            "oauth_timestamp": str(int(time.time())),
-            "oauth_nonce": self._generate_nonce(),
-            "oauth_version": "1.0",
-        }
+            # Generate OAuth1 parameters
+            oauth_params = {
+                "oauth_consumer_key": self._consumer_key,
+                "oauth_token": self._access_token,
+                "oauth_signature_method": self.signature_method,
+                "oauth_timestamp": str(int(time.time())),
+                "oauth_nonce": self._generate_nonce(),
+                "oauth_version": "1.0",
+            }
 
-        # Get the base URL and parameters
-        url = request.url
-        method = request.method
+            # Get the base URL and parameters
+            url = request.url
+            method = request.method
 
-        # Parse existing query parameters
-        import urllib.parse
+            # Parse existing query parameters
+            import urllib.parse
 
-        parsed_url = urllib.parse.urlparse(url)
-        query_string = parsed_url.query or ""
-        existing_params = urllib.parse.parse_qs(query_string)  # type: ignore[arg-type]
+            parsed_url = urllib.parse.urlparse(url)
+            query_string = parsed_url.query or ""
+            existing_params = urllib.parse.parse_qs(query_string)  # type: ignore[arg-type]
 
-        # Flatten existing params
-        # OAuth1 allows comma-separated values for parameters with multiple values
-        flat_params: dict[str, str] = {}
-        for key, values in existing_params.items():
-            str_key = str(key)
-            if len(values) == 1:
-                flat_params[str_key] = str(values[0])
-            else:
-                flat_params[str_key] = ",".join(str(v) for v in values)  # type: ignore[arg-type]
+            # Flatten existing params
+            # OAuth1 allows comma-separated values for parameters with multiple values
+            flat_params: dict[str, str] = {}
+            for key, values in existing_params.items():
+                str_key = str(key)
+                if len(values) == 1:
+                    flat_params[str_key] = str(values[0])
+                else:
+                    flat_params[str_key] = ",".join(str(v) for v in values)  # type: ignore[arg-type]
 
-        # Merge OAuth params with existing params
-        all_params = {**flat_params, **oauth_params}
+            # Merge OAuth params with existing params
+            all_params = {**flat_params, **oauth_params}
 
-        # Build the signature base string
-        # Sort parameters by key
-        sorted_params = sorted(all_params.items())
+            # Build the signature base string
+            # Sort parameters by key
+            sorted_params = sorted(all_params.items())
 
-        # URL encode parameters
-        encoded_params = []
-        for key, value in sorted_params:
-            encoded_key = quote(str(key), safe="-._~")
-            encoded_value = quote(str(value), safe="-._~")
-            encoded_params.append(f"{encoded_key}={encoded_value}")
+            # URL encode parameters
+            encoded_params = []
+            for key, value in sorted_params:
+                encoded_key = quote(str(key), safe="-._~")
+                encoded_value = quote(str(value), safe="-._~")
+                encoded_params.append(f"{encoded_key}={encoded_value}")
 
-        param_string = "&".join(encoded_params)
+            param_string = "&".join(encoded_params)
 
-        # Build base string
-        base_url = f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path}"
-        method_upper = method.upper() if method else ""
-        base_string = (
-            f"{method_upper}&{quote(str(base_url), safe='')}&"
-            f"{quote(str(param_string), safe='')}"
-        )
-
-        # Generate signature
-        signing_key = (
-            f"{quote(str(self._consumer_secret), safe='')}&"
-            f"{quote(str(self._access_token_secret), safe='')}"
-        )
-        signature = self._generate_signature(base_string, signing_key)
-
-        # Add signature to OAuth params
-        oauth_params["oauth_signature"] = signature
-
-        # Build Authorization header
-        auth_header_parts = []
-        for key in sorted(oauth_params.keys()):
-            value = oauth_params[key]
-            auth_header_parts.append(
-                f'{quote(key, safe="")}="{quote(str(value), safe="")}"'
+            # Build base string
+            base_url = f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path}"
+            method_upper = method.upper() if method else ""
+            base_string = (
+                f"{method_upper}&{quote(str(base_url), safe='')}&"
+                f"{quote(str(param_string), safe='')}"
             )
 
-        auth_header = f"OAuth {', '.join(auth_header_parts)}"
+            # Generate signature
+            signing_key = (
+                f"{quote(str(self._consumer_secret), safe='')}&"
+                f"{quote(str(self._access_token_secret), safe='')}"
+            )
+            signature = self._generate_signature(base_string, signing_key)
 
-        # Add Authorization header to request
-        request.headers["Authorization"] = auth_header
+            # Add signature to OAuth params
+            oauth_params["oauth_signature"] = signature
 
-        return request
+            # Build Authorization header
+            auth_header_parts = []
+            for key in sorted(oauth_params.keys()):
+                value = oauth_params[key]
+                auth_header_parts.append(
+                    f'{quote(key, safe="")}="{quote(str(value), safe="")}"'
+                )
+
+            auth_header = f"OAuth {', '.join(auth_header_parts)}"
+
+            # Add Authorization header to request
+            request.headers["Authorization"] = auth_header
+
+            return request
 
     def _generate_nonce(self) -> str:
         """Generate a random nonce for OAuth1 requests.

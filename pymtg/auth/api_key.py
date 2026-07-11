@@ -106,4 +106,5 @@ class APIKeyAuthHandler(BaseAuthHandler):
         Returns:
             The API key if present, None otherwise.
         """
-        return self._api_key
+        with self._lock:
+            return self._api_key
