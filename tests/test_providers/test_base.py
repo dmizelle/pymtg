@@ -4,6 +4,7 @@ This module tests the base provider functionality including response handling,
 rate limiting, and error conditions that are common across all providers.
 """
 
+import threading
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -42,6 +43,7 @@ class MockProvider(BaseProvider):
         self.config = ProviderConfig(name="test")
         self.http_client: HTTPClient | None = None
         self.rate_limit: dict[str, Any] = {}
+        self._lock = threading.Lock()
 
     def authenticate(self, **kwargs) -> None:
         """Mock authentication."""

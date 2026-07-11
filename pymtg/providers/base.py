@@ -6,6 +6,7 @@ all MTG API providers.
 """
 
 import logging
+import threading
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from typing import Any, Generator
@@ -55,6 +56,9 @@ class BaseProvider(ABC):
         Args:
             **kwargs: Provider-specific initialization parameters.
         """
+        # Initialize thread safety lock
+        self._lock = threading.Lock()
+
         self.name = self.__class__.__name__.lower()
         self.config = PROVIDER_CONFIGS.get(
             self.name,
@@ -397,8 +401,9 @@ class BaseProvider(ABC):
 
     def close(self) -> None:
         """Close the provider's resources."""
-        if self.http_client is not None:
-            self.http_client.close()
+        with self._lock:
+            if self.http_client is not None:
+                self.http_client.close()
 
     def __enter__(self) -> "BaseProvider":
         """Enter a context manager.
