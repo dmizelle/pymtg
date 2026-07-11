@@ -75,11 +75,11 @@ class APIKeyAuthHandler(BaseAuthHandler):
             session: The requests.Session to apply authentication to.
 
         Raises:
-            ValueError: If session is None and API key is present (truthy).
+            ValueError: If session is None.
         """
+        if session is None:
+            raise ValueError("Cannot apply API key authentication: session is None")
         if self._api_key:
-            if session is None:
-                raise ValueError("Cannot apply API key authentication: session is None")
             if self.header_prefix:
                 header_value = f"{self.header_prefix} {self._api_key}"
             else:
