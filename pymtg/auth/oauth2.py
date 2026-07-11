@@ -113,8 +113,13 @@ class OAuth2ClientCredentialsHandler(BaseAuthHandler):
             )
 
             if response.status_code != 200:
-                error = response.json().get("error", "Unknown error")
-                error_description = response.json().get("error_description", "")
+                try:
+                    response_data = response.json()
+                    error = response_data.get("error", "Unknown error")
+                    error_description = response_data.get("error_description", "")
+                except ValueError:
+                    error = "Invalid JSON response"
+                    error_description = ""
                 raise AuthenticationError(
                     f"OAuth2 token request failed: {error} - {error_description}",
                     auth_type="oauth2",
@@ -125,7 +130,14 @@ class OAuth2ClientCredentialsHandler(BaseAuthHandler):
             # cannot leave the handler in a half-updated (inconsistent) state.
             # Only once all fields are successfully parsed do we commit them to
             # instance attributes, making the update atomic.
-            token_data = response.json()
+            try:
+                token_data = response.json()
+            except ValueError as e:
+                raise AuthenticationError(
+                    f"Invalid JSON response from token endpoint: {e}",
+                    auth_type="oauth2",
+                    status_code=response.status_code,
+                )
 
             # Validate required fields before updating state
             if not token_data.get("access_token"):
