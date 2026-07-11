@@ -4,7 +4,7 @@ This module tests the base provider functionality including response handling,
 rate limiting, and error conditions that are common across all providers.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -162,7 +162,11 @@ class TestHandleResponse:
         provider = MockProvider()
         response = MagicMock()
         response.status_code = 429
-        response.headers = {"Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT"}
+
+        # Use a dynamically generated future date to avoid flakiness
+        future_date = datetime.utcnow() + timedelta(days=1)
+        http_date = future_date.strftime("%a, %d %b %Y %H:%M:%S GMT")
+        response.headers = {"Retry-After": http_date}
 
         with pytest.raises(RateLimitError) as exc_info:
             provider._handle_response(response)
@@ -173,13 +177,9 @@ class TestHandleResponse:
         assert exc_info.value.retry_after > 0
 
         # Verify the parsed date is correct by comparing with expected delta
-        retry_after_date = datetime.strptime(
-            "Wed, 21 Oct 2026 07:28:00 GMT", "%a, %d %b %Y %H:%M:%S GMT"
-        )
-        expected_retry_after = int(
-            (retry_after_date - datetime.utcnow()).total_seconds()
-        )
-        assert exc_info.value.retry_after == expected_retry_after
+        # Allow 1 second tolerance for execution time
+        expected_retry_after = int(timedelta(days=1).total_seconds())
+        assert abs(exc_info.value.retry_after - expected_retry_after) <= 1
 
     def test_handle_response_429_without_retry_after(self):
         """Test that 429 status code without Retry-After uses default 0."""

@@ -7,7 +7,7 @@ all MTG API providers.
 
 import logging
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Generator
 
 import requests
@@ -356,13 +356,16 @@ class BaseProvider(ABC):
                 retry_after = int(retry_after_header)
             except ValueError:
                 try:
-                    retry_after_date = datetime.strptime(
-                        retry_after_header, "%a, %d %b %Y %H:%M:%S GMT"
-                    )
+                    from email.utils import parsedate_to_datetime
+
+                    retry_after_date = parsedate_to_datetime(retry_after_header)
+                    if retry_after_date is None:
+                        raise ValueError("Invalid date format")
+                    retry_after_date = retry_after_date.replace(tzinfo=timezone.utc)
                     retry_after = int(
-                        (retry_after_date - datetime.utcnow()).total_seconds()
+                        (retry_after_date - datetime.now(timezone.utc)).total_seconds()
                     )
-                except (ValueError, TypeError):
+                except (ValueError, TypeError, ImportError):
                     retry_after = 0
             raise RateLimitError(
                 "Rate limit exceeded",
