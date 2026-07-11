@@ -187,9 +187,9 @@ class Deck(PyMTGBaseModel):
         # Format must be a valid Format enum value if specified
         if self.format is not None:
             try:
-                # This will raise ValueError if format is not a valid enum value
+                # This will raise ValueError or TypeError if format is invalid
                 Format(self.format)
-            except ValueError:
+            except (ValueError, TypeError):
                 return False
 
         return True

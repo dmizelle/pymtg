@@ -50,7 +50,7 @@ class APIKeyAuthHandler(BaseAuthHandler):
             **kwargs: Additional authentication parameters.
         """
         self._api_key = api_key
-        self._authenticated = api_key is not None and api_key != ""
+        self._authenticated = api_key is not None and api_key.strip() != ""
 
     def is_authenticated(self) -> bool:
         """Check if authentication is valid.
@@ -58,7 +58,7 @@ class APIKeyAuthHandler(BaseAuthHandler):
         Returns:
             True if API key is present, False otherwise.
         """
-        return self._authenticated and self._api_key is not None
+        return self._authenticated
 
     def refresh(self) -> None:
         """Refresh authentication.
