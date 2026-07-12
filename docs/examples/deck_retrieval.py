@@ -32,9 +32,21 @@ from pymtg.models import Format
 
 
 def get_archidekt_credentials():
-    """Get Archidekt credentials from environment variables."""
+    """Get Archidekt credentials from environment variables.
+    
+    Returns:
+        Tuple of (username, password).
+    
+    Raises:
+        ValueError: If ARCHIDEKT_USERNAME or ARCHIDEKT_PASSWORD is not set.
+    """
     username = os.getenv("ARCHIDEKT_USERNAME")
     password = os.getenv("ARCHIDEKT_PASSWORD")
+    if not username or not password:
+        raise ValueError(
+            "ARCHIDEKT_USERNAME and ARCHIDEKT_PASSWORD environment variables "
+            "must both be set. Please set them before running this example."
+        )
     return username, password
 
 
