@@ -92,7 +92,7 @@ def main():
     else:
         try:
             # Initialize with credentials
-            print(f"   Initializing Archidekt provider for user: {username}")
+            print("   Initializing Archidekt provider...")
             archidekt = pymtg.Archidekt(username=username, password=password)
 
             # Check authentication
