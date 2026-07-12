@@ -7,7 +7,7 @@ rate limiting, and error conditions that are common across all providers.
 import threading
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
