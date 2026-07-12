@@ -1088,7 +1088,7 @@ class Moxfield(BaseProvider):
 
         # Determine privacy
         is_public = data.get("is_public", True)
-        privacy = "private" if not is_public else "public"
+        privacy = "private" if is_public is False else "public"
 
         # Parse tags
         tags = data.get("tags", []) or []

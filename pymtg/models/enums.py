@@ -160,7 +160,7 @@ class Color(StrEnum):
         # If no exact match, raise ValueError to prevent dynamic enum creation
         raise ValueError(
             f"No predefined color combination found for colors: {combined}. "
-            f"Valid combinations are: {', '.join(member.value or 'Colorless' for member in cls)}"
+            f"Valid combinations are: {', '.join(member.value for member in cls)}"
         )
 
     def __contains__(self, color: Union[str, "Color"]) -> bool:  # type: ignore[override]
