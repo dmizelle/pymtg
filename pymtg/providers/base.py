@@ -391,7 +391,6 @@ class BaseProvider(ABC):
                 f"API error: {response.status_code}",
                 provider=self.name,
                 status_code=response.status_code,
-                details={"response": response.text[:500]},
             )
 
         try:
