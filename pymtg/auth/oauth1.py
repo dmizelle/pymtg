@@ -248,9 +248,17 @@ class OAuth1Handler(BaseAuthHandler):
             raise AuthenticationError(
                 "consumer_key must not be None", auth_type="oauth1"
             )
+        if self._consumer_secret is None:
+            raise AuthenticationError(
+                "consumer_secret must not be None", auth_type="oauth1"
+            )
         if self._access_token is None:
             raise AuthenticationError(
                 "access_token must not be None", auth_type="oauth1"
+            )
+        if self._access_token_secret is None:
+            raise AuthenticationError(
+                "access_token_secret must not be None", auth_type="oauth1"
             )
         return {
             "oauth_consumer_key": self._consumer_key,
