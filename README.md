@@ -166,12 +166,14 @@ for card in scryfall.iter_search(
 ## Supported Providers
 
 | Provider | Status | Authentication | Rate Limits |
-|----------|--------|----------------|-------------|
+| ---------- | -------- | ---------------- | ------------- |
 | **Scryfall** | ✅ Implemented | None (Public API) | 2/sec search, 10/sec others |
 | **Archidekt** | 🔄 Planned | Session Cookies | ~60/min |
-| **Moxfield** | 🔄 Planned | Session Cookies / API Key | ~100/min |
+| **Moxfield** | ✅ Implemented | Parse.bot API Key | ~100/min |
 | **TCGPlayer** | 🔄 Planned | OAuth2 Client Credentials | 10/sec |
 | **Cardmarket** | 🔄 Planned | OAuth 1.0a | 30K-100K/day |
+
+**Note:** The Moxfield provider uses the [Parse.bot](https://parse.bot) third-party scraper service as its backend. You will need a Parse.bot API key to use this provider.
 
 ## Provider-Specific Usage
 
