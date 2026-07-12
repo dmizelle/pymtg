@@ -108,3 +108,13 @@ class APIKeyAuthHandler(BaseAuthHandler):
         """
         with self._lock:
             return self._api_key
+
+    def __getstate__(self) -> dict[str, Any]:
+        """Custom pickle serialization to exclude sensitive data.
+
+        Returns:
+            Dictionary of attributes to pickle, excluding _api_key.
+        """
+        state = self.__dict__.copy()
+        state["_api_key"] = None
+        return state
