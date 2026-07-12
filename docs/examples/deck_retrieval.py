@@ -39,8 +39,21 @@ def get_archidekt_credentials():
 
 
 def get_moxfield_api_key():
-    """Get Moxfield API key from environment variables."""
-    return os.getenv("MOXFIELD_API_KEY")
+    """Get Moxfield API key from environment variables.
+
+    Returns:
+        The Moxfield API key.
+
+    Raises:
+        ValueError: If MOXFIELD_API_KEY environment variable is not set.
+    """
+    api_key = os.getenv("MOXFIELD_API_KEY")
+    if not api_key:
+        raise ValueError(
+            "MOXFIELD_API_KEY environment variable is not set. "
+            "Please set it before running this example."
+        )
+    return api_key
 
 
 def main():
