@@ -16,8 +16,12 @@ Typical usage example:
 Or with authenticated providers:
 
     from pymtg import Archidekt
+    import os
 
-    archidekt = Archidekt(username="your_username", password="your_password")
+    archidekt = Archidekt(
+        username=os.getenv("ARCHIDEKT_USERNAME"),
+        password=os.getenv("ARCHIDEKT_PASSWORD")
+    )
     decks = archidekt.get_user_decks()
     for deck in decks:
         print(deck.name)
