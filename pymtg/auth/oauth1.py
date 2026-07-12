@@ -234,12 +234,18 @@ class OAuth1Handler(BaseAuthHandler):
 
             return request
 
-    def _generate_oauth_params(self) -> dict[str, str | None]:
+    def _generate_oauth_params(self) -> dict[str, str]:
         """Generate OAuth1 parameters for request signing.
 
         Returns:
             Dictionary of OAuth1 parameters.
+
+        Raises:
+            AuthenticationError: If required OAuth1 credentials are missing.
         """
+        # Validate that required credentials are present
+        assert self._consumer_key is not None, "consumer_key must not be None"
+        assert self._access_token is not None, "access_token must not be None"
         return {
             "oauth_consumer_key": self._consumer_key,
             "oauth_token": self._access_token,
@@ -250,7 +256,7 @@ class OAuth1Handler(BaseAuthHandler):
         }
 
     def _merge_with_existing_params(
-        self, url: str, oauth_params: dict[str, str | None]
+        self, url: str, oauth_params: dict[str, str]
     ) -> dict[str, str]:
         """Merge OAuth1 params with existing query parameters from URL.
 
@@ -324,7 +330,7 @@ class OAuth1Handler(BaseAuthHandler):
         )
         return self._generate_signature(base_string, signing_key)
 
-    def _build_oauth_header(self, oauth_params: dict[str, str | None]) -> str:
+    def _build_oauth_header(self, oauth_params: dict[str, str]) -> str:
         """Build the OAuth1 Authorization header.
 
         Args:

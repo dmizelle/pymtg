@@ -713,14 +713,14 @@ class Moxfield(BaseProvider):
             sanitized_key = str(key).replace(":", "").replace(" ", "")
             if isinstance(value, str):
                 # Sanitize value to prevent injection
-                sanitized_value = value.replace(":", "").replace(" ", " ")
+                sanitized_value = value.replace(":", "").replace(" ", "")
                 query_parts.append(f"{sanitized_key}:{sanitized_value}")
             elif isinstance(value, (list, tuple)):
                 for v in value:
-                    sanitized_value = str(v).replace(":", "").replace(" ", " ")
+                    sanitized_value = str(v).replace(":", "").replace(" ", "")
                     query_parts.append(f"{sanitized_key}:{sanitized_value}")
             else:
-                sanitized_value = str(value).replace(":", "").replace(" ", " ")
+                sanitized_value = str(value).replace(":", "").replace(" ", "")
                 query_parts.append(f"{sanitized_key}:{sanitized_value}")
 
         return " ".join(query_parts)
