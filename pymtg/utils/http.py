@@ -98,12 +98,14 @@ class HTTPClient:
 
         try:
             logger.debug(f"GET {url} with params: {params}")
+            # Remove timeout from kwargs to prevent override
+            kwargs_copy = {k: v for k, v in kwargs.items() if k != "timeout"}
             response = self.session.get(
                 url,
                 params=params,
                 headers=merged_headers,
                 timeout=self.timeout,
-                **kwargs,
+                **kwargs_copy,
             )
             logger.debug(f"Response status: {response.status_code}")
             return response
@@ -144,6 +146,8 @@ class HTTPClient:
 
         try:
             logger.debug(f"POST {url}")
+            # Remove timeout from kwargs to prevent override
+            kwargs_copy = {k: v for k, v in kwargs.items() if k != "timeout"}
             response = self.session.post(
                 url,
                 data=data,
@@ -151,7 +155,7 @@ class HTTPClient:
                 params=params,
                 headers=merged_headers,
                 timeout=self.timeout,
-                **kwargs,
+                **kwargs_copy,
             )
             logger.debug(f"Response status: {response.status_code}")
             return response
@@ -192,6 +196,8 @@ class HTTPClient:
 
         try:
             logger.debug(f"PUT {url}")
+            # Remove timeout from kwargs to prevent override
+            kwargs_copy = {k: v for k, v in kwargs.items() if k != "timeout"}
             response = self.session.put(
                 url,
                 data=data,
@@ -199,7 +205,7 @@ class HTTPClient:
                 params=params,
                 headers=merged_headers,
                 timeout=self.timeout,
-                **kwargs,
+                **kwargs_copy,
             )
             logger.debug(f"Response status: {response.status_code}")
             return response
@@ -236,12 +242,14 @@ class HTTPClient:
 
         try:
             logger.debug(f"DELETE {url}")
+            # Remove timeout from kwargs to prevent override
+            kwargs_copy = {k: v for k, v in kwargs.items() if k != "timeout"}
             response = self.session.delete(
                 url,
                 params=params,
                 headers=merged_headers,
                 timeout=self.timeout,
-                **kwargs,
+                **kwargs_copy,
             )
             logger.debug(f"Response status: {response.status_code}")
             return response
