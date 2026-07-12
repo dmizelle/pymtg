@@ -157,8 +157,11 @@ class Color(StrEnum):
         for member in cls:
             if member.value == combined:
                 return member
-        # If no exact match, return as combined string (will still be valid)
-        return cls(combined)
+        # If no exact match, raise ValueError to prevent dynamic enum creation
+        raise ValueError(
+            f"No predefined color combination found for colors: {combined}. "
+            f"Valid combinations are: {', '.join(member.value for member in cls if member.value)}"
+        )
 
     def __contains__(self, color: Union[str, "Color"]) -> bool:  # type: ignore[override]
         """Check if this color combination contains a specific color.
