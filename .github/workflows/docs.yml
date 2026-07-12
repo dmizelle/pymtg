@@ -2,9 +2,9 @@ name: Documentation Check
 
 on:
   push:
-    branches: [ main, master, dev ]
+    branches: [main, master, dev]
   pull_request:
-    branches: [ main, master ]
+    branches: [main, master]
 
 jobs:
   docs:
@@ -30,7 +30,7 @@ jobs:
           uv run python -c "
           import ast
           import sys
-          
+
           def check_docstrings(filepath):
               with open(filepath, 'r') as f:
                   tree = ast.parse(f.read(), filepath)
@@ -42,7 +42,7 @@ jobs:
                               print(f'{filepath}:{node.lineno}: Missing docstring for {node.name}')
                               return False
               return True
-          
+
           import os
           for root, dirs, files in os.walk('pymtg'):
               dirs[:] = [d for d in dirs if d != '__pycache__']
