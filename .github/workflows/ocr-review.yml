@@ -142,7 +142,11 @@ jobs:
 
       - name: Install OpenCodeReview
         if: steps.pr.outputs.skip_review != 'true'
-        run: npm install -g @alibaba-group/open-code-review
+        run: |
+          npm install -g @alibaba-group/open-code-review || {
+            echo "Installation failed, retrying..."
+            npm install -g @alibaba-group/open-code-review
+          }
 
       - name: Configure OCR
         if: steps.pr.outputs.skip_review != 'true'
