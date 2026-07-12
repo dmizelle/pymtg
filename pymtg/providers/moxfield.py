@@ -707,21 +707,15 @@ class Moxfield(BaseProvider):
         if type_line:
             query_parts.append(f"t:{type_line}")
 
-        # Add additional kwargs with sanitization
+        # Add additional kwargs
         for key, value in kwargs.items():
-            # Sanitize key to prevent injection
-            sanitized_key = str(key).replace(":", "").replace(" ", "")
             if isinstance(value, str):
-                # Sanitize value to prevent injection
-                sanitized_value = value.replace(":", "").replace(" ", "")
-                query_parts.append(f"{sanitized_key}:{sanitized_value}")
+                query_parts.append(f"{key}:{value}")
             elif isinstance(value, (list, tuple)):
                 for v in value:
-                    sanitized_value = str(v).replace(":", "").replace(" ", "")
-                    query_parts.append(f"{sanitized_key}:{sanitized_value}")
+                    query_parts.append(f"{key}:{v}")
             else:
-                sanitized_value = str(value).replace(":", "").replace(" ", "")
-                query_parts.append(f"{sanitized_key}:{sanitized_value}")
+                query_parts.append(f"{key}:{value}")
 
         return " ".join(query_parts)
 

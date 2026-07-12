@@ -244,8 +244,14 @@ class OAuth1Handler(BaseAuthHandler):
             AuthenticationError: If required OAuth1 credentials are missing.
         """
         # Validate that required credentials are present
-        assert self._consumer_key is not None, "consumer_key must not be None"
-        assert self._access_token is not None, "access_token must not be None"
+        if self._consumer_key is None:
+            raise AuthenticationError(
+                "consumer_key must not be None", auth_type="oauth1"
+            )
+        if self._access_token is None:
+            raise AuthenticationError(
+                "access_token must not be None", auth_type="oauth1"
+            )
         return {
             "oauth_consumer_key": self._consumer_key,
             "oauth_token": self._access_token,
