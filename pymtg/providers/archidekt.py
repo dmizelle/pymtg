@@ -129,6 +129,9 @@ class Archidekt(BaseProvider):
         if username and password:
             self.auth_handler.authenticate(username=username, password=password)
             self._apply_auth_to_http_client()
+            # Clear credentials from memory after authentication
+            self._username = None
+            self._password = None
             logger.info("Archidekt authentication successful")
 
     def _initialize(self, **kwargs: Any) -> None:
@@ -915,6 +918,18 @@ class Archidekt(BaseProvider):
             tags=data.get("tags", []),
             categories=categories,
         )
+
+    def __getstate__(self) -> dict[str, Any]:
+        """Exclude sensitive credentials from pickle serialization.
+
+        Returns:
+            Dictionary of attributes to serialize, excluding credentials.
+        """
+        state = self.__dict__.copy()
+        # Remove sensitive authentication credentials
+        state.pop("_username", None)
+        state.pop("_password", None)
+        return state
 
     def __repr__(self) -> str:
         """Return a string representation of the Archidekt provider.
