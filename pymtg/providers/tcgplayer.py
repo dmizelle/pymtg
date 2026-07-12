@@ -1365,6 +1365,19 @@ class TCGPlayer(BaseProvider):
             "authenticated": self.is_authenticated(),
         }
 
+    def __getstate__(self) -> dict[str, Any]:
+        """Exclude sensitive credentials from pickle serialization.
+
+        Returns:
+            Dictionary of attributes to serialize, excluding credentials.
+        """
+        state = self.__dict__.copy()
+        # Remove sensitive OAuth2 credentials
+        state.pop("client_id", None)
+        state.pop("client_secret", None)
+        state.pop("scope", None)
+        return state
+
     def __repr__(self) -> str:
         """Return a string representation of the TCGPlayer provider.
 
