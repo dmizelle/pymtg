@@ -291,10 +291,22 @@ class HTTPClient:
 
         Returns:
             The merged headers dictionary.
+
+        Note:
+            Critical headers (User-Agent, Accept) cannot be overridden.
         """
         headers = dict(self.session.headers)
         if additional_headers:
-            headers.update(additional_headers)
+            # Prevent overriding critical headers
+            critical_headers = {"User-Agent", "Accept"}
+            for key, value in additional_headers.items():
+                if key not in critical_headers:
+                    headers[key] = value
+                else:
+                    logger.warning(
+                        f"Attempted to override critical header {key}. "
+                        f"This header is protected and cannot be overridden."
+                    )
         return cast(dict[str, str], headers)
 
     def close(self) -> None:
