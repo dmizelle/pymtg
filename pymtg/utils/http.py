@@ -35,6 +35,9 @@ class HTTPClient:
         user_agent: User-Agent string to use for requests.
     """
 
+    # Critical headers that cannot be overridden
+    CRITICAL_HEADERS: frozenset[str] = frozenset({"user-agent", "accept"})
+
     def __init__(
         self,
         base_url: str,
@@ -298,9 +301,8 @@ class HTTPClient:
         headers = dict(self.session.headers)
         if additional_headers:
             # Prevent overriding critical headers (case-insensitive check)
-            critical_headers = {"user-agent", "accept"}
             for key, value in additional_headers.items():
-                if key.lower() not in critical_headers:
+                if key.lower() not in self.CRITICAL_HEADERS:
                     headers[key] = value
                 else:
                     logger.warning(
