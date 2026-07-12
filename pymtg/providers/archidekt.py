@@ -127,12 +127,14 @@ class Archidekt(BaseProvider):
 
         # Apply authentication if credentials were provided
         if username and password:
-            self.auth_handler.authenticate(username=username, password=password)
-            self._apply_auth_to_http_client()
-            # Clear credentials from memory after authentication
-            self._username = None
-            self._password = None
-            logger.info("Archidekt authentication successful")
+            try:
+                self.auth_handler.authenticate(username=username, password=password)
+                self._apply_auth_to_http_client()
+                logger.info("Archidekt authentication successful")
+            finally:
+                # Clear credentials from memory after authentication (success or failure)
+                self._username = None
+                self._password = None
 
     def _initialize(self, **kwargs: Any) -> None:
         """Archidekt-specific initialization.
