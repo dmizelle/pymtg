@@ -297,10 +297,10 @@ class HTTPClient:
         """
         headers = dict(self.session.headers)
         if additional_headers:
-            # Prevent overriding critical headers
-            critical_headers = {"User-Agent", "Accept"}
+            # Prevent overriding critical headers (case-insensitive check)
+            critical_headers = {"user-agent", "accept"}
             for key, value in additional_headers.items():
-                if key not in critical_headers:
+                if key.lower() not in critical_headers:
                     headers[key] = value
                 else:
                     logger.warning(
