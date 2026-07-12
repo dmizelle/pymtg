@@ -149,6 +149,7 @@ jobs:
         run: |
           mkdir -p ~/.opencodereview
           echo '${{ secrets.open_code_review_config }}' > ~/.opencodereview/config.json
+          chmod 600 ~/.opencodereview/config.json
 
       - name: Run OpenCodeReview
         if: steps.pr.outputs.skip_review != 'true'
