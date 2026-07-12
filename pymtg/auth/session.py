@@ -133,6 +133,10 @@ class SessionAuthHandler(BaseAuthHandler):
             self._authenticated = True
             session_stored = True
 
+            # Clear credentials from memory after successful authentication
+            self._username = None
+            self._password = None
+
             logger.info(f"Session authentication successful for {username}")
 
         except requests.exceptions.RequestException as e:
