@@ -319,6 +319,15 @@ class OAuth1Handler(BaseAuthHandler):
         Returns:
             The generated signature.
         """
+        # Validate that secrets are present and non-empty
+        if not self._consumer_secret:
+            raise AuthenticationError(
+                "consumer_secret must not be None or empty", auth_type="oauth1"
+            )
+        if not self._access_token_secret:
+            raise AuthenticationError(
+                "access_token_secret must not be None or empty", auth_type="oauth1"
+            )
         signing_key = (
             f"{quote(str(self._consumer_secret), safe='')}&"
             f"{quote(str(self._access_token_secret), safe='')}"
