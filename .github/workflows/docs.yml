@@ -13,15 +13,15 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@e8d4307400f9427dba7cb98e488d6ab85f1cec5f
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@051499373543393546b33521e74747568896f4a
         with:
           python-version: "3.11"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v1
+        uses: astral-sh/setup-uv@6a191366842ac1502ba6c07e9b5acd5d8db3
 
       - name: Check for missing docstrings
         run: |
