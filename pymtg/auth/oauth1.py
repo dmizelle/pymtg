@@ -397,6 +397,19 @@ class OAuth1Handler(BaseAuthHandler):
             self._access_token_secret = None
             self._authenticated = False
 
+    def __getstate__(self) -> dict[str, Any]:
+        """Custom pickle serialization to exclude sensitive data.
+
+        Returns:
+            Dictionary of attributes to pickle, excluding secrets.
+        """
+        state = self.__dict__.copy()
+        state["_consumer_key"] = None
+        state["_consumer_secret"] = None
+        state["_access_token"] = None
+        state["_access_token_secret"] = None
+        return state
+
     @property
     def consumer_key(self) -> str | None:
         """Get the consumer key."""
