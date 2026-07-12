@@ -137,7 +137,7 @@ class SessionAuthHandler(BaseAuthHandler):
             self._username = None
             self._password = None
 
-            logger.info(f"Session authentication successful for {username}")
+            logger.info("Session authentication successful")
 
         except requests.exceptions.RequestException as e:
             logger.error(f"Network error during session authentication: {e}")
