@@ -4,7 +4,6 @@ This module provides the APIKeyAuthHandler for providers like Deckbox
 that use API key-based authentication.
 """
 
-import os
 import threading
 from typing import Any
 
@@ -95,16 +94,8 @@ class APIKeyAuthHandler(BaseAuthHandler):
         session.headers.update({self.header_name: header_value})
 
     def clear_auth(self) -> None:
-        """Clear authentication credentials securely.
-
-        Overwrites the API key in memory with random data to prevent
-        recovery from memory dumps.
-        """
+        """Clear authentication credentials."""
         with self._lock:
-            # Securely wipe the API key from memory
-            if self._api_key:
-                # Overwrite with random data of same length
-                self._api_key = os.urandom(len(self._api_key)).decode("latin-1")
             self._api_key = None
             self._authenticated = False
 
