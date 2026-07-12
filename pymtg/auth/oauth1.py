@@ -243,22 +243,22 @@ class OAuth1Handler(BaseAuthHandler):
         Raises:
             AuthenticationError: If required OAuth1 credentials are missing.
         """
-        # Validate that required credentials are present
-        if self._consumer_key is None:
+        # Validate that required credentials are present and non-empty
+        if not self._consumer_key:
             raise AuthenticationError(
-                "consumer_key must not be None", auth_type="oauth1"
+                "consumer_key must not be None or empty", auth_type="oauth1"
             )
-        if self._consumer_secret is None:
+        if not self._consumer_secret:
             raise AuthenticationError(
-                "consumer_secret must not be None", auth_type="oauth1"
+                "consumer_secret must not be None or empty", auth_type="oauth1"
             )
-        if self._access_token is None:
+        if not self._access_token:
             raise AuthenticationError(
-                "access_token must not be None", auth_type="oauth1"
+                "access_token must not be None or empty", auth_type="oauth1"
             )
-        if self._access_token_secret is None:
+        if not self._access_token_secret:
             raise AuthenticationError(
-                "access_token_secret must not be None", auth_type="oauth1"
+                "access_token_secret must not be None or empty", auth_type="oauth1"
             )
         return {
             "oauth_consumer_key": self._consumer_key,
@@ -338,6 +338,15 @@ class OAuth1Handler(BaseAuthHandler):
         Returns:
             The generated signature.
         """
+        # Validate that secrets are non-empty and non-None
+        if not self._consumer_secret:
+            raise AuthenticationError(
+                "consumer_secret must not be None or empty", auth_type="oauth1"
+            )
+        if not self._access_token_secret:
+            raise AuthenticationError(
+                "access_token_secret must not be None or empty", auth_type="oauth1"
+            )
         signing_key = (
             f"{quote(str(self._consumer_secret), safe='')}&"
             f"{quote(str(self._access_token_secret), safe='')}"
