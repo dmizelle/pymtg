@@ -5,7 +5,9 @@ and Moxfield that use session cookie-based authentication.
 """
 
 import logging
+import threading
 import time
+from typing import Any
 
 import requests
 
@@ -52,6 +54,7 @@ class SessionAuthHandler(BaseAuthHandler):
             csrf_header: The header name for CSRF token.
             csrf_cookie: The cookie name for CSRF token.
         """
+        self._lock = threading.RLock()
         self.base_url = base_url.rstrip("/")
         self.login_endpoint = login_endpoint
         self.csrf_header = csrf_header
@@ -74,121 +77,123 @@ class SessionAuthHandler(BaseAuthHandler):
             AuthenticationError: If authentication fails.
             NetworkError: If there is a network error.
         """
-        # Initialize credentials to None to ensure cleanup on any failure
-        self._username = None
-        self._password = None
+        with self._lock:
+            # Initialize credentials to None to ensure cleanup on any failure
+            self._username = None
+            self._password = None
 
-        # Close any previously-stored session to avoid leaking the old
-        # requests.Session when re-authenticating (e.g. via refresh()).
-        if self._session is not None:
-            self._session.close()
-            self._session = None
+            # Close any previously-stored session to avoid leaking the old
+            # requests.Session when re-authenticating (e.g. via refresh()).
+            if self._session is not None:
+                self._session.close()
+                self._session = None
 
-        auth_session = requests.Session()
-        session_stored = False
-        try:
-            # Store credentials temporarily
-            self._username = username
-            self._password = password
+            auth_session = requests.Session()
+            session_stored = False
+            try:
+                # Store credentials temporarily
+                self._username = username
+                self._password = password
 
-            # First, get the login page to retrieve CSRF token
-            login_url = f"{self.base_url}{self.login_endpoint}"
-            logger.debug("Getting CSRF token from %s", login_url)
-            csrf_response = auth_session.get(login_url)
+                # First, get the login page to retrieve CSRF token
+                login_url = f"{self.base_url}{self.login_endpoint}"
+                logger.debug("Getting CSRF token from %s", login_url)
+                csrf_response = auth_session.get(login_url)
 
-            if csrf_response.status_code != 200:
-                raise AuthenticationError(
-                    f"Failed to get CSRF token: {csrf_response.status_code}",
-                    auth_type="session",
+                if csrf_response.status_code != 200:
+                    raise AuthenticationError(
+                        f"Failed to get CSRF token: " f"{csrf_response.status_code}",
+                        auth_type="session",
+                    )
+
+                # Extract CSRF token from cookies
+                csrf_token = csrf_response.cookies.get(self.csrf_cookie)
+                if csrf_token is None:
+                    raise AuthenticationError(
+                        "CSRF token not found in response cookies",
+                        auth_type="session",
+                    )
+
+                # Prepare login data
+                login_data = {
+                    "username": username,
+                    "password": password,
+                }
+
+                # Add CSRF token to headers
+                headers = {
+                    self.csrf_header: csrf_token,
+                    "Referer": login_url,
+                }
+
+                # POST credentials
+                logger.debug("Authenticating with %s", login_url)
+                response = auth_session.post(
+                    login_url,
+                    data=login_data,
+                    headers=headers,
+                    cookies={self.csrf_cookie: csrf_token},
+                    allow_redirects=True,
                 )
 
-            # Extract CSRF token from cookies
-            csrf_token = csrf_response.cookies.get(self.csrf_cookie)
-            if csrf_token is None:
-                raise AuthenticationError(
-                    "CSRF token not found in response cookies",
-                    auth_type="session",
-                )
+                if response.status_code != 200:
+                    raise AuthenticationError(
+                        f"Login failed: {response.status_code}",
+                        auth_type="session",
+                    )
 
-            # Prepare login data
-            login_data = {
-                "username": username,
-                "password": password,
-            }
+                # Build the session cookie dict from the auth session's
+                # cookies.
+                self.session_cookies = {
+                    cookie.name: cookie.value for cookie in auth_session.cookies
+                }
 
-            # Add CSRF token to headers
-            headers = {
-                self.csrf_header: csrf_token,
-                "Referer": login_url,
-            }
+                # Relying solely on status_code == 200 is unreliable: a
+                # failed login with allow_redirects=True often redirects
+                # back to the login page which itself returns 200. Verify a
+                # session cookie was actually established before treating
+                # the login as successful.
+                if "sessionid" not in self.session_cookies:
+                    raise AuthenticationError(
+                        "Login failed: no session cookie established",
+                        auth_type="session",
+                    )
 
-            # POST credentials
-            logger.debug("Authenticating with %s", login_url)
-            response = auth_session.post(
-                login_url,
-                data=login_data,
-                headers=headers,
-                cookies={self.csrf_cookie: csrf_token},
-                allow_redirects=True,
-            )
+                self._session = auth_session
+                self._authenticated = True
+                session_stored = True
 
-            if response.status_code != 200:
-                raise AuthenticationError(
-                    f"Login failed: {response.status_code}",
-                    auth_type="session",
-                )
+                # Track the earliest cookie expiry so is_authenticated()
+                # can reject stale/expired sessions. Only real numeric
+                # expiry values are considered; cookies without an expiry
+                # (true session cookies) leave _expires_at as None.
+                expiry_candidates: list[float] = []
+                for cookie in auth_session.cookies:
+                    expires = getattr(cookie, "expires", None)
+                    if isinstance(expires, (int, float)):
+                        expiry_candidates.append(float(expires))
+                self._expires_at = min(expiry_candidates) if expiry_candidates else None
 
-            # Build the session cookie dict from the auth session's cookies.
-            self.session_cookies = {
-                cookie.name: cookie.value for cookie in auth_session.cookies
-            }
+                # Credentials are intentionally retained on the instance so
+                # that refresh() can re-authenticate later. Use clear_auth()
+                # for explicit credential cleanup.
+                logger.info("Session authentication successful")
 
-            # Relying solely on status_code == 200 is unreliable: a failed
-            # login with allow_redirects=True often redirects back to the
-            # login page which itself returns 200. Verify a session cookie
-            # was actually established before treating the login as
-            # successful.
-            if "sessionid" not in self.session_cookies:
-                raise AuthenticationError(
-                    "Login failed: no session cookie established",
-                    auth_type="session",
-                )
-
-            self._session = auth_session
-            self._authenticated = True
-            session_stored = True
-
-            # Track the earliest cookie expiry so is_authenticated() can
-            # reject stale/expired sessions. Only real numeric expiry values
-            # are considered; cookies without an expiry (true session
-            # cookies) leave _expires_at as None.
-            expiry_candidates: list[float] = []
-            for cookie in auth_session.cookies:
-                expires = getattr(cookie, "expires", None)
-                if isinstance(expires, (int, float)):
-                    expiry_candidates.append(float(expires))
-            self._expires_at = min(expiry_candidates) if expiry_candidates else None
-
-            # Credentials are intentionally retained on the instance so that
-            # refresh() can re-authenticate later. Use clear_auth() for
-            # explicit credential cleanup.
-            logger.info("Session authentication successful")
-
-        except requests.exceptions.RequestException as e:
-            logger.error("Network error during session authentication: %s", e)
-            raise NetworkError(
-                "Network error during authentication",
-                original_exception=e,
-            ) from e
-        finally:
-            if not session_stored:
-                auth_session.close()
-                self._authenticated = False
-                self._expires_at = None
-                self.session_cookies = {}
-                # Preserve stored credentials so refresh() can be retried
-                # after transient failures. Use clear_auth() for explicit
-                # credential cleanup.
+            except requests.exceptions.RequestException as e:
+                logger.error("Network error during session authentication: %s", e)
+                raise NetworkError(
+                    "Network error during authentication",
+                    original_exception=e,
+                ) from e
+            finally:
+                if not session_stored:
+                    auth_session.close()
+                    self._authenticated = False
+                    self._expires_at = None
+                    self.session_cookies = {}
+                    # Preserve stored credentials so refresh() can be
+                    # retried after transient failures. Use clear_auth()
+                    # for explicit credential cleanup.
 
     def is_authenticated(self) -> bool:
         """Check if authentication is valid.
@@ -197,13 +202,14 @@ class SessionAuthHandler(BaseAuthHandler):
             True if a session is established and its cookies are present
             and not expired, False otherwise.
         """
-        if not self._authenticated or not self.session_cookies:
-            return False
-        if self._session is None:
-            return False
-        if self._expires_at is not None and time.time() >= self._expires_at:
-            return False
-        return True
+        with self._lock:
+            if not self._authenticated or not self.session_cookies:
+                return False
+            if self._session is None:
+                return False
+            if self._expires_at is not None and time.time() >= self._expires_at:
+                return False
+            return True
 
     def refresh(self) -> None:
         """Refresh authentication.
@@ -213,12 +219,13 @@ class SessionAuthHandler(BaseAuthHandler):
         Raises:
             AuthenticationError: If refresh fails or no credentials stored.
         """
-        if not self._username or not self._password:
-            raise AuthenticationError(
-                "Cannot refresh authentication: no credentials stored",
-                auth_type="session",
-            )
-        self.authenticate(username=self._username, password=self._password)
+        with self._lock:
+            if not self._username or not self._password:
+                raise AuthenticationError(
+                    "Cannot refresh authentication: no credentials stored",
+                    auth_type="session",
+                )
+            self.authenticate(username=self._username, password=self._password)
 
     def apply_auth(self, session: requests.Session) -> None:
         """Apply authentication to a requests session.
@@ -231,49 +238,51 @@ class SessionAuthHandler(BaseAuthHandler):
         Args:
             session: The requests.Session to apply authentication to.
         """
-        if not self.is_authenticated():
-            logger.warning(
-                "apply_auth() called on a SessionAuthHandler that is not "
-                "authenticated; no cookies will be set. Call "
-                "authenticate(username=..., password=...) first."
-            )
-            # Clear any stale cookies this handler may have previously
-            # applied to the target session.
+        with self._lock:
+            if not self.is_authenticated():
+                logger.warning(
+                    "apply_auth() called on a SessionAuthHandler that is "
+                    "not authenticated; no cookies will be set. Call "
+                    "authenticate(username=..., password=...) first."
+                )
+                # Clear any stale cookies this handler may have previously
+                # applied to the target session.
+                if self.session_cookies:
+                    for name in list(self.session_cookies.keys()):
+                        if name in session.cookies:
+                            del session.cookies[name]
+                session.headers.pop(self.csrf_header, None)
+                return
             if self.session_cookies:
+                # Remove cookies previously applied by this handler so a
+                # reused session does not carry stale identities from a
+                # prior apply_auth() call.
                 for name in list(self.session_cookies.keys()):
                     if name in session.cookies:
                         del session.cookies[name]
-            session.headers.pop(self.csrf_header, None)
-            return
-        if self.session_cookies:
-            # Remove cookies previously applied by this handler so a reused
-            # session does not carry stale identities from a prior
-            # apply_auth() call.
-            for name in list(self.session_cookies.keys()):
-                if name in session.cookies:
-                    del session.cookies[name]
-            for name, value in self.session_cookies.items():
-                if value is not None:
-                    session.cookies.set(name, value)
+                for name, value in self.session_cookies.items():
+                    if value is not None:
+                        session.cookies.set(name, value)
 
-        # Also set CSRF token in headers if present, clearing any stale
-        # value from a prior apply_auth() call otherwise.
-        csrf_token = self.session_cookies.get(self.csrf_cookie)
-        if csrf_token is not None:
-            session.headers.update({self.csrf_header: csrf_token})
-        else:
-            session.headers.pop(self.csrf_header, None)
+            # Also set CSRF token in headers if present, clearing any stale
+            # value from a prior apply_auth() call otherwise.
+            csrf_token = self.session_cookies.get(self.csrf_cookie)
+            if csrf_token is not None:
+                session.headers.update({self.csrf_header: csrf_token})
+            else:
+                session.headers.pop(self.csrf_header, None)
 
     def clear_auth(self) -> None:
         """Clear authentication credentials."""
-        self.session_cookies.clear()
-        self._authenticated = False
-        self._expires_at = None
-        self._username = None
-        self._password = None
-        if self._session:
-            self._session.close()
-            self._session = None
+        with self._lock:
+            self.session_cookies.clear()
+            self._authenticated = False
+            self._expires_at = None
+            self._username = None
+            self._password = None
+            if self._session:
+                self._session.close()
+                self._session = None
 
     @property
     def csrf_token(self) -> str | None:
@@ -282,7 +291,8 @@ class SessionAuthHandler(BaseAuthHandler):
         Returns:
             The CSRF token if available, None otherwise.
         """
-        return self.session_cookies.get(self.csrf_cookie)
+        with self._lock:
+            return self.session_cookies.get(self.csrf_cookie)
 
     @property
     def sessionid(self) -> str | None:
@@ -291,7 +301,8 @@ class SessionAuthHandler(BaseAuthHandler):
         Returns:
             The session ID if available, None otherwise.
         """
-        return self.session_cookies.get("sessionid")
+        with self._lock:
+            return self.session_cookies.get("sessionid")
 
     def __repr__(self) -> str:
         """Return a debug representation that excludes sensitive fields.
@@ -305,3 +316,30 @@ class SessionAuthHandler(BaseAuthHandler):
             f"login_endpoint={self.login_endpoint!r}, "
             f"authenticated={self._authenticated!r})"
         )
+
+    def __getstate__(self) -> dict[str, Any]:
+        """Custom pickle serialization to exclude sensitive data.
+
+        Returns:
+            Dictionary of attributes to pickle, excluding sensitive data
+            and the threading lock.
+        """
+        state = self.__dict__.copy()
+        # Exclude sensitive data from pickle. The deserialized instance will
+        # be unauthenticated and must call authenticate() again before use.
+        state["_password"] = None
+        state["_username"] = None
+        state["_authenticated"] = False
+        state["_lock"] = None
+        state["_session"] = None
+        return state
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Restore state after deserialization, recreating the lock.
+
+        Args:
+            state: The pickled state dictionary produced by __getstate__.
+        """
+        for key, value in state.items():
+            setattr(self, key, value)
+        self._lock = threading.RLock()
