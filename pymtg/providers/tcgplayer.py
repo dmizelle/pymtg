@@ -1558,6 +1558,11 @@ class TCGPlayer(BaseProvider):
             if hasattr(auth_handler, "access_token"):
                 auth_handler.access_token = None
             state["auth_handler"] = auth_handler
+        # Scrub the Authorization header from the HTTP client session
+        # to prevent token leakage via pickle.
+        http_client = state.get("http_client")
+        if http_client is not None:
+            http_client.session.headers.pop("Authorization", None)
         return state
 
     def __setstate__(self, state: dict[str, Any]) -> None:

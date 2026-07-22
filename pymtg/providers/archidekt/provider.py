@@ -2568,6 +2568,13 @@ class Archidekt(BaseProvider):
         state.pop("_lock", None)
         state.pop("rate_limiter", None)
 
+        # Scrub the Authorization header from the HTTP client session
+        # to prevent token leakage via pickle. The header is re-applied
+        # on the next apply_auth() call after re-authentication.
+        http_client = state.get("http_client")
+        if http_client is not None:
+            http_client.session.headers.pop("Authorization", None)
+
         return state
 
     def __setstate__(self, state: dict[str, Any]) -> None:

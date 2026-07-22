@@ -107,7 +107,7 @@ def main():
         # Example: Get user's decks
         print("   b) Getting user's decks...")
         try:
-            user_decks = archidekt.get_user_decks(limit=3)
+            user_decks = archidekt.get_user_decks()[:3]
             print(f"      Found {len(user_decks)} decks:")
             for deck in user_decks:
                 print(f"        - {deck.name} ({deck.format})")
@@ -176,7 +176,7 @@ def main():
         # Example: Get user's decks
         print("   b) Getting user's decks...")
         try:
-            user_decks = moxfield.get_user_decks(limit=3)
+            user_decks = moxfield.get_user_decks()[:3]
             print(f"      Found {len(user_decks)} decks:")
             for deck in user_decks:
                 print(f"        - {deck.name} ({deck.format})")

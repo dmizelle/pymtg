@@ -74,6 +74,7 @@ class OAuth2ClientCredentialsHandler(BaseAuthHandler):
         """
         state = self.__dict__.copy()
         # Exclude sensitive data from pickle.
+        state["_client_id"] = None
         state["_client_secret"] = None
         state["access_token"] = None
         state["token_type"] = None
