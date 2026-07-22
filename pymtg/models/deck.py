@@ -6,7 +6,7 @@ decks in a normalized format across all providers.
 
 from pymtg.models.base import PyMTGBaseModel
 from pymtg.models.card import DeckCard
-from pymtg.models.enums import Format
+from pymtg.models.enums import Board, Format
 
 
 class Deck(PyMTGBaseModel):
@@ -45,6 +45,7 @@ class Deck(PyMTGBaseModel):
         owner: Owner username or ID.
         owner_id: Owner's provider-specific ID.
         collapsed: Whether the deck is collapsed/folded.
+        parent_folder_id: The ID of the parent folder containing this deck.
     """
 
     id: str
@@ -69,16 +70,28 @@ class Deck(PyMTGBaseModel):
     owner: str | None = None
     owner_id: str | None = None
     collapsed: bool | None = None
+    parent_folder_id: str | None = None
 
     def get_main_deck_cards(self) -> list[DeckCard]:
         """Get all cards in the main deck.
+
+        Positively selects cards whose board is ``None`` (legacy/default
+        placement) or ``Board.MAIN`` so that sideboard, commander-zone,
+        and maybeboard cards are excluded. This keeps the main-deck
+        accessor consistent with the dedicated ``get_sideboard_cards()``,
+        ``get_commander_cards()``, and ``get_maybeboard_cards()``
+        accessors.
 
         Returns:
             List of DeckCard objects in the main deck.
         """
         if self.cards is None:
             return []
-        return [card for card in self.cards if card.board != "sideboard"]
+        return [
+            card
+            for card in self.cards
+            if card.board is None or card.board == Board.MAIN.value
+        ]
 
     def get_sideboard_cards(self) -> list[DeckCard]:
         """Get all cards in the sideboard.
@@ -88,7 +101,7 @@ class Deck(PyMTGBaseModel):
         """
         if self.cards is None:
             return []
-        return [card for card in self.cards if card.board == "sideboard"]
+        return [card for card in self.cards if card.board == Board.SIDEBOARD.value]
 
     def get_maybeboard_cards(self) -> list[DeckCard]:
         """Get all cards in the maybe board.
@@ -98,7 +111,7 @@ class Deck(PyMTGBaseModel):
         """
         if self.cards is None:
             return []
-        return [card for card in self.cards if card.board == "maybeboard"]
+        return [card for card in self.cards if card.board == Board.MAYBEBOARD.value]
 
     def get_commander_cards(self) -> list[DeckCard]:
         """Get all cards in the commander zone.
@@ -108,17 +121,21 @@ class Deck(PyMTGBaseModel):
         """
         if self.cards is None:
             return []
-        return [card for card in self.cards if card.board == "commander"]
+        return [card for card in self.cards if card.board == Board.COMMANDER.value]
 
     def get_total_cards(self) -> int:
-        """Get the total number of cards in the deck.
+        """Get the total number of cards in the main deck.
+
+        Only main-deck cards are counted; sideboard, commander-zone,
+        and maybeboard cards are excluded (use the dedicated accessors
+        to total those zones separately).
 
         Returns:
-            Total count of all cards in the main deck, sideboard, and maybe board.
+            Total count of cards in the main deck.
         """
         if self.cards is None:
             return 0
-        return sum(card.count for card in self.cards)
+        return sum(card.count for card in self.get_main_deck_cards())
 
     def get_card_count(self, card_name: str) -> int:
         """Get the number of copies of a specific card in the deck.
@@ -172,19 +189,17 @@ class Deck(PyMTGBaseModel):
         (e.g., card legality, deck size limits) would require additional
         format-specific rules and is not yet implemented.
 
+        With ``use_enum_values=True`` in the model config, ``self.format``
+        is already a validated ``Format`` value after normal Pydantic
+        construction, so no runtime re-check of the enum membership is
+        performed here. Decks built via ``model_construct()`` or another
+        validation-bypassing path may carry an unvalidated format string.
+
         Returns:
             True if the deck has cards and format is valid, False otherwise.
         """
-        # Basic validation: deck must have at least one card
+        # Basic validation: deck must have at least one card.
         if self.cards is None or len(self.cards) == 0:
             return False
-
-        # Format must be a valid Format enum value if specified
-        if self.format is not None:
-            try:
-                # This will raise ValueError or TypeError if format is invalid
-                Format(self.format)
-            except (ValueError, TypeError):
-                return False
 
         return True

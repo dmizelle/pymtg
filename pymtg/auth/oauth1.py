@@ -15,11 +15,44 @@ from typing import Any
 from urllib.parse import parse_qs, quote, urlparse
 
 import requests
+from requests.auth import AuthBase
 
 from pymtg.auth.base import BaseAuthHandler
 from pymtg.exceptions import AuthenticationError
 
 logger = logging.getLogger(__name__)
+
+
+class _OAuth1Signer(AuthBase):
+    """Requests auth handler that signs every request with OAuth 1.0a.
+
+    Wraps an :class:`OAuth1Handler` so that ``requests`` invokes the
+    signing logic for each :class:`~requests.PreparedRequest` via the
+    ``session.auth`` machinery (the only hook ``requests`` dispatches
+    natively besides ``response``).
+
+    Attributes:
+        _handler: The OAuth1Handler used to sign requests.
+    """
+
+    def __init__(self, handler: "OAuth1Handler") -> None:
+        """Initialize the signer.
+
+        Args:
+            handler: The OAuth1Handler whose signing logic to delegate to.
+        """
+        self._handler = handler
+
+    def __call__(self, request: requests.PreparedRequest) -> requests.PreparedRequest:
+        """Sign and return the given prepared request.
+
+        Args:
+            request: The prepared request to sign.
+
+        Returns:
+            The signed prepared request.
+        """
+        return self._handler._sign_request(request)
 
 
 class OAuth1Handler(BaseAuthHandler):
@@ -75,7 +108,6 @@ class OAuth1Handler(BaseAuthHandler):
         consumer_secret: str | None = None,
         access_token: str | None = None,
         access_token_secret: str | None = None,
-        **kwargs: Any,
     ) -> None:
         """Authenticate with OAuth1 credentials.
 
@@ -92,7 +124,6 @@ class OAuth1Handler(BaseAuthHandler):
                 (overrides initialization value).
             access_token_secret: The OAuth1 access token secret
                 (overrides initialization value).
-            **kwargs: Additional authentication parameters.
 
         Raises:
             AuthenticationError: If authentication fails
@@ -117,11 +148,26 @@ class OAuth1Handler(BaseAuthHandler):
                     auth_type="oauth1",
                 )
 
-            # Update stored credentials
-            self._consumer_key = consumer_key or self._consumer_key
-            self._consumer_secret = consumer_secret or self._consumer_secret
-            self._access_token = access_token or self._access_token
-            self._access_token_secret = access_token_secret or self._access_token_secret
+            # Update stored credentials. Use explicit None checks (rather
+            # than truthiness) so a caller can pass an empty string to
+            # intentionally clear a credential without it silently falling
+            # through to the previously stored value.
+            self._consumer_key = (
+                consumer_key if consumer_key is not None else self._consumer_key
+            )
+            self._consumer_secret = (
+                consumer_secret
+                if consumer_secret is not None
+                else self._consumer_secret
+            )
+            self._access_token = (
+                access_token if access_token is not None else self._access_token
+            )
+            self._access_token_secret = (
+                access_token_secret
+                if access_token_secret is not None
+                else self._access_token_secret
+            )
 
             # Validate required credentials
             if not self._consumer_key or not self._consumer_secret:
@@ -181,18 +227,18 @@ class OAuth1Handler(BaseAuthHandler):
     def apply_auth(self, session: requests.Session) -> None:
         """Apply OAuth1 authentication to a requests session.
 
-        This adds the Authorization header with the OAuth1 signature to
-            all requests.
+        Registers an ``requests.auth.AuthBase`` signer on the session so that
+        every outgoing :class:`~requests.PreparedRequest` is signed with a
+        valid OAuth 1.0a ``Authorization`` header. ``requests`` only
+        dispatches the ``response`` hook natively; there is no built-in
+        ``pre_request`` hook, so signing must be performed via the
+        ``session.auth`` machinery (or by overriding the session's
+        ``request`` method).
 
         Args:
             session: The requests.Session to apply authentication to.
         """
-        # Store the session for signing requests
-        # We'll use a hook to sign each request
-        # Ensure the pre_request hooks list exists
-        if "pre_request" not in session.hooks:
-            session.hooks["pre_request"] = []
-        session.hooks["pre_request"].append(self._sign_request)  # type: ignore[arg-type]
+        session.auth = _OAuth1Signer(self)
 
     def _sign_request(
         self,
@@ -239,7 +285,18 @@ class OAuth1Handler(BaseAuthHandler):
 
         Returns:
             Dictionary of OAuth1 parameters.
+
+        Raises:
+            AuthenticationError: If any required credential is missing.
         """
+        # Guard against None credentials before they can flow into the
+        # signature base string or Authorization header (where str(None)
+        # would produce an invalid, hard-to-diagnose signature).
+        if self._consumer_key is None or self._access_token is None:
+            raise AuthenticationError(
+                "Cannot generate OAuth1 params: missing credentials",
+                auth_type="oauth1",
+            )
         return {
             "oauth_consumer_key": self._consumer_key,
             "oauth_token": self._access_token,
@@ -263,7 +320,10 @@ class OAuth1Handler(BaseAuthHandler):
         """
         parsed_url = urlparse(url)
         query_string = parsed_url.query or ""
-        existing_params = parse_qs(query_string)  # type: ignore[arg-type]
+        # keep_blank_values=True preserves empty-valued query parameters
+        # (e.g. ?key=) so they are included in the signature base string,
+        # as required by the OAuth 1.0a spec for strict providers.
+        existing_params = parse_qs(query_string, keep_blank_values=True)
 
         # Flatten existing params (OAuth1 allows comma-separated values)
         flat_params: dict[str, str] = {}
@@ -272,7 +332,7 @@ class OAuth1Handler(BaseAuthHandler):
             if len(values) == 1:
                 flat_params[str_key] = str(values[0])
             else:
-                flat_params[str_key] = ",".join(str(v) for v in values)  # type: ignore[arg-type]
+                flat_params[str_key] = ",".join(str(v) for v in values)
 
         return {k: str(v) for k, v in {**flat_params, **oauth_params}.items()}
 
@@ -382,7 +442,10 @@ class OAuth1Handler(BaseAuthHandler):
                 hashlib.sha256,
             ).digest()
         elif self.signature_method == "PLAINTEXT":
-            signature = signing_key.encode()
+            # Per OAuth 1.0a, the PLAINTEXT signature IS the signing key
+            # (percent-encoded consumer_secret&token_secret) verbatim; it
+            # must NOT be base64-encoded.
+            return signing_key
         else:
             raise ValueError(f"Unsupported signature method: {self.signature_method}")
 
@@ -399,6 +462,10 @@ class OAuth1Handler(BaseAuthHandler):
 
     def __getstate__(self) -> dict[str, Any]:
         """Custom pickle serialization to exclude sensitive data.
+
+        The deserialized instance will have no stored credentials, so
+        ``is_authenticated()`` returns ``False`` and the handler must be
+        re-authenticated via :meth:`authenticate` before use.
 
         Returns:
             Dictionary of attributes to pickle, excluding secrets.

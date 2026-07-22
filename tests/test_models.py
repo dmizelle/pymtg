@@ -68,6 +68,8 @@ class TestColorEnum:
         assert Color.AZORIUS.value == "WU"
         assert Color.DIMIR.value == "UB"
         assert Color.RAKDOS.value == "BR"
+        # Note: named GRUEL in the model; the conventional Ravnica guild
+        # spelling is 'Gruul'. Confirm whether this is intentional.
         assert Color.GRUEL.value == "RG"
         assert Color.SELESNYA.value == "GW"
         assert Color.ORZHOV.value == "WB"
@@ -86,7 +88,7 @@ class TestColorEnum:
         assert Color.ABZAN.value == "WBG"
         assert Color.JESKAI.value == "WUR"
         assert Color.SULTAI.value == "UBG"
-        assert Color.MARDU.value == "WRG"
+        assert Color.MARDU.value == "WBR"
         assert Color.TEMUR.value == "URG"
 
     def test_color_four_color_combinations(self) -> None:
@@ -102,15 +104,20 @@ class TestColorEnum:
         assert Color.WUBRG.value == "WUBRG"
 
     def test_color_from_full_name(self) -> None:
-        """Test from_full_name classmethod."""
+        """Test from_full_name classmethod.
+
+        Verifies that known color names map correctly and that unknown
+        names raise ValueError rather than silently returning COLORLESS.
+        """
         assert Color.from_full_name("White") == Color.WHITE
         assert Color.from_full_name("Blue") == Color.BLUE
         assert Color.from_full_name("Black") == Color.BLACK
         assert Color.from_full_name("Red") == Color.RED
         assert Color.from_full_name("Green") == Color.GREEN
         assert Color.from_full_name("Colorless") == Color.COLORLESS
-        # Unknown color should return COLORLESS
-        assert Color.from_full_name("Unknown") == Color.COLORLESS
+        # Unknown color should raise ValueError
+        with pytest.raises(ValueError):
+            Color.from_full_name("Unknown")
 
     def test_color_from_colors(self) -> None:
         """Test from_colors classmethod for combining colors."""
@@ -724,14 +731,19 @@ class TestCard:
             power="2",
             toughness="2",
         )
-        with pytest.warns(UserWarning) as record:
-            Card(
-                id="test-id",
-                name="Top-Level Name",
-                power="3",
-                toughness="3",
-                card_faces=[face],
-            )
+        original = Card._warn_face_inconsistency
+        Card._warn_face_inconsistency = True
+        try:
+            with pytest.warns(UserWarning) as record:
+                Card(
+                    id="test-id",
+                    name="Top-Level Name",
+                    power="3",
+                    toughness="3",
+                    card_faces=[face],
+                )
+        finally:
+            Card._warn_face_inconsistency = original
         # Three warnings expected: name, power, toughness.
         assert len(record) >= 3
         messages = [str(w.message) for w in record]
@@ -752,15 +764,20 @@ class TestCard:
         """
         face1 = CardFace(name="Front", power="2", toughness="2")
         face2 = CardFace(name="Back", power="5", toughness="5")
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", UserWarning)
-            Card(
-                id="test-id",
-                name="Front",
-                power="2",
-                toughness="2",
-                card_faces=[face1, face2],
-            )
+        original = Card._warn_face_inconsistency
+        Card._warn_face_inconsistency = True
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", UserWarning)
+                Card(
+                    id="test-id",
+                    name="Front",
+                    power="2",
+                    toughness="2",
+                    card_faces=[face1, face2],
+                )
+        finally:
+            Card._warn_face_inconsistency = original
 
     def test_card_validator_silent_when_consistent(self) -> None:
         """Test that the model_validator is silent when fields match.
@@ -964,19 +981,23 @@ class TestDeckCard:
         assert deck_card.board is None
 
     def test_deck_card_validation(self) -> None:
-        """Test DeckCard validation."""
+        """Test DeckCard validation.
+
+        Verifies that the count field rejects negative values via its
+        ``ge=0`` constraint while still accepting zero and large values.
+        """
         card = Card(id="card-id", name="Test Card")
 
-        # Count field has no constraints, so various values are allowed
-        # Test that DeckCard accepts different count values
+        # Count has a ge=0 constraint, so zero and large values are
+        # accepted but negative values are rejected.
         deck_card_zero = DeckCard(card=card, count=0)
         assert deck_card_zero.count == 0
 
-        deck_card_negative = DeckCard(card=card, count=-1)
-        assert deck_card_negative.count == -1
-
         deck_card_large = DeckCard(card=card, count=100)
         assert deck_card_large.count == 100
+
+        with pytest.raises(ValidationError):
+            DeckCard(card=card, count=-1)  # type: ignore  # Intentional invalid count
 
 
 class TestDeck:
@@ -1132,7 +1153,9 @@ class TestDeck:
         Verifies that get_sideboard_cards, get_maybeboard_cards, and
         get_commander_cards all filter from the cards list by board
         attribute, ensuring no dual-source inconsistency. The
-        get_main_deck_cards method returns all non-sideboard cards.
+        get_main_deck_cards method positively selects main-deck cards
+        (board is None or Board.MAIN), excluding sideboard, commander,
+        and maybeboard cards.
         """
         main_card = DeckCard(
             card=Card(id="c1", name="Main"), count=4, board=Board.MAIN.value
@@ -1159,9 +1182,11 @@ class TestDeck:
             cards=[main_card, side_card, maybe_card, cmdr_card],
         )
 
-        # get_main_deck_cards returns all non-sideboard cards.
+        # get_main_deck_cards returns only main-deck cards.
         assert main_card in deck.get_main_deck_cards()
         assert side_card not in deck.get_main_deck_cards()
+        assert maybe_card not in deck.get_main_deck_cards()
+        assert cmdr_card not in deck.get_main_deck_cards()
         # The other three getters filter by exact board match.
         assert deck.get_sideboard_cards() == [side_card]
         assert deck.get_maybeboard_cards() == [maybe_card]
@@ -1172,7 +1197,7 @@ class TestDeck:
 
         A DeckCard with board=None is excluded from sideboard, maybeboard,
         and commander lists (None != 'sideboard' etc.), but included in
-        get_main_deck_cards (None != 'sideboard' is True).
+        get_main_deck_cards (board is None is treated as main-deck).
         """
         no_board_card = DeckCard(
             card=Card(id="c1", name="NoBoard"), count=1, board=None
@@ -1223,7 +1248,7 @@ class TestDeck:
         )
 
         total = deck.get_total_cards()
-        assert total == 9  # 4 + 2 + 3
+        assert total == 6  # 4 + 2 main deck only; sideboard excluded
 
     def test_deck_get_card_count(self) -> None:
         """Test Deck get_card_count method."""

@@ -96,8 +96,9 @@ def calculate_backoff(
 ) -> float:
     """Calculate exponential backoff with optional jitter.
 
-    The backoff is calculated as: backoff_factor * (2 ** attempt)
-    With jitter, a random factor between 0.5 and 1.5 is applied.
+    The backoff is calculated as: ``backoff_factor * (2 ** attempt)``.
+    With jitter, a random factor in ``[0.5, 1.5)`` is applied (the upper
+    bound is exclusive).
 
     Args:
         attempt: The current retry attempt number (0-based).
@@ -111,7 +112,7 @@ def calculate_backoff(
     base_backoff = backoff_factor * (2**attempt)
 
     if jitter:
-        # Add random jitter between 0.5x and 1.5x
+        # Add random jitter in [0.5, 1.5)
         jitter_factor = 0.5 + random.random()
         base_backoff *= jitter_factor
 
@@ -132,6 +133,11 @@ def retry_on_rate_limit(
     This decorator wraps a function and automatically retries it when
     specified exceptions are raised. It uses exponential backoff with
     optional jitter between retry attempts.
+
+    Note:
+        These decorators are synchronous-only. Applying them to an
+        ``async def`` function will not await the coroutine and will
+        block the event loop via ``time.sleep``.
 
     Args:
         max_retries: Maximum number of retry attempts.
@@ -163,7 +169,8 @@ def retry_on_rate_limit(
         def another_function():
             pass
     """
-    # Build configuration from parameters or defaults
+    # Build configuration from parameters or defaults, then delegate to
+    # retry_with_config to avoid duplicating the retry wrapper logic.
     config = RetryConfig(
         max_retries=(
             max_retries if max_retries is not None else DEFAULT_RETRY_CONFIG.max_retries
@@ -193,94 +200,7 @@ def retry_on_rate_limit(
             else DEFAULT_RETRY_CONFIG.retry_exceptions
         ),
     )
-
-    def decorator(func: Callable[..., T]) -> Callable[..., T]:
-        """Inner decorator function."""
-
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs) -> T:
-            """Wrapper function with retry logic."""
-            last_exception: Exception | None = None
-
-            for attempt in range(config.max_retries + 1):
-                try:
-                    return func(*args, **kwargs)
-                except TimeoutError as e:
-                    # TimeoutError is handled before retry_exceptions to ensure
-                    # retry_on_timeout is respected even if a user includes
-                    # TimeoutError in retry_exceptions.
-                    if not config.retry_on_timeout:
-                        raise
-
-                    last_exception = e
-
-                    if attempt >= config.max_retries:
-                        logger.warning(
-                            f"Max retries ({config.max_retries}) exceeded "
-                            f"for {func.__name__}"
-                        )
-                        raise
-
-                    backoff = calculate_backoff(
-                        attempt=attempt,
-                        backoff_factor=config.backoff_factor,
-                        max_backoff=config.max_backoff,
-                        jitter=config.jitter,
-                    )
-
-                    logger.debug(
-                        f"{type(e).__name__} in {func.__name__}, "
-                        f"retrying in {backoff:.2f}s "
-                        f"(attempt {attempt + 1}/{config.max_retries + 1})"
-                    )
-                    time.sleep(backoff)
-
-                except config.retry_exceptions as e:
-                    last_exception = e
-
-                    # Check if we should retry
-                    if attempt >= config.max_retries:
-                        logger.warning(
-                            f"Max retries ({config.max_retries}) exceeded "
-                            f"for {func.__name__}"
-                        )
-                        raise
-
-                    # Calculate backoff
-                    backoff = calculate_backoff(
-                        attempt=attempt,
-                        backoff_factor=config.backoff_factor,
-                        max_backoff=config.max_backoff,
-                        jitter=config.jitter,
-                    )
-
-                    # Check for Retry-After header
-                    if config.respect_retry_after and isinstance(e, RateLimitError):
-                        retry_after = e.retry_after
-                        if retry_after is not None:
-                            # Use Retry-After if it's larger than
-                            # calculated backoff
-                            backoff = max(backoff, float(retry_after))
-
-                    logger.debug(
-                        f"{type(e).__name__} in {func.__name__}, "
-                        f"retrying in {backoff:.2f}s "
-                        f"(attempt {attempt + 1}/{config.max_retries + 1})"
-                    )
-                    time.sleep(backoff)
-
-                except Exception:
-                    # Don't retry on other exceptions
-                    raise
-
-            # This should never be reached, but just in case
-            if last_exception:
-                raise last_exception
-            raise RuntimeError("Unexpected state in retry logic")
-
-        return wrapper
-
-    return decorator
+    return retry_with_config(config)
 
 
 def retry_with_config(
@@ -290,6 +210,11 @@ def retry_with_config(
 
     This is a convenience decorator that takes a RetryConfig instance
     instead of individual parameters.
+
+    Note:
+        These decorators are synchronous-only. Applying them to an
+        ``async def`` function will not await the coroutine and will
+        block the event loop via ``time.sleep``.
 
     Args:
         config: The RetryConfig to use. Uses defaults if None.
@@ -312,8 +237,6 @@ def retry_with_config(
         @functools.wraps(func)
         def wrapper(*args, **kwargs) -> T:
             """Wrapper function with retry logic."""
-            last_exception: Exception | None = None
-
             for attempt in range(actual_config.max_retries + 1):
                 try:
                     return func(*args, **kwargs)
@@ -324,13 +247,11 @@ def retry_with_config(
                     if not actual_config.retry_on_timeout:
                         raise
 
-                    last_exception = e
-
                     if attempt >= actual_config.max_retries:
-                        max_retries = actual_config.max_retries
                         logger.warning(
-                            f"Max retries ({max_retries}) exceeded for "
-                            f"{func.__name__}"
+                            "Max retries (%d) exceeded for %s",
+                            actual_config.max_retries,
+                            func.__name__,
                         )
                         raise
 
@@ -341,23 +262,22 @@ def retry_with_config(
                         jitter=actual_config.jitter,
                     )
 
-                    max_retries = actual_config.max_retries
-                    func_name = func.__name__
                     logger.debug(
-                        f"{type(e).__name__} in {func_name}, "
-                        f"retrying in {backoff:.2f}s "
-                        f"(attempt {attempt + 1}/{max_retries + 1})"
+                        "%s in %s, retrying in %.2fs (attempt %d/%d)",
+                        type(e).__name__,
+                        func.__name__,
+                        backoff,
+                        attempt + 1,
+                        actual_config.max_retries + 1,
                     )
                     time.sleep(backoff)
 
                 except actual_config.retry_exceptions as e:
-                    last_exception = e
-
                     if attempt >= actual_config.max_retries:
-                        max_retries = actual_config.max_retries
                         logger.warning(
-                            f"Max retries ({max_retries}) exceeded for "
-                            f"{func.__name__}"
+                            "Max retries (%d) exceeded for %s",
+                            actual_config.max_retries,
+                            func.__name__,
                         )
                         raise
 
@@ -375,12 +295,13 @@ def retry_with_config(
                         if retry_after is not None:
                             backoff = max(backoff, float(retry_after))
 
-                    max_retries = actual_config.max_retries
-                    func_name = func.__name__
                     logger.debug(
-                        f"{type(e).__name__} in {func_name}, "
-                        f"retrying in {backoff:.2f}s "
-                        f"(attempt {attempt + 1}/{max_retries + 1})"
+                        "%s in %s, retrying in %.2fs (attempt %d/%d)",
+                        type(e).__name__,
+                        func.__name__,
+                        backoff,
+                        attempt + 1,
+                        actual_config.max_retries + 1,
                     )
                     time.sleep(backoff)
 
@@ -388,8 +309,7 @@ def retry_with_config(
                     # Don't retry on other exceptions
                     raise
 
-            if last_exception:
-                raise last_exception
+            # Unreachable: every loop iteration either returns or raises.
             raise RuntimeError("Unexpected state in retry logic")
 
         return wrapper
@@ -417,7 +337,10 @@ class RetryContext:
                     break
                 except retry.retry_exceptions as e:
                     retry.record_failure(e)
-                    retry.wait()
+                    if retry.should_continue():
+                        retry.wait()
+                    else:
+                        raise
 
     Attributes:
         config: The RetryConfig being used.
@@ -454,15 +377,22 @@ class RetryContext:
         self.last_exception = exception
         self.attempt += 1
         logger.debug(
-            f"Recorded failure (attempt {self.attempt}/"
-            f"{self.max_attempts}): {exception}"
+            "Recorded failure (attempt %d/%d): %s",
+            self.attempt,
+            self.max_attempts,
+            exception,
         )
 
     def wait(self) -> None:
         """Wait before the next retry attempt.
 
-        This calculates and sleeps for the appropriate backoff time.
+        Calculates and sleeps for the appropriate backoff time. Must be
+        called after :meth:`record_failure` has incremented ``attempt``;
+        if called before any failure is recorded, this is a no-op.
         """
+        if self.attempt <= 0:
+            return
+
         backoff = calculate_backoff(
             attempt=self.attempt - 1,
             backoff_factor=self.config.backoff_factor,
@@ -480,7 +410,7 @@ class RetryContext:
             if retry_after is not None:
                 backoff = max(backoff, float(retry_after))
 
-        logger.debug(f"Waiting {backoff:.2f}s before next retry")
+        logger.debug("Waiting %.2fs before next retry", backoff)
         time.sleep(backoff)
 
     @property
@@ -497,8 +427,19 @@ class RetryContext:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        """Exit the context manager."""
-        pass
+        """Exit the context manager.
+
+        Exceptions propagating out of the ``with`` block are not
+        suppressed (the method returns ``None``). If all retry attempts
+        were exhausted without re-raising, the caller should inspect
+        ``last_exception``.
+
+        Args:
+            exc_type: The exception type, or None if no exception occurred.
+            exc_val: The exception value, or None if no exception occurred.
+            exc_tb: The exception traceback, or None if no exception occurred.
+        """
+        return None
 
     def __repr__(self) -> str:
         """Return a string representation of the context.

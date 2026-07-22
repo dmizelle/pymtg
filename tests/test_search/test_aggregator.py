@@ -40,7 +40,6 @@ class MockProvider(BaseProvider):
         limit: int = 20,
         page: int = 1,
         order: str | None = None,
-        **kwargs,
     ) -> list[Card]:
         """Mock search implementation."""
         self.search_calls.append(
@@ -52,7 +51,6 @@ class MockProvider(BaseProvider):
                 "limit": limit,
                 "page": page,
                 "order": order,
-                "kwargs": kwargs,
             }
         )
 
@@ -75,13 +73,20 @@ class MockProvider(BaseProvider):
             ),
         ]
 
-    def search_syntax(self, query: str, limit: int = 20, **kwargs) -> list[Card]:
+    def search_syntax(
+        self,
+        query: str,
+        limit: int = 20,
+        page: int = 1,
+        order: str | None = None,
+    ) -> list[Card]:
         """Mock search_syntax implementation."""
         self.search_syntax_calls.append(
             {
                 "query": query,
                 "limit": limit,
-                "kwargs": kwargs,
+                "page": page,
+                "order": order,
             }
         )
 
@@ -97,7 +102,7 @@ class MockProvider(BaseProvider):
             ),
         ]
 
-    def get_card(self, card_id: str, **kwargs) -> Card:
+    def get_card(self, card_id: str) -> Card:
         """Mock get_card implementation."""
         return Card(
             id=card_id,
@@ -248,13 +253,30 @@ class TestAggregatorSearch(unittest.TestCase):
         self.assertEqual(results, {})
 
     def test_search_with_color_parameter(self):
-        """Test searching with color parameter."""
-        self.aggregator.search(name="test", colors=[Color.BLUE], limit=5)
+        """Test searching with color parameter and parameter passthrough.
 
-        # Verify the color parameter was passed through
+        Verifies that colors, identity, type_line, page, and order are
+        forwarded to each provider by search().
+        """
+        self.aggregator.search(
+            name="test",
+            colors=[Color.BLUE],
+            identity=[Color.BLUE],
+            type_line="Creature",
+            limit=5,
+            page=2,
+            order="name",
+        )
+
+        # Verify the parameters were passed through
         for provider in [self.provider1, self.provider2]:
             self.assertEqual(len(provider.search_calls), 1)
-            self.assertEqual(provider.search_calls[0]["colors"], [Color.BLUE])
+            call = provider.search_calls[0]
+            self.assertEqual(call["colors"], [Color.BLUE])
+            self.assertEqual(call["identity"], [Color.BLUE])
+            self.assertEqual(call["type_line"], "Creature")
+            self.assertEqual(call["page"], 2)
+            self.assertEqual(call["order"], "name")
 
     def test_search_syntax_all_providers(self):
         """Test search_syntax across all providers."""
@@ -287,8 +309,11 @@ class TestAggregatorSearch(unittest.TestCase):
 
         # The failing provider should be in results with an error
         self.assertIn("failing", results)
-        self.assertIsNotNone(results["failing"]["error"])
-        self.assertEqual(results["failing"]["error"]["type"], "Exception")
+        err = results["failing"]["error"]
+        self.assertIsNotNone(err)
+        self.assertEqual(err["type"], "Exception")
+        self.assertIn("intentionally failed", err["message"])
+        self.assertIsInstance(err["exception"], Exception)
 
         # Other providers should still succeed
         self.assertIn("provider1", results)
@@ -407,7 +432,11 @@ class TestAggregatorThreadSafety(unittest.TestCase):
             for i in range(50):
                 try:
                     aggregator.add_provider(MockProvider(f"provider-{i}"))
-                except (ValueError, Exception) as e:
+                except ValueError:
+                    # Duplicate provider name is an unexpected race here;
+                    # names are unique, so re-raise to surface real bugs.
+                    raise
+                except Exception as e:
                     errors.append(e)
 
         def get_providers() -> None:
@@ -440,15 +469,16 @@ class TestAggregatorThreadSafety(unittest.TestCase):
         aggregator = Aggregator()
         errors: list[Exception] = []
 
-        def add_and_remove() -> None:
+        def add_and_remove(thread_id: int) -> None:
             for i in range(20):
+                name = f"p-{thread_id}-{i}"
                 try:
-                    aggregator.add_provider(MockProvider(f"p-{i}"))
-                    aggregator.remove_provider(f"p-{i}")
+                    aggregator.add_provider(MockProvider(name))
+                    aggregator.remove_provider(name)
                 except Exception as e:
                     errors.append(e)
 
-        threads = [threading.Thread(target=add_and_remove) for _ in range(5)]
+        threads = [threading.Thread(target=add_and_remove, args=(t,)) for t in range(5)]
         for t in threads:
             t.start()
         for t in threads:

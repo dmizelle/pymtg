@@ -916,7 +916,7 @@ class TestScryfallErrorHandling(unittest.TestCase):
         # Create a mock response with 429 status
         mock_response = MagicMock()
         mock_response.status_code = 429
-        mock_response.headers.get.return_value = "10"
+        mock_response.headers = {"Retry-After": "10"}
 
         with self.assertRaises(RateLimitError) as context:
             scryfall._handle_response(mock_response, "search")

@@ -45,12 +45,11 @@ class APIKeyAuthHandler(BaseAuthHandler):
         self._api_key: str | None = None
         self._authenticated = False
 
-    def authenticate(self, *, api_key: str, **kwargs: Any) -> None:
+    def authenticate(self, *, api_key: str) -> None:
         """Authenticate with the provider using an API key.
 
         Args:
             api_key: The API key for authentication.
-            **kwargs: Additional authentication parameters.
         """
         with self._lock:
             self._api_key = api_key
@@ -86,12 +85,15 @@ class APIKeyAuthHandler(BaseAuthHandler):
         if session is None:
             raise ValueError("Cannot apply API key authentication: session is None")
         with self._lock:
-            if self._api_key:
-                if self.header_prefix:
-                    header_value = f"{self.header_prefix} {self._api_key}"
-                else:
-                    header_value = self._api_key
-        session.headers.update({self.header_name: header_value})
+            if not self._api_key:
+                # No API key configured; leave the session unmodified rather
+                # than applying a stale or empty header value.
+                return
+            if self.header_prefix:
+                header_value = f"{self.header_prefix} {self._api_key}"
+            else:
+                header_value = self._api_key
+            session.headers.update({self.header_name: header_value})
 
     def clear_auth(self) -> None:
         """Clear authentication credentials."""

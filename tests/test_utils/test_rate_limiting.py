@@ -6,6 +6,7 @@ RateLimitGuard context manager behavior for recording requests.
 """
 
 import unittest
+from unittest.mock import patch
 
 from pymtg.utils.rate_limiting import (
     RateLimitConfig,
@@ -341,16 +342,22 @@ class TestRateLimitGuard(unittest.TestCase):
         """Tests that __enter__ returns False when rate limit is exceeded.
 
         When the rate limit is already at capacity, __enter__ should wait
-        and return False to indicate the caller had to wait.
+        and return False to indicate the caller had to wait. The real
+        ``wait()`` blocks on ``time.sleep`` for ~window_seconds, which is
+        slow and flaky; it is mocked here to avoid wall-clock waiting.
         """
         # Fill the burst capacity
         self.limiter._record("test_provider")
         self.limiter._record("test_provider")
         guard = self.limiter.guard("test_provider")
-        result = guard.__enter__()
-        self.assertFalse(result)
-        self.assertTrue(guard.waited)
-        guard.__exit__(None, None, None)
+        # Mock wait() to avoid real wall-clock waiting and the flakiness
+        # of the strict ``< window`` cleanup boundary.
+        with patch.object(self.limiter, "wait") as mock_wait:
+            result = guard.__enter__()
+            self.assertFalse(result)
+            self.assertTrue(guard.waited)
+            self.assertTrue(mock_wait.called)
+            guard.__exit__(None, None, None)
 
     def test_guard_waited_flag_default_false(self) -> None:
         """Tests that the waited flag defaults to False."""

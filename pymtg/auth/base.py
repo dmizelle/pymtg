@@ -5,7 +5,6 @@ authentication handlers inherit from.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any
 
 import requests
 
@@ -26,11 +25,8 @@ class BaseAuthHandler(ABC):
     """
 
     @abstractmethod
-    def authenticate(self, **kwargs: Any) -> None:
+    def authenticate(self) -> None:
         """Authenticate with the provider.
-
-        Args:
-            **kwargs: Authentication parameters.
 
         Raises:
             AuthenticationError: If authentication fails.

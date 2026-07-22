@@ -13,7 +13,7 @@ across providers; it surfaces which currencies are actually populated
 across the aggregated providers.
 """
 
-from typing import ClassVar
+from typing import ClassVar, get_args
 
 from pymtg.models.base import PyMTGBaseModel
 
@@ -76,11 +76,14 @@ class _ProviderPricingBase(PyMTGBaseModel):
                 )
             # Validate that the field is a price field (float | None).
             # Non-price fields (e.g., metadata) would cause has_prices()
-            # to return True for non-price data.
+            # to return True for non-price data. Use typing.get_args
+            # rather than direct type equality so wrapped/reified
+            # annotations (e.g., typing.Union[float, None]) are matched
+            # robustly across Pydantic versions.
             annotation = cls.model_fields[field].annotation
-            # Parens make precedence explicit: | binds tighter than !=,
-            # so this is `annotation != (float | None)`.
-            if annotation != (float | None):
+            expected_args = {float, type(None)}
+            actual_args = set(get_args(annotation))
+            if actual_args != expected_args:
                 raise TypeError(
                     f"{cls.__name__}._PRICE_FIELDS entry {field!r} "
                     f"has type {annotation!r}; expected float | None "
@@ -138,6 +141,26 @@ class ScryfallPricing(_ProviderPricingBase):
         "gbp",
         "jpy",
         "cny",
+    )
+
+    # Price fields checked by has_prices(). Validated against model
+    # fields at class creation time by _ProviderPricingBase, so typos
+    # or drift raise TypeError immediately.
+    _PRICE_FIELDS: ClassVar[tuple[str, ...]] = (
+        "usd",
+        "usd_foil",
+        "usd_etched",
+        "eur",
+        "eur_foil",
+        "tix",
+        "cad",
+        "cad_foil",
+        "gbp",
+        "gbp_foil",
+        "jpy",
+        "jpy_foil",
+        "cny",
+        "cny_foil",
     )
 
     usd: float | None = None

@@ -4,9 +4,6 @@ This module provides the NoAuthHandler for providers like Scryfall that
 don't require any authentication.
 """
 
-import threading
-from typing import Any
-
 import requests
 
 from pymtg.auth.base import BaseAuthHandler
@@ -24,20 +21,14 @@ class NoAuthHandler(BaseAuthHandler):
 
     def __init__(self) -> None:
         """Initialize the NoAuthHandler."""
-        self._lock = threading.Lock()
-        with self._lock:
-            self._authenticated = True
+        self._authenticated = True
 
-    def authenticate(self, **kwargs: Any) -> None:
+    def authenticate(self) -> None:
         """Authenticate with the provider.
 
         For no-auth providers, this is a no-op.
-
-        Args:
-            **kwargs: Unused.
         """
-        with self._lock:
-            self._authenticated = True
+        self._authenticated = True
 
     def is_authenticated(self) -> bool:
         """Check if authentication is valid.
@@ -45,16 +36,14 @@ class NoAuthHandler(BaseAuthHandler):
         Returns:
             Always True for no-auth providers.
         """
-        with self._lock:
-            return self._authenticated
+        return self._authenticated
 
     def refresh(self) -> None:
         """Refresh authentication.
 
         For no-auth providers, this is a no-op.
         """
-        with self._lock:
-            self._authenticated = True
+        self._authenticated = True
 
     def apply_auth(self, session: requests.Session) -> None:
         """Apply authentication to a requests session.

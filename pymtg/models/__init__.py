@@ -17,19 +17,25 @@ from pymtg.models.pricing import (
 from pymtg.models.set import Set
 
 __all__ = [
+    # pymtg.models.base
     "PyMTGBaseModel",
+    # pymtg.models.card
     "Card",
     "CardFace",
     "DeckCard",
+    # pymtg.models.deck
     "Deck",
+    # pymtg.models.enums
     "Board",
     "Color",
     "Format",
     "Rarity",
     "SetType",
+    # pymtg.models.pricing
     "Pricing",
     "ScryfallPricing",
     "TCGPlayerPricing",
     "CardmarketPricing",
+    # pymtg.models.set
     "Set",
 ]

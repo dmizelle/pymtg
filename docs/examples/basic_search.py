@@ -15,6 +15,9 @@ Usage:
 import pymtg
 from pymtg.models import Color
 
+# Black Lotus Scryfall card ID, reused across multiple examples.
+BLACK_LOTUS_ID = "38625902-0567-4f24-85b0-a00843553997"
+
 
 def main():
     """Demonstrate basic search functionality."""
@@ -93,8 +96,7 @@ def main():
     print("7. Getting a specific card by ID...")
     try:
         # Black Lotus Scryfall ID
-        black_lotus_id = "38625902-0567-4f24-85b0-a00843553997"
-        card = scryfall.get_card(black_lotus_id)
+        card = scryfall.get_card(BLACK_LOTUS_ID)
         print(f"   Card: {card.name}")
         print(f"   Mana Cost: {card.mana_cost}")
         print(f"   Type: {card.type_line}")
@@ -121,7 +123,7 @@ def main():
     # Example 8: Working with card properties
     print("9. Working with card properties...")
     try:
-        card = scryfall.get_card("38625902-0567-4f24-85b0-a00843553997")
+        card = scryfall.get_card(BLACK_LOTUS_ID)
 
         # Color information
         if card.color_identity:

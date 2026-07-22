@@ -93,13 +93,12 @@ class Moxfield(BaseProvider):
         "set_type",
     }
 
-    def __init__(self, api_key: str | None = None, **kwargs: Any) -> None:
+    def __init__(self, api_key: str | None = None) -> None:
         """Initialize the Moxfield provider.
 
         Args:
             api_key: Parse.bot API key for authentication. Required for all
                 endpoints.
-            **kwargs: Additional initialization parameters.
 
         Raises:
             AuthenticationError: If api_key is not provided.
@@ -107,7 +106,7 @@ class Moxfield(BaseProvider):
         # Call parent constructor first to ensure base attributes are set
         # before storing provider-specific state. This avoids leaving the
         # object in an inconsistent state if super().__init__() raises.
-        super().__init__(**kwargs)
+        super().__init__()
 
         # Store API key after parent initialization succeeds
         self._api_key = api_key
@@ -128,12 +127,8 @@ class Moxfield(BaseProvider):
                 "Most endpoints will not work."
             )
 
-    def _initialize(self, **kwargs: Any) -> None:
-        """Moxfield-specific initialization.
-
-        Args:
-            **kwargs: Additional initialization parameters.
-        """
+    def _initialize(self) -> None:
+        """Moxfield-specific initialization."""
         # Ensure the name is set correctly
         self.name = "moxfield"
         self.config = PROVIDER_CONFIGS.get(
@@ -206,7 +201,21 @@ class Moxfield(BaseProvider):
         limit: int = 20,
         page: int = 1,
         order: str | None = None,
-        **kwargs: Any,
+        format: str | None = None,
+        rarity: str | None = None,
+        set: str | None = None,
+        cmc: int | dict[str, int] | None = None,
+        color: str | None = None,
+        card_type: str | None = None,
+        subtype: str | None = None,
+        power: str | dict[str, int] | None = None,
+        toughness: str | dict[str, int] | None = None,
+        loyalty: str | int | None = None,
+        textsearch: str | None = None,
+        keyword: str | None = None,
+        artist: str | None = None,
+        release: str | None = None,
+        set_type: str | None = None,
     ) -> list[Card]:
         """Search for cards with generic parameters.
 
@@ -222,17 +231,27 @@ class Moxfield(BaseProvider):
             limit: Maximum number of results to return (default 20).
             page: Page number for pagination (1-based, default 1).
             order: Sort order for results.
-            **kwargs: Additional Parse.bot/Moxfield-specific parameters:
-                - format: Format filter (standard, modern, commander, etc.).
-                - rarity: Rarity filter.
-                - set: Set code filter.
-                - cmc: Converted mana cost filter.
+            format: Format filter (standard, modern, commander, etc.).
+            rarity: Rarity filter.
+            set: Set code filter.
+            cmc: Converted mana cost filter.
+            color: Color filter.
+            card_type: Card type filter.
+            subtype: Card subtype filter.
+            power: Power filter.
+            toughness: Toughness filter.
+            loyalty: Loyalty filter.
+            textsearch: Oracle text search filter.
+            keyword: Keyword filter.
+            artist: Artist filter.
+            release: Release date filter.
+            set_type: Set type filter.
 
         Returns:
             A list of Card objects matching the search criteria.
 
         Raises:
-            NotFoundError: If the deck is not found.
+            InvalidQueryError: If an invalid search parameter is provided.
             NetworkError: If there is a network error.
             APIError: If the API returns an error.
             AuthenticationError: If API key is not provided.
@@ -245,17 +264,6 @@ class Moxfield(BaseProvider):
             )
 
         try:
-            # Validate kwargs against allowed parameters
-            for key in kwargs:
-                if (
-                    not isinstance(key, str)
-                    or key.lower() not in self.VALID_SEARCH_PARAMS
-                ):
-                    raise InvalidQueryError(
-                        f"Invalid search parameter: {key}. "
-                        f"Valid parameters: {', '.join(sorted(self.VALID_SEARCH_PARAMS))}"
-                    )
-
             # Build query parameters
             params: dict[str, Any] = {}
 
@@ -265,7 +273,21 @@ class Moxfield(BaseProvider):
                 colors=colors,
                 identity=identity,
                 type_line=type_line,
-                **kwargs,
+                format=format,
+                rarity=rarity,
+                set=set,
+                cmc=cmc,
+                color=color,
+                card_type=card_type,
+                subtype=subtype,
+                power=power,
+                toughness=toughness,
+                loyalty=loyalty,
+                textsearch=textsearch,
+                keyword=keyword,
+                artist=artist,
+                release=release,
+                set_type=set_type,
             )
 
             if query:
@@ -278,10 +300,11 @@ class Moxfield(BaseProvider):
             if page > 1:
                 params["offset"] = (page - 1) * limit
 
-            # Add additional kwargs as query parameters
-            for key, value in kwargs.items():
-                if key not in ["name", "colors", "identity", "type_line"]:
-                    params[key] = value
+            # Note: format, rarity, set, cmc, color, type, etc. are
+            # already embedded in the `query` string via
+            # _build_search_query(), so they are NOT added again as
+            # separate query parameters (doing so would send each
+            # filter to the API twice).
 
             # Use Parse.bot's /cards/search endpoint
             response = self.http_client.get("/cards/search", params=params)
@@ -305,7 +328,26 @@ class Moxfield(BaseProvider):
                 "Network error during search", original_exception=e
             ) from e
 
-    def search_syntax(self, query: str, limit: int = 20, **kwargs: Any) -> list[Card]:
+    def search_syntax(
+        self,
+        query: str,
+        limit: int = 20,
+        format: str | None = None,
+        rarity: str | None = None,
+        set: str | None = None,
+        cmc: int | dict[str, int] | None = None,
+        color: str | None = None,
+        card_type: str | None = None,
+        subtype: str | None = None,
+        power: str | dict[str, int] | None = None,
+        toughness: str | dict[str, int] | None = None,
+        loyalty: str | int | None = None,
+        textsearch: str | None = None,
+        keyword: str | None = None,
+        artist: str | None = None,
+        release: str | None = None,
+        set_type: str | None = None,
+    ) -> list[Card]:
         """Search for cards using Parse.bot-specific query syntax.
 
         This method provides an escape hatch for power users who need to use
@@ -315,7 +357,21 @@ class Moxfield(BaseProvider):
         Args:
             query: The Parse.bot/Moxfield query string.
             limit: Maximum number of results to return (default 20).
-            **kwargs: Additional Parse.bot-specific parameters.
+            format: Format filter.
+            rarity: Rarity filter.
+            set: Set code filter.
+            cmc: Converted mana cost filter.
+            color: Color filter.
+            card_type: Card type filter.
+            subtype: Card subtype filter.
+            power: Power filter.
+            toughness: Toughness filter.
+            loyalty: Loyalty filter.
+            textsearch: Oracle text search filter.
+            keyword: Keyword filter.
+            artist: Artist filter.
+            release: Release date filter.
+            set_type: Set type filter.
 
         Returns:
             A list of Card objects matching the query.
@@ -346,8 +402,27 @@ class Moxfield(BaseProvider):
             if limit:
                 params["limit"] = limit
 
-            for key, value in kwargs.items():
-                params[key] = value
+            extra_params: dict[str, Any] = {
+                "format": format,
+                "rarity": rarity,
+                "set": set,
+                "cmc": cmc,
+                "color": color,
+                "type": card_type,
+                "subtype": subtype,
+                "power": power,
+                "toughness": toughness,
+                "loyalty": loyalty,
+                "textsearch": textsearch,
+                "keyword": keyword,
+                "artist": artist,
+                "release": release,
+                "set_type": set_type,
+            }
+
+            for key, value in extra_params.items():
+                if value is not None:
+                    params[key] = value
 
             # Use Parse.bot's /cards/search endpoint with raw query
             response = self.http_client.get("/cards/search", params=params)
@@ -371,7 +446,7 @@ class Moxfield(BaseProvider):
                 "Network error during search_syntax", original_exception=e
             ) from e
 
-    def get_card(self, card_id: str, **kwargs: Any) -> Card:
+    def get_card(self, card_id: str) -> Card:
         """Get a specific card by its Moxfield/Parse.bot ID.
 
         Note:
@@ -380,7 +455,7 @@ class Moxfield(BaseProvider):
 
         Args:
             card_id: The Moxfield/Parse.bot card ID.
-            **kwargs: Additional parameters.
+
 
         Returns:
             A Card object for the specified card.
@@ -434,7 +509,7 @@ class Moxfield(BaseProvider):
                 "Network error during get_card", original_exception=e
             ) from e
 
-    def get_deck(self, deck_id: str, **kwargs: Any) -> Deck:
+    def get_deck(self, deck_id: str) -> Deck:
         """Get a specific deck by its Moxfield ID.
 
         Note:
@@ -443,7 +518,7 @@ class Moxfield(BaseProvider):
 
         Args:
             deck_id: The Moxfield deck ID.
-            **kwargs: Additional parameters.
+
 
         Returns:
             A Deck object for the specified deck.
@@ -489,7 +564,7 @@ class Moxfield(BaseProvider):
                 "Network error during get_deck", original_exception=e
             ) from e
 
-    def get_deck_full(self, deck_id: str, **kwargs: Any) -> Deck:
+    def get_deck_full(self, deck_id: str) -> Deck:
         """Get a specific deck with full details by its Moxfield ID.
 
         This method retrieves a deck with all available details, including
@@ -501,7 +576,7 @@ class Moxfield(BaseProvider):
 
         Args:
             deck_id: The Moxfield deck ID.
-            **kwargs: Additional parameters.
+
 
         Returns:
             A Deck object with full details for the specified deck.
@@ -525,8 +600,10 @@ class Moxfield(BaseProvider):
             try:
                 response = self.http_client.get(f"/decks/{deck_id}/full")
                 data = self._handle_response(response, "deck")
-            except APIError:
-                # Fall back to regular endpoint
+            except NotFoundError:
+                # Fall back to the regular endpoint only when the
+                # /full endpoint is not available (404). Other errors
+                # (auth, server, rate limit) propagate to the caller.
                 response = self.http_client.get(f"/decks/{deck_id}")
                 data = self._handle_response(response, "deck")
 
@@ -546,13 +623,13 @@ class Moxfield(BaseProvider):
                 "Network error during get_deck_full", original_exception=e
             ) from e
 
-    def get_user_decks(self, user_id: str | None = None, **kwargs: Any) -> list[Deck]:
+    def get_user_decks(self, user_id: str | None = None) -> list[Deck]:
         """Get all decks for a specific user.
 
         Args:
             user_id: The Moxfield user ID or username. If None, may attempt
                 to get decks for the authenticated user (if supported by Parse.bot).
-            **kwargs: Additional parameters.
+
 
         Returns:
             A list of Deck objects for the user's decks.
@@ -596,13 +673,13 @@ class Moxfield(BaseProvider):
                 "Network error during get_user_decks", original_exception=e
             ) from e
 
-    def autocomplete(self, query: str, limit: int = 10, **kwargs: Any) -> list[str]:
+    def autocomplete(self, query: str, limit: int = 10) -> list[str]:
         """Get autocomplete suggestions for a query.
 
         Args:
             query: The partial query string.
             limit: Maximum number of suggestions to return (default 10).
-            **kwargs: Additional parameters.
+
 
         Returns:
             A list of autocomplete suggestions.
@@ -624,9 +701,6 @@ class Moxfield(BaseProvider):
             params: dict[str, Any] = {"query": query}
             if limit:
                 params["limit"] = limit
-
-            for key, value in kwargs.items():
-                params[key] = value
 
             # Use Parse.bot's /cards/autocomplete endpoint
             response = self.http_client.get("/cards/autocomplete", params=params)
@@ -656,7 +730,21 @@ class Moxfield(BaseProvider):
         colors: list[Color] | None = None,
         identity: list[Color] | None = None,
         type_line: str | None = None,
-        **kwargs: Any,
+        format: str | None = None,
+        rarity: str | None = None,
+        set: str | None = None,
+        cmc: int | dict[str, int] | None = None,
+        color: str | None = None,
+        card_type: str | None = None,
+        subtype: str | None = None,
+        power: str | dict[str, int] | None = None,
+        toughness: str | dict[str, int] | None = None,
+        loyalty: str | int | None = None,
+        textsearch: str | None = None,
+        keyword: str | None = None,
+        artist: str | None = None,
+        release: str | None = None,
+        set_type: str | None = None,
     ) -> str:
         """Build a Parse.bot/Moxfield query string from search parameters.
 
@@ -665,7 +753,21 @@ class Moxfield(BaseProvider):
             colors: List of colors the card must include in its color identity.
             identity: List of colors the card's color identity must exactly match.
             type_line: Type line the card must include.
-            **kwargs: Additional search parameters.
+            format: Format filter.
+            rarity: Rarity filter.
+            set: Set code filter.
+            cmc: Converted mana cost filter.
+            color: Color filter.
+            card_type: Card type filter.
+            subtype: Card subtype filter.
+            power: Power filter.
+            toughness: Toughness filter.
+            loyalty: Loyalty filter.
+            textsearch: Oracle text search filter.
+            keyword: Keyword filter.
+            artist: Artist filter.
+            release: Release date filter.
+            set_type: Set type filter.
 
         Returns:
             A query string suitable for Parse.bot's Moxfield API.
@@ -677,12 +779,13 @@ class Moxfield(BaseProvider):
 
         # Add name filter
         if name:
-            # Exact match if it looks like a specific card name
-            query_parts.append(f'"{name}"')
+            # Sanitize: strip double-quote characters so a crafted name
+            # cannot break out of the quoted token and inject query
+            # syntax.
+            safe_name = name.replace('"', "")
+            query_parts.append(f'"{safe_name}"')
 
         # Add color filters (color inclusion).
-        # Moxfield uses Scryfall syntax: c: for single-color include,
-        # ci: for multi-color identity inclusion.
         if colors:
             color_str = "".join(
                 c.value
@@ -694,8 +797,6 @@ class Moxfield(BaseProvider):
                 query_parts.append(f"ci:{color_str}")
 
         # Add exact color identity filter.
-        # id: matches cards whose color identity is within the given set
-        # (Scryfall coverage semantics).
         if identity:
             id_str = "".join(
                 c.value
@@ -707,8 +808,29 @@ class Moxfield(BaseProvider):
         if type_line:
             query_parts.append(f"t:{type_line}")
 
-        # Add additional kwargs with sanitization
-        for key, value in kwargs.items():
+        # Build a dict of additional filter params (non-None only)
+        extra_filters: dict[str, Any] = {
+            "format": format,
+            "rarity": rarity,
+            "set": set,
+            "cmc": cmc,
+            "color": color,
+            "type": card_type,
+            "subtype": subtype,
+            "power": power,
+            "toughness": toughness,
+            "loyalty": loyalty,
+            "textsearch": textsearch,
+            "keyword": keyword,
+            "artist": artist,
+            "release": release,
+            "set_type": set_type,
+        }
+
+        # Add additional filters with sanitization
+        for key, value in extra_filters.items():
+            if value is None:
+                continue
             # Sanitize key to prevent injection
             sanitized_key = str(key).replace(":", "").replace(" ", "")
             if isinstance(value, str):
@@ -853,7 +975,7 @@ class Moxfield(BaseProvider):
 
         # Handle image URIs - ensure all values are strings or None
         raw_image_uris = data.get("image_uris", {})
-        image_uris: dict[str, str] | None = {}
+        image_uris: dict[str, str] | None = None
         if raw_image_uris:
             # Keep only non-empty string values, filtering out None,
             # empty strings, and non-string types
@@ -1043,6 +1165,7 @@ class Moxfield(BaseProvider):
         # Parse commander cards if present
         commander_cards = data.get("commanders", []) or data.get("commander", []) or []
         for card_data in commander_cards:
+            quantity = self._extract_quantity(card_data)
             card_info = card_data.get("card", card_data)
 
             card = self._parse_card(card_info)
@@ -1051,7 +1174,7 @@ class Moxfield(BaseProvider):
 
             deck_card = DeckCard(
                 card=card,
-                count=1,
+                count=quantity,
                 board=Board.COMMANDER,
             )
             deck_cards.append(deck_card)
@@ -1114,7 +1237,11 @@ class Moxfield(BaseProvider):
             name=data.get("name", "Unnamed Deck"),
             description=description,
             format=deck_format,
-            commander=data.get("commander", []),
+            commander=[
+                dc.card.id
+                for dc in deck_cards
+                if dc.board == Board.COMMANDER and dc.card.id
+            ],
             cards=deck_cards,
             source="moxfield",
             source_id=data.get("source_id"),

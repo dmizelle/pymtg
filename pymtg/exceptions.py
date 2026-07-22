@@ -55,9 +55,9 @@ class PyMTGError(Exception):
         """
         class_name = self.__class__.__name__
         parts = [f"{class_name}: {self.message}"]
-        if self.provider:
+        if self.provider is not None:
             parts[0] = f"[{self.provider}] {parts[0]}"
-        if self.status_code:
+        if self.status_code is not None:
             parts.append(f"(status code: {self.status_code})")
         if self.details:
             parts.append(f"Details: {self.details}")
@@ -177,7 +177,7 @@ class NotFoundError(PyMTGError):
         """
         base = super().__str__()
         base += f" Resource: {self.resource_type!r}"
-        if self.resource_id:
+        if self.resource_id is not None:
             base += f" (id: {self.resource_id!r})"
         return base
 
@@ -235,7 +235,7 @@ class AuthenticationError(PyMTGError):
             A formatted string containing the error details.
         """
         base = super().__str__()
-        if self.auth_type:
+        if self.auth_type is not None:
             base += f" Auth type: {self.auth_type!r}"
         return base
 
@@ -295,9 +295,9 @@ class InvalidQueryError(PyMTGError):
             A formatted string containing the error details.
         """
         base = super().__str__()
-        if self.query:
+        if self.query is not None:
             base += f" Query: {self.query!r}"
-        if self.provider_specific_message:
+        if self.provider_specific_message is not None:
             base += f" Provider message: {self.provider_specific_message!r}"
         return base
 
@@ -366,7 +366,7 @@ class NetworkError(PyMTGError):
             A formatted string containing the error details.
         """
         base = super().__str__()
-        if self.original_exception:
+        if self.original_exception is not None:
             base += f" Original: {self.original_exception!r}"
         return base
 

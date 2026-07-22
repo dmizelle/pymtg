@@ -17,6 +17,7 @@ Cardmarket uses OAuth 1.0a for authentication.
 
 import logging
 import threading
+from datetime import date
 from typing import Any
 
 import requests
@@ -107,7 +108,6 @@ class Cardmarket(BaseProvider):
         consumer_secret: str | None = None,
         access_token: str | None = None,
         access_token_secret: str | None = None,
-        **kwargs: Any,
     ) -> None:
         """Initialize the Cardmarket provider.
 
@@ -116,7 +116,6 @@ class Cardmarket(BaseProvider):
             consumer_secret: OAuth1 consumer secret for Cardmarket API.
             access_token: OAuth1 access token for Cardmarket API.
             access_token_secret: OAuth1 access token secret for Cardmarket API.
-            **kwargs: Additional initialization parameters.
 
         Raises:
             AuthenticationError: If authentication fails during initialization.
@@ -138,9 +137,13 @@ class Cardmarket(BaseProvider):
         # Rate limit tracking (Cardmarket: 30,000-100,000 requests per day)
         self._request_count = 0
         self._rate_limit = 30000
+        # Date of the current counting window; the per-day counter is
+        # reset when the calendar day changes (see
+        # _check_and_record_request).
+        self._rate_limit_reset_day: date | None = None
 
         # Call parent constructor which will call _initialize
-        super().__init__(**kwargs)
+        super().__init__()
 
         # Initialize OAuth1 auth handler
         self.auth_handler = OAuth1Handler(
@@ -161,12 +164,8 @@ class Cardmarket(BaseProvider):
             )
             self._apply_auth_to_http_client()
 
-    def _initialize(self, **kwargs: Any) -> None:
-        """Cardmarket-specific initialization.
-
-        Args:
-            **kwargs: Additional initialization parameters.
-        """
+    def _initialize(self) -> None:
+        """Cardmarket-specific initialization."""
         # This is called by BaseProvider.__init__ before auth_handler is set
         # So we just need to make sure the base class initialization is complete
         pass
@@ -232,11 +231,25 @@ class Cardmarket(BaseProvider):
             All four OAuth1 parameters are required.
         """
         with self._lock:
-            # Update stored credentials
-            self._consumer_key = consumer_key or self._consumer_key
-            self._consumer_secret = consumer_secret or self._consumer_secret
-            self._access_token = access_token or self._access_token
-            self._access_token_secret = access_token_secret or self._access_token_secret
+            # Update stored credentials. Use explicit None checks so a
+            # caller can intentionally clear a credential by passing an
+            # empty string without it being silently replaced.
+            self._consumer_key = (
+                consumer_key if consumer_key is not None else self._consumer_key
+            )
+            self._consumer_secret = (
+                consumer_secret
+                if consumer_secret is not None
+                else self._consumer_secret
+            )
+            self._access_token = (
+                access_token if access_token is not None else self._access_token
+            )
+            self._access_token_secret = (
+                access_token_secret
+                if access_token_secret is not None
+                else self._access_token_secret
+            )
 
             # Recreate auth handler with new credentials
             self.auth_handler = OAuth1Handler(
@@ -266,7 +279,21 @@ class Cardmarket(BaseProvider):
         limit: int = 20,
         page: int = 1,
         order: str | None = None,
-        **kwargs: Any,
+        category: str | None = None,
+        game: str = "Magic",
+        format: str | None = None,
+        rarity: str | None = None,
+        color: str | None = None,
+        card_type: str | None = None,
+        subtype: str | None = None,
+        power: str | None = None,
+        toughness: str | None = None,
+        cmc: int | None = None,
+        textsearch: str | None = None,
+        keyword: str | None = None,
+        artist: str | None = None,
+        release: str | None = None,
+        set_type: str | None = None,
     ) -> list[Card]:
         """Search for cards with generic parameters.
 
@@ -287,7 +314,21 @@ class Cardmarket(BaseProvider):
             limit: Maximum number of results to return (default 20).
             page: Page number for pagination (1-based, default 1).
             order: Sort order for results.
-            **kwargs: Additional Cardmarket-specific parameters.
+            category: Category filter.
+            game: Game filter (defaults to "Magic").
+            format: Format filter.
+            rarity: Rarity filter.
+            color: Color filter.
+            card_type: Card type filter.
+            subtype: Card subtype filter.
+            power: Power filter.
+            toughness: Toughness filter.
+            cmc: Converted mana cost filter.
+            textsearch: Oracle text search filter.
+            keyword: Keyword filter.
+            artist: Artist filter.
+            release: Release date filter.
+            set_type: Set type filter.
 
         Returns:
             A list of Card objects matching the search criteria.
@@ -307,17 +348,6 @@ class Cardmarket(BaseProvider):
                     auth_type="oauth1",
                 )
 
-            # Validate kwargs against allowed parameters
-            for key in kwargs:
-                if (
-                    not isinstance(key, str)
-                    or key.lower() not in self.VALID_SEARCH_PARAMS
-                ):
-                    raise InvalidQueryError(
-                        f"Invalid search parameter: {key}. "
-                        f"Valid parameters: {', '.join(sorted(self.VALID_SEARCH_PARAMS))}"
-                    )
-
             # Validate limit and page
             if limit < 1:
                 raise InvalidQueryError("limit must be a positive integer (>= 1)")
@@ -331,16 +361,27 @@ class Cardmarket(BaseProvider):
             if name:
                 params["search"] = name
 
+            # Translate color list filters into Cardmarket's color query
+            # parameter. Cardmarket expects concatenated color codes
+            # (e.g. "WUB"). COLORLESS (empty value) is ignored.
+            if colors:
+                color_codes = "".join(sorted({c.value for c in colors if c.value}))
+                if color_codes:
+                    params["color"] = color_codes
+            if identity:
+                id_codes = "".join(sorted({c.value for c in identity if c.value}))
+                if id_codes:
+                    params["identity"] = id_codes
+
             # Cardmarket uses: name, game, category, etc.
             # For MTG, game would be "Magic" or similar
-            game_value = kwargs.get("game")
-            if not isinstance(game_value, str) or not game_value:
-                game_value = "Magic"
+            if not isinstance(game, str) or not game:
+                game = "Magic"
                 logger.warning(
                     "Invalid or missing game parameter for Cardmarket; "
                     "defaulting to 'Magic'"
                 )
-            params["game"] = game_value
+            params["game"] = game
 
             # Handle limit and pagination
             # Cardmarket uses limit and offset
@@ -349,22 +390,32 @@ class Cardmarket(BaseProvider):
             if page > 1:
                 params["offset"] = (page - 1) * limit
 
-            # Add additional kwargs as query parameters
-            for key, value in kwargs.items():
-                if value is not None and key not in [
-                    "name",
-                    "colors",
-                    "identity",
-                    "type_line",
-                    "game",
-                ]:
+            # Add additional search parameters to HTTP query
+            extra_params: dict[str, Any] = {
+                "category": category,
+                "format": format,
+                "rarity": rarity,
+                "color": color,
+                "type": card_type,
+                "subtype": subtype,
+                "power": power,
+                "toughness": toughness,
+                "cmc": cmc,
+                "textsearch": textsearch,
+                "keyword": keyword,
+                "artist": artist,
+                "release": release,
+                "set_type": set_type,
+            }
+
+            for key, value in extra_params.items():
+                if value is not None:
                     params[key] = value
 
             # Cardmarket endpoints require /output.json/ suffix for JSON output
             endpoint = "/ws/v2.0/products/output.json/"
 
-            self._check_rate_limit()
-            self._record_request()
+            self._check_and_record_request()
             response = self.http_client.get(endpoint, params=params)
             data = self._handle_response(response, "cards")
 
@@ -382,12 +433,32 @@ class Cardmarket(BaseProvider):
             return cards
 
         except requests.exceptions.RequestException as e:
-            logger.error(f"Network error during Cardmarket search: {e}")
+            logger.error("Network error during Cardmarket search: %s", e)
             raise NetworkError(
                 "Network error during search", original_exception=e
             ) from e
 
-    def search_syntax(self, query: str, limit: int = 20, **kwargs: Any) -> list[Card]:
+    def search_syntax(
+        self,
+        query: str,
+        limit: int = 20,
+        page: int = 1,
+        category: str | None = None,
+        game: str | None = None,
+        format: str | None = None,
+        rarity: str | None = None,
+        color: str | None = None,
+        card_type: str | None = None,
+        subtype: str | None = None,
+        power: str | None = None,
+        toughness: str | None = None,
+        cmc: int | None = None,
+        textsearch: str | None = None,
+        keyword: str | None = None,
+        artist: str | None = None,
+        release: str | None = None,
+        set_type: str | None = None,
+    ) -> list[Card]:
         """Search for cards using Cardmarket-specific query syntax.
 
         This method provides an escape hatch for power users who need to use
@@ -401,7 +472,22 @@ class Cardmarket(BaseProvider):
         Args:
             query: The Cardmarket-specific query string.
             limit: Maximum number of results to return (default 20).
-            **kwargs: Additional Cardmarket-specific parameters.
+            page: Page number for pagination (1-based, default 1).
+            category: Category filter.
+            game: Game filter.
+            format: Format filter.
+            rarity: Rarity filter.
+            color: Color filter.
+            card_type: Card type filter.
+            subtype: Card subtype filter.
+            power: Power filter.
+            toughness: Toughness filter.
+            cmc: Converted mana cost filter.
+            textsearch: Oracle text search filter.
+            keyword: Keyword filter.
+            artist: Artist filter.
+            release: Release date filter.
+            set_type: Set type filter.
 
         Returns:
             A list of Card objects matching the query.
@@ -435,20 +521,36 @@ class Cardmarket(BaseProvider):
                 params["limit"] = limit
 
             # Add standard pagination
-            page = kwargs.get("page", 1)
             if page > 1:
                 params["offset"] = (page - 1) * limit
 
             # Add any additional parameters
-            for key, value in kwargs.items():
-                if value is not None and key not in ["limit", "page"]:
+            extra_params: dict[str, Any] = {
+                "category": category,
+                "game": game,
+                "format": format,
+                "rarity": rarity,
+                "color": color,
+                "type": card_type,
+                "subtype": subtype,
+                "power": power,
+                "toughness": toughness,
+                "cmc": cmc,
+                "textsearch": textsearch,
+                "keyword": keyword,
+                "artist": artist,
+                "release": release,
+                "set_type": set_type,
+            }
+
+            for key, value in extra_params.items():
+                if value is not None:
                     params[key] = value
 
             # Cardmarket endpoints require /output.json/ suffix for JSON output
             endpoint = "/ws/v2.0/products/output.json/"
 
-            self._check_rate_limit()
-            self._record_request()
+            self._check_and_record_request()
             response = self.http_client.get(endpoint, params=params)
             data = self._handle_response(response, "cards")
 
@@ -466,12 +568,12 @@ class Cardmarket(BaseProvider):
             return cards
 
         except requests.exceptions.RequestException as e:
-            logger.error(f"Network error during Cardmarket search_syntax: {e}")
+            logger.error("Network error during Cardmarket search_syntax: %s", e)
             raise NetworkError(
                 "Network error during search_syntax", original_exception=e
             ) from e
 
-    def get_card(self, card_id: str, **kwargs: Any) -> Card:
+    def get_card(self, card_id: str, game: str = "Magic") -> Card:
         """Get a specific card by its Cardmarket product ID.
 
         Cardmarket uses product IDs to identify cards. The
@@ -484,7 +586,7 @@ class Cardmarket(BaseProvider):
 
         Args:
             card_id: The Cardmarket product ID or other identifier for the card.
-            **kwargs: Additional parameters.
+            game: The game filter (defaults to "Magic").
 
         Returns:
             A Card object for the specified card.
@@ -526,13 +628,12 @@ class Cardmarket(BaseProvider):
                 find_params["name"] = card_id
 
             # Add game filter
-            find_params["game"] = kwargs.get("game", "Magic")
+            find_params["game"] = game
 
             # Cardmarket endpoints require /output.json/ suffix for JSON output
             endpoint = "/ws/v2.0/products/find/output.json/"
 
-            self._check_rate_limit()
-            self._record_request()
+            self._check_and_record_request()
             response = self.http_client.get(endpoint, params=find_params)
             data = self._handle_response(response, "card")
 
@@ -560,12 +661,12 @@ class Cardmarket(BaseProvider):
                 )
 
         except requests.exceptions.RequestException as e:
-            logger.error(f"Network error during Cardmarket get_card: {e}")
+            logger.error("Network error during Cardmarket get_card: %s", e)
             raise NetworkError(
                 "Network error during get_card", original_exception=e
             ) from e
 
-    def get_pricing(self, product_id: int | str, **kwargs: Any) -> Pricing:
+    def get_pricing(self, product_id: int | str) -> Pricing:
         """Get pricing information for a card by its product ID.
 
         Cardmarket provides comprehensive pricing data through the
@@ -577,7 +678,6 @@ class Cardmarket(BaseProvider):
 
         Args:
             product_id: The Cardmarket product ID for the card.
-            **kwargs: Additional parameters.
 
         Returns:
             A Pricing object containing Cardmarket-specific pricing data.
@@ -609,8 +709,7 @@ class Cardmarket(BaseProvider):
             # Cardmarket marketplace/prices endpoint
             endpoint = f"/ws/v2.0/marketplace/prices/{product_id_int}/output.json/"
 
-            self._check_rate_limit()
-            self._record_request()
+            self._check_and_record_request()
             response = self.http_client.get(endpoint)
             data = self._handle_response(response, "pricing")
 
@@ -625,63 +724,10 @@ class Cardmarket(BaseProvider):
             return self._parse_pricing(data)
 
         except requests.exceptions.RequestException as e:
-            logger.error(f"Network error during Cardmarket get_pricing: {e}")
+            logger.error("Network error during Cardmarket get_pricing: %s", e)
             raise NetworkError(
                 "Network error during get_pricing", original_exception=e
             ) from e
-
-    def _build_search_query(
-        self,
-        name: str | None = None,
-        colors: list[Color] | None = None,
-        identity: list[Color] | None = None,
-        type_line: str | None = None,
-        **kwargs: Any,
-    ) -> str:
-        """Build a Cardmarket-specific query string from generic parameters.
-
-        Args:
-            name: Card name.
-            colors: Colors the card must include.
-            identity: Colors the card must be exactly.
-            type_line: Card type line.
-            **kwargs: Additional filter parameters.
-
-        Returns:
-            Query string for Cardmarket search.
-        """
-        query_parts = []
-
-        if name:
-            query_parts.append(name)
-
-        # Handle colors - Cardmarket uses color codes: W, U, B, R, G
-        if colors:
-            color_codes = [c.value for c in colors]
-            if len(color_codes) == 1:
-                query_parts.append(f"color:{color_codes[0]}")
-            else:
-                query_parts.append(f"colors:{''.join(sorted(color_codes))}")
-
-        if identity:
-            color_codes = [c.value for c in identity]
-            if color_codes:
-                query_parts.append(f"identity:{''.join(sorted(color_codes))}")
-
-        if type_line:
-            query_parts.append(f"type:{type_line}")
-
-        # Add any additional filters from kwargs
-        for key, value in kwargs.items():
-            if value is not None and key not in [
-                "name",
-                "colors",
-                "identity",
-                "type_line",
-            ]:
-                query_parts.append(f"{key}:{value}")
-
-        return " ".join(query_parts)
 
     def _parse_card(self, card_data: dict[str, Any]) -> Card:
         """Parse Cardmarket card data into a normalized Card model.
@@ -853,7 +899,10 @@ class Cardmarket(BaseProvider):
             return card
 
         except (ValueError, TypeError, KeyError) as e:
-            logger.error(f"Failed to create Card object: {type(e).__name__}: {e}")
+            logger.error("Failed to create Card object: %s: %s", type(e).__name__, e)
+            # Log the offending payload at debug level to aid diagnosis of
+            # malformed API data without spamming production logs.
+            logger.debug("Failed Cardmarket card_data: %r", card_data)
             # Return a minimal card with required fields
             return Card(
                 id=card_id,
@@ -926,7 +975,10 @@ class Cardmarket(BaseProvider):
             "trend": None,
         }
 
-        # Try to extract from results or direct structure
+        # Try to extract from per-seller results. Each result entry maps
+        # a condition to one of the pricing fields; later matching
+        # entries overwrite earlier ones (last wins), mirroring the
+        # previous behavior.
         results = pricing_data.get("results", [])
         if results:
             # Aggregate prices by condition
@@ -958,16 +1010,36 @@ class Cardmarket(BaseProvider):
                         cardmarket_pricing_data["low"] = float(price)
                     else:
                         logger.warning(
-                            f"Unmapped condition '{condition}' "
-                            f"(name: '{condition_name}') in pricing data"
+                            "Unmapped condition %r (name: %r) in pricing data",
+                            condition,
+                            condition_name,
                         )
-        else:
-            # Try direct fields
-            for field in ["avg1", "avg7", "avg30", "low", "low_ex", "trend"]:
-                if field in pricing_data:
-                    price = pricing_data[field]
+
+        # Field aliases: accept both snake_case and the camelCase keys
+        # Cardmarket uses elsewhere (e.g. idProduct, expansionCode).
+        # low_ex is stored as lowEx in camelCase form.
+        field_aliases: dict[str, list[str]] = {
+            "avg1": ["avg1"],
+            "avg7": ["avg7"],
+            "avg30": ["avg30"],
+            "low": ["low"],
+            "low_ex": ["low_ex", "lowEx"],
+            "trend": ["trend"],
+        }
+
+        # Fall back to direct fields for any still-unset values. This
+        # runs regardless of whether results were present, so avg7,
+        # avg30, and trend are not silently lost when the API returns
+        # them as direct fields rather than within result entries.
+        for field, aliases in field_aliases.items():
+            if cardmarket_pricing_data[field] is not None:
+                continue
+            for alias in aliases:
+                if alias in pricing_data:
+                    price = pricing_data[alias]
                     if isinstance(price, (int, float)):
                         cardmarket_pricing_data[field] = float(price)
+                    break
 
         # Also check for price trends
         trends = pricing_data.get("trends", {})
@@ -977,6 +1049,8 @@ class Cardmarket(BaseProvider):
             cardmarket_pricing_data["avg7"] = float(trends["avg7"])
         if "avg30" in trends and isinstance(trends["avg30"], (int, float)):
             cardmarket_pricing_data["avg30"] = float(trends["avg30"])
+        if "trend" in trends and isinstance(trends["trend"], (int, float)):
+            cardmarket_pricing_data["trend"] = float(trends["trend"])
 
         cardmarket_pricing = CardmarketPricing(**cardmarket_pricing_data)
 
@@ -985,6 +1059,30 @@ class Cardmarket(BaseProvider):
         )
 
         return pricing
+
+    def _check_and_record_request(self) -> None:
+        """Atomically check the rate limit and record a request.
+
+        Combines the limit check and the increment into a single
+        lock-protected critical section so concurrent threads cannot
+        race past the limit between the check and the increment. Also
+        resets the daily request counter when the calendar day changes,
+        matching Cardmarket's per-day rate limit window.
+
+        Raises:
+            RateLimitError: If the daily rate limit is exceeded.
+        """
+        today = date.today()
+        with self._lock:
+            if self._rate_limit_reset_day != today:
+                self._request_count = 0
+                self._rate_limit_reset_day = today
+            if self._request_count >= self._rate_limit:
+                raise RateLimitError(
+                    f"Cardmarket rate limit exceeded "
+                    f"({self._rate_limit} requests/day)"
+                )
+            self._request_count += 1
 
     def _check_rate_limit(self) -> None:
         """Check if the rate limit has been exceeded.

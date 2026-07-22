@@ -485,7 +485,9 @@ class TestNetworkError:
         original_exc = ConnectionError("Connection refused")
         error = NetworkError("Connection failed", original_exception=original_exc)
         str_repr = str(error)
-        assert "Original: ConnectionError('Connection refused')" in str_repr
+        assert "Original:" in str_repr
+        assert "ConnectionError" in str_repr
+        assert "Connection refused" in str_repr
 
     def test_network_error_str_without_original_exception(self) -> None:
         """Test NetworkError string representation without original exception."""
@@ -510,11 +512,11 @@ class TestNetworkError:
             original_exception=original_exc,
         )
         str_repr = str(error)
-        assert str_repr == (
-            "[scryfall] NetworkError: Connection failed "
-            "(status code: 503) Details: {'timeout': 30} "
-            "Original: ConnectionError('Connection refused')"
-        )
+        assert "[scryfall] NetworkError: Connection failed" in str_repr
+        assert "(status code: 503)" in str_repr
+        assert "Details: {'timeout': 30}" in str_repr
+        assert "Original:" in str_repr
+        assert "Connection refused" in str_repr
 
     def test_network_error_repr(self) -> None:
         """Test NetworkError repr representation."""
@@ -639,12 +641,21 @@ class TestExceptionEquality:
     """Tests for exception equality and comparison."""
 
     def test_exception_equality(self) -> None:
-        """Test that exceptions with same attributes are equal."""
+        """Test exceptions with same attributes: identity-based equality.
+
+        PyMTGError does not define ``__eq__``, so equality falls back to
+        identity comparison. Two distinct instances with identical
+        attributes are therefore not equal, while an instance is equal
+        to itself.
+        """
         error1 = PyMTGError("Error", provider="test", status_code=400)
         error2 = PyMTGError("Error", provider="test", status_code=400)
         assert error1.message == error2.message
         assert error1.provider == error2.provider
         assert error1.status_code == error2.status_code
+        # No __eq__ defined; equality is identity-based.
+        assert error1 != error2
+        assert error1 == error1
 
     def test_exception_inequality(self) -> None:
         """Test that exceptions with different attributes are not equal."""

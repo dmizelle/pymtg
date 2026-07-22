@@ -515,12 +515,12 @@ class TestTCGPlayerAutocomplete(unittest.TestCase):
             self.assertEqual(kwargs["params"]["limit"], 5)
 
     def test_autocomplete_ignores_limit_in_kwargs(self):
-        """Test that limit passed via kwargs splat binds to the signature param.
+        """Test that limit passed via keyword binds to the signature param.
 
-        This verifies the fix for issue #198: previously `kwargs.get('limit', 10)`
-        ignored the signature `limit` parameter. Now the signature parameter is
-        used directly. When `limit=99` is passed (even via kwargs splat), Python
-        binds it to the explicit `limit` parameter, not to `**kwargs`.
+        This verifies the fix for issue #198: previously the signature `limit`
+        parameter was ignored. Now the signature parameter is used directly.
+        When `limit=99` is passed, Python binds it to the explicit `limit`
+        parameter.
         """
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -528,7 +528,7 @@ class TestTCGPlayerAutocomplete(unittest.TestCase):
         with patch.object(
             self.tcgplayer.http_client, "get", return_value=mock_response
         ) as mock_get:
-            # limit=99 binds to the signature parameter, not to **kwargs
+            # limit=99 binds to the signature parameter
             self.tcgplayer.autocomplete("Lotus", **{"limit": 99})
 
             _, kwargs = mock_get.call_args
@@ -638,7 +638,7 @@ class TestTCGPlayerIterSearch(unittest.TestCase):
         """Test that limit caps the total number of yielded results.
 
         Verifies the fix for issue #197: the signature limit parameter is
-        used as the total cap, not overridden by kwargs.get('limit', 100).
+        used as the total cap.
         """
         # search returns 5 cards per page
         mock_search.side_effect = [
@@ -709,18 +709,17 @@ class TestTCGPlayerIterSearch(unittest.TestCase):
 
     @patch.object(TCGPlayer, "search")
     def test_iter_search_limit_not_overridden_by_kwargs(self, mock_search):
-        """Test that limit in kwargs does not override the signature parameter.
+        """Test that limit does not override the page_size passed to search.
 
-        Verifies the fix for issue #197: previously kwargs.get('limit', 100)
-        ignored the signature limit parameter. Now the signature parameter
-        is used as the total cap. Also verifies kwargs['limit'] passed to
-        search() is page_size, not the limit from **kwargs.
+        Verifies the fix for issue #197: the signature limit parameter
+        is used as the total cap. Also verifies the limit passed to
+        search() is page_size, not the total limit.
         """
         # Each page returns 3 cards
         page = [self._make_card(str(i)) for i in range(3)]
         mock_search.side_effect = [page, page, page, []]
 
-        # limit=5 via kwargs splat binds to signature param (total cap = 5)
+        # limit=5 binds to signature param (total cap = 5)
         results = list(self.tcgplayer.iter_search(name="test", **{"limit": 5}))
 
         self.assertEqual(len(results), 5)

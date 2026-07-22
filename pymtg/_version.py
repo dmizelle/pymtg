@@ -17,7 +17,8 @@ def _validate_version(version: str) -> None:
         version: The version string to validate.
 
     Raises:
-        InvalidVersion: If the version string is not a valid PEP 440 version.
+        packaging.version.InvalidVersion: If the version string is not a valid
+            PEP 440 version.
     """
     Version(version)
 

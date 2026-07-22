@@ -301,6 +301,10 @@ class TestSessionAuthHandlerRefresh:
 
         assert handler._authenticated is True
         assert handler._session is mock_session
+        # Credentials are retained after successful auth so refresh() can
+        # be called again later. Use clear_auth() for explicit cleanup.
+        assert handler._username == "user"
+        assert handler._password == "pass"
 
 
 class TestSessionAuthHandlerProperties:

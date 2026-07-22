@@ -4,6 +4,8 @@ This module tests the HTTPClient class including URL validation,
 header handling, and request building.
 """
 
+import pytest
+
 from pymtg.utils.http import HTTPClient
 
 
@@ -21,29 +23,10 @@ def test_http_client_creation_valid_base_url() -> None:
 
 def test_http_client_creation_invalid_base_url() -> None:
     """Test HTTPClient raises ValueError for invalid base URLs."""
-    try:
-        HTTPClient("not-a-url")
-        assert False, "Expected ValueError"
-    except ValueError as e:
-        assert (
-            str(e) == "base_url must be a valid URL starting with http:// or https://"
-        )
-
-    try:
-        HTTPClient("")
-        assert False, "Expected ValueError"
-    except ValueError as e:
-        assert (
-            str(e) == "base_url must be a valid URL starting with http:// or https://"
-        )
-
-    try:
-        HTTPClient("ftp://api.example.com")
-        assert False, "Expected ValueError"
-    except ValueError as e:
-        assert (
-            str(e) == "base_url must be a valid URL starting with http:// or https://"
-        )
+    expected = "base_url must be a valid URL starting with http:// or https://"
+    for invalid in ("not-a-url", "", "ftp://api.example.com"):
+        with pytest.raises(ValueError, match=expected):
+            HTTPClient(invalid)
 
 
 def test_http_client_creation_trailing_slash_stripped() -> None:
@@ -60,17 +43,10 @@ def test_http_client_creation_whitespace_stripped() -> None:
 
 def test_http_client_creation_non_string_base_url() -> None:
     """Test HTTPClient raises ValueError for non-string base_url."""
-    try:
+    with pytest.raises(ValueError, match="base_url must be a string"):
         HTTPClient(123)  # type: ignore[arg-type]
-        assert False, "Expected ValueError"
-    except ValueError as e:
-        assert str(e) == "base_url must be a string"
-
-    try:
+    with pytest.raises(ValueError, match="base_url must be a string"):
         HTTPClient(None)  # type: ignore[arg-type]
-        assert False, "Expected ValueError"
-    except ValueError as e:
-        assert str(e) == "base_url must be a string"
 
 
 def test_http_client_default_timeout() -> None:
@@ -130,38 +106,26 @@ def test_build_url_with_full_url_endpoint() -> None:
 def test_build_url_with_empty_endpoint() -> None:
     """Test _build_url raises ValueError for empty endpoint."""
     client = HTTPClient("https://api.example.com")
-    try:
+    with pytest.raises(ValueError, match="endpoint must be a non-empty string"):
         client._build_url("")
-        assert False, "Expected ValueError"
-    except ValueError as e:
-        assert str(e) == "endpoint must be a non-empty string"
 
 
 def test_build_url_with_whitespace_only_endpoint() -> None:
     """Test _build_url raises ValueError for whitespace-only endpoint."""
     client = HTTPClient("https://api.example.com")
-    try:
+    with pytest.raises(ValueError, match="endpoint must be a non-empty string"):
         client._build_url("   ")
-        assert False, "Expected ValueError"
-    except ValueError as e:
-        assert str(e) == "endpoint must be a non-empty string"
 
 
 def test_build_url_with_none_endpoint() -> None:
     """Test _build_url raises ValueError for None endpoint."""
     client = HTTPClient("https://api.example.com")
-    try:
+    with pytest.raises(ValueError, match="endpoint must be a string"):
         client._build_url(None)  # type: ignore[arg-type]
-        assert False, "Expected ValueError"
-    except ValueError as e:
-        assert str(e) == "endpoint must be a string"
 
 
 def test_build_url_with_non_string_endpoint() -> None:
     """Test _build_url raises ValueError for non-string endpoint."""
     client = HTTPClient("https://api.example.com")
-    try:
+    with pytest.raises(ValueError, match="endpoint must be a string"):
         client._build_url(123)  # type: ignore[arg-type]
-        assert False, "Expected ValueError"
-    except ValueError as e:
-        assert str(e) == "endpoint must be a string"

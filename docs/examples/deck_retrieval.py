@@ -33,10 +33,10 @@ from pymtg.models import Format
 
 def get_archidekt_credentials():
     """Get Archidekt credentials from environment variables.
-    
+
     Returns:
         Tuple of (username, password).
-    
+
     Raises:
         ValueError: If ARCHIDEKT_USERNAME or ARCHIDEKT_PASSWORD is not set.
     """
@@ -85,84 +85,71 @@ def main():
     print("2. Archidekt Provider (session authentication)...")
     username, password = get_archidekt_credentials()
 
-    if not username or not password:
-        print("   Skipping Archidekt examples - no credentials provided.")
-        print("   Set ARCHIDEKT_USERNAME and ARCHIDEKT_PASSWORD environment variables.")
+    try:
+        # Initialize with credentials
+        print("   Initializing Archidekt provider...")
+        archidekt = pymtg.Archidekt(username=username, password=password)
+
+        # Check authentication
+        print(f"   Authenticated: {archidekt.is_authenticated()}")
         print()
-    else:
+
+        # Example: Get a specific deck by ID
+        # Replace with an actual deck ID from your account
+        print("   a) Getting a specific deck by ID...")
+        # This is a placeholder - use a real deck ID
+        # deck_id = "your-deck-id-here"
+        # deck = archidekt.get_deck(deck_id)
+        print("      Note: Provide a deck ID to fetch a specific deck")
+        print()
+
+        # Example: Get user's decks
+        print("   b) Getting user's decks...")
         try:
-            # Initialize with credentials
-            print("   Initializing Archidekt provider...")
-            archidekt = pymtg.Archidekt(username=username, password=password)
-
-            # Check authentication
-            print(f"   Authenticated: {archidekt.is_authenticated()}")
+            user_decks = archidekt.get_user_decks(limit=3)
+            print(f"      Found {len(user_decks)} decks:")
+            for deck in user_decks:
+                print(f"        - {deck.name} ({deck.format})")
+                if deck.cards:
+                    print(f"          Cards: {len(deck.cards)} total")
+            print()
+        except pymtg.PyMTGError as e:
+            print(f"      Error: {e}")
             print()
 
-            # Example: Get a specific deck by ID
-            # Replace with an actual deck ID from your account
-            print("   a) Getting a specific deck by ID...")
-            try:
-                # This is a placeholder - use a real deck ID
-                # deck_id = "your-deck-id-here"
-                # deck = archidekt.get_deck(deck_id)
-                print("      Note: Provide a deck ID to fetch a specific deck")
-                print()
-            except Exception as e:
-                print(f"      Error: {e}")
-                print()
-
-            # Example: Get user's decks
-            print("   b) Getting user's decks...")
-            try:
-                user_decks = archidekt.get_user_decks(limit=3)
-                print(f"      Found {len(user_decks)} decks:")
-                for deck in user_decks:
-                    print(f"        - {deck.name} ({deck.format})")
-                    if deck.cards:
-                        print(f"          Cards: {len(deck.cards)} total")
-                print()
-            except Exception as e:
-                print(f"      Error: {e}")
-                print()
-
-            # Example: Search for decks
-            print("   c) Searching for decks...")
-            try:
-                # Search for Commander decks
-                decks = archidekt.search(format=Format.COMMANDER, limit=3)
-                print(f"      Found {len(decks)} Commander decks:")
-                for deck in decks:
-                    print(f"        - {deck.name}")
-                print()
-            except Exception as e:
-                print(f"      Error: {e}")
-                print()
-
-            # Example: Deck with all details
-            print("   d) Getting deck with full details...")
-            try:
-                # This would get a deck with all cards, sideboard, etc.
-                # deck = archidekt.get_deck("your-deck-id", include_cards=True)
-                print("      Note: Use include_cards=True to get full deck details")
-                print()
-            except Exception as e:
-                print(f"      Error: {e}")
-                print()
-
-            # Rate limit info
-            print("   e) Rate limit information...")
-            try:
-                rate_status = archidekt.get_rate_limit_status()
-                print(f"      Rate limit status: {rate_status}")
-                print()
-            except Exception as e:
-                print(f"      Error: {e}")
-                print()
-
-        except Exception as e:
-            print(f"   Error initializing Archidekt: {e}")
+        # Example: Search for decks
+        print("   c) Searching for decks...")
+        try:
+            # Search for Commander decks
+            decks = archidekt.search(format=Format.COMMANDER, limit=3)
+            print(f"      Found {len(decks)} Commander decks:")
+            for deck in decks:
+                print(f"        - {deck.name}")
             print()
+        except pymtg.PyMTGError as e:
+            print(f"      Error: {e}")
+            print()
+
+        # Example: Deck with all details
+        print("   d) Getting deck with full details...")
+        # This would get a deck with all cards, sideboard, etc.
+        # deck = archidekt.get_deck("your-deck-id", include_cards=True)
+        print("      Note: Use include_cards=True to get full deck details")
+        print()
+
+        # Rate limit info
+        print("   e) Rate limit information...")
+        try:
+            rate_status = archidekt.get_rate_limit_status()
+            print(f"      Rate limit status: {rate_status}")
+            print()
+        except pymtg.PyMTGError as e:
+            print(f"      Error: {e}")
+            print()
+
+    except pymtg.PyMTGError as e:
+        print(f"   Error initializing Archidekt: {e}")
+        print()
 
     # =========================================================================
     # Example 3: Moxfield - API Key authentication (via Parse.bot)
@@ -170,70 +157,61 @@ def main():
     print("3. Moxfield Provider (API key authentication via Parse.bot)...")
     api_key = get_moxfield_api_key()
 
-    if not api_key:
-        print("   Skipping Moxfield examples - no API key provided.")
-        print("   Set MOXFIELD_API_KEY environment variable.")
+    try:
+        # Initialize with API key
+        print("   Initializing Moxfield provider with Parse.bot API key...")
+        moxfield = pymtg.Moxfield(api_key=api_key)
+
+        # Check authentication
+        print(f"   Authenticated: {moxfield.is_authenticated()}")
         print()
-    else:
+
+        # Example: Get a specific deck by ID
+        print("   a) Getting a specific deck by ID...")
+        # deck_id = "your-moxfield-deck-id"
+        # deck = moxfield.get_deck(deck_id)
+        print("      Note: Provide a deck ID to fetch a specific deck")
+        print()
+
+        # Example: Get user's decks
+        print("   b) Getting user's decks...")
         try:
-            # Initialize with API key
-            print("   Initializing Moxfield provider with Parse.bot API key...")
-            moxfield = pymtg.Moxfield(api_key=api_key)
-
-            # Check authentication
-            print(f"   Authenticated: {moxfield.is_authenticated()}")
+            user_decks = moxfield.get_user_decks(limit=3)
+            print(f"      Found {len(user_decks)} decks:")
+            for deck in user_decks:
+                print(f"        - {deck.name} ({deck.format})")
+            print()
+        except pymtg.PyMTGError as e:
+            print(f"      Error: {e}")
             print()
 
-            # Example: Get a specific deck by ID
-            print("   a) Getting a specific deck by ID...")
-            try:
-                # deck_id = "your-moxfield-deck-id"
-                # deck = moxfield.get_deck(deck_id)
-                print("      Note: Provide a deck ID to fetch a specific deck")
-                print()
-            except Exception as e:
-                print(f"      Error: {e}")
-                print()
-
-            # Example: Get user's decks
-            print("   b) Getting user's decks...")
-            try:
-                user_decks = moxfield.get_user_decks(limit=3)
-                print(f"      Found {len(user_decks)} decks:")
-                for deck in user_decks:
-                    print(f"        - {deck.name} ({deck.format})")
-                print()
-            except Exception as e:
-                print(f"      Error: {e}")
-                print()
-
-            # Example: Search for decks
-            print("   c) Searching for decks...")
-            try:
-                decks = moxfield.search(q="commander", limit=3)
-                print(f"      Found {len(decks)} decks matching 'commander':")
-                for deck in decks:
-                    print(f"        - {deck.name}")
-                print()
-            except Exception as e:
-                print(f"      Error: {e}")
-                print()
-
-            # Example: Autocomplete for deck names
-            print("   d) Autocomplete for deck names...")
-            try:
-                suggestions = moxfield.autocomplete("dragon", limit=5)
-                print("      Suggestions for 'dragon':")
-                for suggestion in suggestions:
-                    print(f"        - {suggestion}")
-                print()
-            except Exception as e:
-                print(f"      Error: {e}")
-                print()
-
-        except Exception as e:
-            print(f"   Error initializing Moxfield: {e}")
+        # Example: Search for decks
+        print("   c) Searching for decks...")
+        try:
+            decks = moxfield.search(q="commander", limit=3)
+            print(f"      Found {len(decks)} decks matching 'commander':")
+            for deck in decks:
+                print(f"        - {deck.name}")
             print()
+        except pymtg.PyMTGError as e:
+            print(f"      Error: {e}")
+            print()
+
+        # Example: Autocomplete for deck names
+        print("   d) Autocomplete for deck names...")
+        try:
+            suggestions = moxfield.autocomplete("dragon", limit=5)
+            print("      Suggestions for 'dragon':")
+            for suggestion in suggestions:
+                print(f"        - {suggestion}")
+            print()
+        except pymtg.PyMTGError as e:
+            print(f"      Error: {e}")
+            print()
+
+    except pymtg.PyMTGError as e:
+        print(f"   Error initializing Moxfield: {e}")
+        print()
 
     # =========================================================================
     # Example 4: Working with Deck objects
@@ -336,7 +314,7 @@ def main():
         print(f"      Found {len(results.get('scryfall', []))} results from Scryfall")
         print()
 
-    except Exception as e:
+    except pymtg.PyMTGError as e:
         print(f"   Error: {e}")
         print()
 

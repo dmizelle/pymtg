@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-07-12
+goal: Create a fully functional Archidekt provider that interacts with
+  Archidekt's API to provide deck management, card search, and card modification
+  capabilities

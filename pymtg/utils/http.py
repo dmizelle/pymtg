@@ -8,6 +8,7 @@ import logging
 from typing import Any, cast
 
 import requests
+from requests.structures import CaseInsensitiveDict
 
 from pymtg.exceptions import NetworkError
 
@@ -15,6 +16,42 @@ logger = logging.getLogger(__name__)
 
 # Default User-Agent for pymtg
 DEFAULT_USER_AGENT = "pymtg/0.1.0 (+https://github.com/pymtg/pymtg)"
+
+
+def _build_request_options(
+    allow_redirects: bool | None = None,
+    verify: bool | str | None = None,
+    proxies: dict[str, str] | None = None,
+    cookies: dict[str, str] | None = None,
+    auth: tuple[str, str] | None = None,
+) -> dict[str, Any]:
+    """Build a keyword-argument dict for requests.Session methods.
+
+    Only non-None values are included so that requests' own defaults
+    are preserved for unspecified options.
+
+    Args:
+        allow_redirects: Whether to follow redirects.
+        verify: SSL verification (True/False) or path to CA bundle.
+        proxies: Proxy URL mapping per scheme.
+        cookies: Cookies to send with the request.
+        auth: Basic auth (username, password) tuple.
+
+    Returns:
+        Dictionary suitable for splatting into a requests.Session method.
+    """
+    opts: dict[str, Any] = {}
+    if allow_redirects is not None:
+        opts["allow_redirects"] = allow_redirects
+    if verify is not None:
+        opts["verify"] = verify
+    if proxies is not None:
+        opts["proxies"] = proxies
+    if cookies is not None:
+        opts["cookies"] = cookies
+    if auth is not None:
+        opts["auth"] = auth
+    return opts
 
 
 class HTTPClient:
@@ -80,7 +117,11 @@ class HTTPClient:
         endpoint: str,
         params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
-        **kwargs: Any,
+        allow_redirects: bool | None = None,
+        verify: bool | str | None = None,
+        proxies: dict[str, str] | None = None,
+        cookies: dict[str, str] | None = None,
+        auth: tuple[str, str] | None = None,
     ) -> requests.Response:
         """Make a GET request to the API.
 
@@ -88,7 +129,11 @@ class HTTPClient:
             endpoint: The API endpoint (appended to base_url).
             params: Query parameters for the request.
             headers: Additional headers for the request.
-            **kwargs: Additional keyword arguments passed to session.get().
+            allow_redirects: Whether to follow redirects.
+            verify: SSL verification (True/False) or path to CA bundle.
+            proxies: Proxy URL mapping per scheme.
+            cookies: Cookies to send with the request.
+            auth: Basic auth (username, password) tuple.
 
         Returns:
             The requests.Response object.
@@ -98,22 +143,27 @@ class HTTPClient:
         """
         url = self._build_url(endpoint)
         merged_headers = self._merge_headers(headers)
+        opts = _build_request_options(
+            allow_redirects=allow_redirects,
+            verify=verify,
+            proxies=proxies,
+            cookies=cookies,
+            auth=auth,
+        )
 
         try:
-            logger.debug(f"GET {url} with params: {params}")
-            # Remove timeout from kwargs to prevent override
-            kwargs_copy = {k: v for k, v in kwargs.items() if k != "timeout"}
+            logger.debug("GET %s with params: %s", url, params)
             response = self.session.get(
                 url,
                 params=params,
                 headers=merged_headers,
                 timeout=self.timeout,
-                **kwargs_copy,
+                **opts,
             )
-            logger.debug(f"Response status: {response.status_code}")
+            logger.debug("Response status: %s", response.status_code)
             return response
         except requests.exceptions.RequestException as e:
-            logger.error(f"Network error on GET {url}: {e}")
+            logger.error("Network error on GET %s: %s", url, e)
             raise NetworkError(
                 f"Network error on GET {url}",
                 original_exception=e,
@@ -126,7 +176,11 @@ class HTTPClient:
         json: dict[str, Any] | None = None,
         params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
-        **kwargs: Any,
+        allow_redirects: bool | None = None,
+        verify: bool | str | None = None,
+        proxies: dict[str, str] | None = None,
+        cookies: dict[str, str] | None = None,
+        auth: tuple[str, str] | None = None,
     ) -> requests.Response:
         """Make a POST request to the API.
 
@@ -136,7 +190,11 @@ class HTTPClient:
             json: JSON data for the request.
             params: Query parameters for the request.
             headers: Additional headers for the request.
-            **kwargs: Additional keyword arguments passed to session.post().
+            allow_redirects: Whether to follow redirects.
+            verify: SSL verification (True/False) or path to CA bundle.
+            proxies: Proxy URL mapping per scheme.
+            cookies: Cookies to send with the request.
+            auth: Basic auth (username, password) tuple.
 
         Returns:
             The requests.Response object.
@@ -146,11 +204,16 @@ class HTTPClient:
         """
         url = self._build_url(endpoint)
         merged_headers = self._merge_headers(headers)
+        opts = _build_request_options(
+            allow_redirects=allow_redirects,
+            verify=verify,
+            proxies=proxies,
+            cookies=cookies,
+            auth=auth,
+        )
 
         try:
-            logger.debug(f"POST {url}")
-            # Remove timeout from kwargs to prevent override
-            kwargs_copy = {k: v for k, v in kwargs.items() if k != "timeout"}
+            logger.debug("POST %s", url)
             response = self.session.post(
                 url,
                 data=data,
@@ -158,12 +221,12 @@ class HTTPClient:
                 params=params,
                 headers=merged_headers,
                 timeout=self.timeout,
-                **kwargs_copy,
+                **opts,
             )
-            logger.debug(f"Response status: {response.status_code}")
+            logger.debug("Response status: %s", response.status_code)
             return response
         except requests.exceptions.RequestException as e:
-            logger.error(f"Network error on POST {url}: {e}")
+            logger.error("Network error on POST %s: %s", url, e)
             raise NetworkError(
                 f"Network error on POST {url}",
                 original_exception=e,
@@ -176,7 +239,11 @@ class HTTPClient:
         json: dict[str, Any] | None = None,
         params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
-        **kwargs: Any,
+        allow_redirects: bool | None = None,
+        verify: bool | str | None = None,
+        proxies: dict[str, str] | None = None,
+        cookies: dict[str, str] | None = None,
+        auth: tuple[str, str] | None = None,
     ) -> requests.Response:
         """Make a PUT request to the API.
 
@@ -186,7 +253,11 @@ class HTTPClient:
             json: JSON data for the request.
             params: Query parameters for the request.
             headers: Additional headers for the request.
-            **kwargs: Additional keyword arguments passed to session.put().
+            allow_redirects: Whether to follow redirects.
+            verify: SSL verification (True/False) or path to CA bundle.
+            proxies: Proxy URL mapping per scheme.
+            cookies: Cookies to send with the request.
+            auth: Basic auth (username, password) tuple.
 
         Returns:
             The requests.Response object.
@@ -196,11 +267,16 @@ class HTTPClient:
         """
         url = self._build_url(endpoint)
         merged_headers = self._merge_headers(headers)
+        opts = _build_request_options(
+            allow_redirects=allow_redirects,
+            verify=verify,
+            proxies=proxies,
+            cookies=cookies,
+            auth=auth,
+        )
 
         try:
-            logger.debug(f"PUT {url}")
-            # Remove timeout from kwargs to prevent override
-            kwargs_copy = {k: v for k, v in kwargs.items() if k != "timeout"}
+            logger.debug("PUT %s", url)
             response = self.session.put(
                 url,
                 data=data,
@@ -208,12 +284,12 @@ class HTTPClient:
                 params=params,
                 headers=merged_headers,
                 timeout=self.timeout,
-                **kwargs_copy,
+                **opts,
             )
-            logger.debug(f"Response status: {response.status_code}")
+            logger.debug("Response status: %s", response.status_code)
             return response
         except requests.exceptions.RequestException as e:
-            logger.error(f"Network error on PUT {url}: {e}")
+            logger.error("Network error on PUT %s: %s", url, e)
             raise NetworkError(
                 f"Network error on PUT {url}",
                 original_exception=e,
@@ -224,7 +300,11 @@ class HTTPClient:
         endpoint: str,
         params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
-        **kwargs: Any,
+        allow_redirects: bool | None = None,
+        verify: bool | str | None = None,
+        proxies: dict[str, str] | None = None,
+        cookies: dict[str, str] | None = None,
+        auth: tuple[str, str] | None = None,
     ) -> requests.Response:
         """Make a DELETE request to the API.
 
@@ -232,7 +312,11 @@ class HTTPClient:
             endpoint: The API endpoint (appended to base_url).
             params: Query parameters for the request.
             headers: Additional headers for the request.
-            **kwargs: Additional keyword arguments passed to session.delete().
+            allow_redirects: Whether to follow redirects.
+            verify: SSL verification (True/False) or path to CA bundle.
+            proxies: Proxy URL mapping per scheme.
+            cookies: Cookies to send with the request.
+            auth: Basic auth (username, password) tuple.
 
         Returns:
             The requests.Response object.
@@ -242,24 +326,92 @@ class HTTPClient:
         """
         url = self._build_url(endpoint)
         merged_headers = self._merge_headers(headers)
+        opts = _build_request_options(
+            allow_redirects=allow_redirects,
+            verify=verify,
+            proxies=proxies,
+            cookies=cookies,
+            auth=auth,
+        )
 
         try:
-            logger.debug(f"DELETE {url}")
-            # Remove timeout from kwargs to prevent override
-            kwargs_copy = {k: v for k, v in kwargs.items() if k != "timeout"}
+            logger.debug("DELETE %s", url)
             response = self.session.delete(
                 url,
                 params=params,
                 headers=merged_headers,
                 timeout=self.timeout,
-                **kwargs_copy,
+                **opts,
             )
-            logger.debug(f"Response status: {response.status_code}")
+            logger.debug("Response status: %s", response.status_code)
             return response
         except requests.exceptions.RequestException as e:
-            logger.error(f"Network error on DELETE {url}: {e}")
+            logger.error("Network error on DELETE %s: %s", url, e)
             raise NetworkError(
                 f"Network error on DELETE {url}",
+                original_exception=e,
+            ) from e
+
+    def patch(
+        self,
+        endpoint: str,
+        data: dict[str, Any] | None = None,
+        json: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+        allow_redirects: bool | None = None,
+        verify: bool | str | None = None,
+        proxies: dict[str, str] | None = None,
+        cookies: dict[str, str] | None = None,
+        auth: tuple[str, str] | None = None,
+    ) -> requests.Response:
+        """Make a PATCH request to the API.
+
+        Args:
+            endpoint: The API endpoint (appended to base_url).
+            data: Form data for the request.
+            json: JSON data for the request.
+            params: Query parameters for the request.
+            headers: Additional headers for the request.
+            allow_redirects: Whether to follow redirects.
+            verify: SSL verification (True/False) or path to CA bundle.
+            proxies: Proxy URL mapping per scheme.
+            cookies: Cookies to send with the request.
+            auth: Basic auth (username, password) tuple.
+
+        Returns:
+            The requests.Response object.
+
+        Raises:
+            NetworkError: If there is a network-related error.
+        """
+        url = self._build_url(endpoint)
+        merged_headers = self._merge_headers(headers)
+        opts = _build_request_options(
+            allow_redirects=allow_redirects,
+            verify=verify,
+            proxies=proxies,
+            cookies=cookies,
+            auth=auth,
+        )
+
+        try:
+            logger.debug("PATCH %s", url)
+            response = self.session.patch(
+                url,
+                data=data,
+                json=json,
+                params=params,
+                headers=merged_headers,
+                timeout=self.timeout,
+                **opts,
+            )
+            logger.debug("Response status: %s", response.status_code)
+            return response
+        except requests.exceptions.RequestException as e:
+            logger.error("Network error on PATCH %s: %s", url, e)
+            raise NetworkError(
+                f"Network error on PATCH {url}",
                 original_exception=e,
             ) from e
 
@@ -282,12 +434,20 @@ class HTTPClient:
             raise ValueError("endpoint must be a non-empty string")
         if endpoint.startswith(("http://", "https://")):
             return endpoint
-        return f"{self.base_url}/{endpoint.lstrip('/')}"
+        # base_url already has trailing slashes stripped in __init__;
+        # ensure the endpoint has no leading slash to avoid a double slash.
+        path = endpoint.lstrip("/")
+        return f"{self.base_url}/{path}"
 
     def _merge_headers(
         self, additional_headers: dict[str, str] | None
     ) -> dict[str, str]:
         """Merge additional headers with default headers.
+
+        The merge is performed using a case-insensitive mapping so that a
+        caller-supplied header with different casing than a session default
+        (e.g. ``accept-encoding`` vs ``Accept-Encoding``) overwrites the
+        existing entry instead of producing a duplicate key.
 
         Args:
             additional_headers: Additional headers to merge.
@@ -298,7 +458,7 @@ class HTTPClient:
         Note:
             Critical headers (User-Agent, Accept) cannot be overridden.
         """
-        headers = dict(self.session.headers)
+        headers = CaseInsensitiveDict(self.session.headers)
         if additional_headers:
             # Prevent overriding critical headers (case-insensitive check)
             for key, value in additional_headers.items():
@@ -306,10 +466,11 @@ class HTTPClient:
                     headers[key] = value
                 else:
                     logger.warning(
-                        f"Attempted to override critical header {key}. "
-                        f"This header is protected and cannot be overridden."
+                        "Attempted to override critical header %s. "
+                        "This header is protected and cannot be overridden.",
+                        key,
                     )
-        return cast(dict[str, str], headers)
+        return cast(dict[str, str], dict(headers))
 
     def close(self) -> None:
         """Close the HTTP client session."""

@@ -116,8 +116,10 @@ Args:
     param1 (int): The first parameter.
     param2 (str, optional): The second parameter. Defaults to None.
     *args: Variable length argument list.
-    **kwargs: Arbitrary keyword arguments.
 ```
+
+**Note:** `**kwargs` is banned in this codebase (see Section 2.5). Do not use
+it in function signatures or document it in docstrings.
 
 **If using PEP 484 type annotations, omit types from docstring:**
 
@@ -321,6 +323,68 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 | Protected | `_leading_underscore` |
 | Private | `__double_leading` (discouraged) |
 
+### 2.5 No `**kwargs` (CRITICAL)
+
+**The use of `**kwargs` in function and method signatures is BANNED throughout the
+pymtg codebase.** This applies to all production code (`pymtg/`) and test code
+(`tests/`).
+
+All function parameters MUST be explicitly declared with names and type
+annotations. This ensures:
+
+- Self-documenting APIs where every parameter is visible in the signature
+- Full static type checking coverage via pyright
+- IDE autocompletion support for all parameters
+- No hidden or undocumented parameters that callers can pass
+
+#### 2.5.1 Rule
+
+**NEVER** write a function or method with `**kwargs`:
+
+```python
+# FORBIDDEN - never do this
+def search(self, query: str, limit: int = 20, **kwargs: Any) -> list[Card]:
+    ...
+
+# CORRECT - declare every parameter explicitly
+def search(
+    self,
+    query: str,
+    limit: int = 20,
+    page: int = 1,
+    order: str | None = None,
+) -> list[Card]:
+    ...
+```
+
+#### 2.5.2 Exceptions (Framework-Mandated Only)
+
+The ONLY permitted uses of `**kwargs` are where a third-party framework
+dictates the signature and the parameter cannot be removed without breaking
+the integration. These are:
+
+| Location | Reason |
+|----------|--------|
+| `pymtg/utils/retry.py` | Decorator wrapper pass-through (`wrapper(*args, **kwargs)`) — must forward arbitrary arguments to the wrapped function |
+| `pymtg/models/pricing.py` | Pydantic `__pydantic_init_subclass__` hook — signature mandated by Pydantic |
+| `pymtg/auth/oauth1.py` | `_sign_request` — called by `requests.Session` as a hook with `(request, **kwargs)` |
+
+**No other code may use `**kwargs`.** When in doubt, declare explicit
+parameters.
+
+#### 2.5.3 Reviewing kwargs Removal
+
+When removing `**kwargs` from a method that previously accepted arbitrary
+keyword arguments:
+
+1. Enumerate every keyword argument that callers actually pass
+2. Declare each as an explicit parameter with a type annotation and default value
+3. For filter-style parameters that were iterated and forwarded, use an
+   `extra_params: dict[str, Any]` or `extra_filters: dict[str, Any]` pattern
+   inside the method body, built from the explicit parameters
+4. Update the docstring `Args:` section to document every new parameter
+5. Update all call sites and tests
+
 ---
 
 ## 3. Testing Requirements
@@ -382,6 +446,7 @@ The following rules are **absolute** and have no exceptions:
 2. Docstrings must be accurate and up-to-date
 3. Changes to code must include changes to docstrings
 4. Type annotations are required for public APIs
+5. `**kwargs` is banned in all function/method signatures (see Section 2.5)
 
 ### 5.2 Violations
 
@@ -459,4 +524,48 @@ Before considering a task as completed, and especially before committing:
 - `uv run pyright` must complete without warnings or errors.
 - `uv run black` must complete without warnings or errors.
 
-*Last updated: 2026-06-27*
+
+<!-- gitnexus:start -->
+# GitNexus — Code Intelligence
+
+This project is indexed by GitNexus as **pymtg** (2324 symbols, 3957 relationships, 113 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+
+> Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
+
+## Always Do
+
+- **MUST run impact analysis before editing any symbol.** Before modifying a function, class, or method, run `impact({target: "symbolName", direction: "upstream"})` and report the blast radius (direct callers, affected processes, risk level) to the user.
+- **MUST run `detect_changes()` before committing** to verify your changes only affect expected symbols and execution flows. For regression review, compare against the default branch: `detect_changes({scope: "compare", base_ref: "main"})`.
+- **MUST warn the user** if impact analysis returns HIGH or CRITICAL risk before proceeding with edits.
+- When exploring unfamiliar code, use `query({search_query: "concept"})` to find execution flows instead of grepping. It returns process-grouped results ranked by relevance.
+- When you need full context on a specific symbol — callers, callees, which execution flows it participates in — use `context({name: "symbolName"})`.
+- For security review, `explain({target: "fileOrSymbol"})` lists taint findings (source→sink flows; needs `analyze --pdg`).
+
+## Never Do
+
+- NEVER edit a function, class, or method without first running `impact` on it.
+- NEVER ignore HIGH or CRITICAL risk warnings from impact analysis.
+- NEVER rename symbols with find-and-replace — use `rename` which understands the call graph.
+- NEVER commit changes without running `detect_changes()` to check affected scope.
+
+## Resources
+
+| Resource | Use for |
+|----------|---------|
+| `gitnexus://repo/pymtg/context` | Codebase overview, check index freshness |
+| `gitnexus://repo/pymtg/clusters` | All functional areas |
+| `gitnexus://repo/pymtg/processes` | All execution flows |
+| `gitnexus://repo/pymtg/process/{name}` | Step-by-step execution trace |
+
+## CLI
+
+| Task | Read this skill file |
+|------|---------------------|
+| Understand architecture / "How does X work?" | `.claude/skills/gitnexus/gitnexus-exploring/SKILL.md` |
+| Blast radius / "What breaks if I change X?" | `.claude/skills/gitnexus/gitnexus-impact-analysis/SKILL.md` |
+| Trace bugs / "Why is X failing?" | `.claude/skills/gitnexus/gitnexus-debugging/SKILL.md` |
+| Rename / extract / split / refactor | `.claude/skills/gitnexus/gitnexus-refactoring/SKILL.md` |
+| Tools, resources, schema reference | `.claude/skills/gitnexus/gitnexus-guide/SKILL.md` |
+| Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
+
+<!-- gitnexus:end -->

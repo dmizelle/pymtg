@@ -37,9 +37,10 @@ class TestScryfallIntegration(unittest.TestCase):
             True if network is available, False otherwise.
         """
         try:
-            requests.get("https://api.scryfall.com", timeout=5)
+            response = requests.get("https://api.scryfall.com", timeout=5)
+            response.close()
             return True
-        except (requests.exceptions.RequestException, requests.exceptions.Timeout):
+        except requests.exceptions.RequestException:
             return False
 
     def setUp(self):
@@ -47,6 +48,15 @@ class TestScryfallIntegration(unittest.TestCase):
         if self.skip_tests:
             self.skipTest("Integration tests skipped (network or env not configured)")
         self.scryfall = Scryfall()
+
+    def tearDown(self):
+        """Clean up test fixtures.
+
+        Closes any underlying session the Scryfall client may hold so
+        connections do not leak across test methods.
+        """
+        if hasattr(self, "scryfall") and hasattr(self.scryfall, "close"):
+            self.scryfall.close()
 
     def test_get_card_returns_card(self):
         """Tests that get_card returns a card by ID."""

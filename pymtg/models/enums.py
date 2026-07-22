@@ -37,11 +37,11 @@ class Color(StrEnum):
         ESPER: Esper color combination (WUB).
         GRIXIS: Grixis color combination (UBR).
         JUND: Jund color combination (BRG).
-        NAYA: Naya color combination (RGW).
+        NAYA: Naya color combination (WRG).
         ABZAN: Abzan color combination (WBG).
         JESKAI: Jeskai color combination (WUR).
         SULTAI: Sultai color combination (UBG).
-        MARDU: Mardu color combination (RGW).
+        MARDU: Mardu color combination (WBR).
         TEMUR: Temur color combination (URG).
         WUBR: Four-color combination (WUBR).
         WUBG: Four-color combination (WUBG).
@@ -80,7 +80,7 @@ class Color(StrEnum):
     ABZAN = "WBG"
     JESKAI = "WUR"
     SULTAI = "UBG"
-    MARDU = "WRG"
+    MARDU = "WBR"
     TEMUR = "URG"
 
     # Four-color combinations
@@ -117,10 +117,14 @@ class Color(StrEnum):
         """Convert a full color name to Color enum value.
 
         Args:
-            name: The full color name (e.g., "White", "Blue", "Colorless").
+            name: The full color name (e.g., "White", "Blue",
+                "Colorless").
 
         Returns:
             The corresponding Color enum value.
+
+        Raises:
+            ValueError: If the name does not match a known color.
         """
         mapping = {
             "White": cls.WHITE,
@@ -130,7 +134,9 @@ class Color(StrEnum):
             "Green": cls.GREEN,
             "Colorless": cls.COLORLESS,
         }
-        return mapping.get(name, cls.COLORLESS)
+        if name not in mapping:
+            raise ValueError(f"Unknown color name: {name!r}")
+        return mapping[name]
 
     @classmethod
     def from_colors(cls, colors: list["Color"]) -> "Color":

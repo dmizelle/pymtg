@@ -10,12 +10,13 @@ Note:
     credentials or network access.
 """
 
+import functools
 import unittest
 from unittest.mock import MagicMock, patch
 
 import requests
 
-from pymtg.auth.session import SessionAuthHandler
+from pymtg.auth.jwt import JWTAuthHandler
 from pymtg.exceptions import (
     AuthenticationError,
     NetworkError,
@@ -23,8 +24,29 @@ from pymtg.exceptions import (
 )
 from pymtg.models.card import Card
 from pymtg.models.deck import Deck
+from pymtg.providers.archidekt.exceptions import ArchidektValidationError
 from pymtg.models.enums import Board, Color, Format, Rarity, SetType
 from pymtg.providers.archidekt import Archidekt
+
+
+def mock_authenticated_and_http_client(func):
+    """Decorator to mock JWTAuthHandler.is_authenticated and Archidekt.http_client.
+
+    This reduces duplication in tests that need both mocks.
+
+    Returns:
+        Decorated function with both mocks applied.
+    """
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        patcher1 = patch.object(JWTAuthHandler, "is_authenticated", return_value=True)
+        patcher2 = patch.object(Archidekt, "http_client")
+
+        with patcher1, patcher2 as mock_http_client:
+            return func(*args, mock_http_client=mock_http_client, **kwargs)
+
+    return wrapper
 
 
 class TestArchidektInitialization(unittest.TestCase):
@@ -34,15 +56,15 @@ class TestArchidektInitialization(unittest.TestCase):
         """Test that Archidekt provider initializes correctly with default parameters."""
         archidekt = Archidekt()
         self.assertEqual(archidekt.name, "archidekt")
-        self.assertEqual(archidekt.base_url, "https://archidekt.com")
+        self.assertEqual(archidekt.base_url, "https://archidekt.com/api/")
         self.assertIsNotNone(archidekt.http_client)
         self.assertIsNotNone(archidekt.config)
         self.assertIsNotNone(archidekt.auth_handler)
-        self.assertIsInstance(archidekt.auth_handler, SessionAuthHandler)
+        self.assertIsInstance(archidekt.auth_handler, JWTAuthHandler)
 
     def test_initialization_with_credentials(self):
         """Test that Archidekt provider initializes with credentials."""
-        with patch.object(SessionAuthHandler, "authenticate") as mock_auth:
+        with patch.object(JWTAuthHandler, "authenticate") as mock_auth:
             archidekt = Archidekt(username="test_user", password="test_pass")
 
             self.assertEqual(archidekt.name, "archidekt")
@@ -52,12 +74,12 @@ class TestArchidektInitialization(unittest.TestCase):
 
     def test_initialization_with_credentials_logs_auth_info(self):
         """Tests that init with credentials logs authentication info."""
-        with patch.object(SessionAuthHandler, "authenticate"):
+        with patch.object(JWTAuthHandler, "authenticate"):
             with self.assertLogs("pymtg.providers.archidekt", level="INFO") as cm:
                 Archidekt(username="test_user", password="test_pass")
 
         self.assertTrue(
-            any("Archidekt authentication successful" in msg for msg in cm.output),
+            any("Archidekt JWT authentication successful" in msg for msg in cm.output),
             f"Expected auth success log, got: {cm.output}",
         )
 
@@ -68,10 +90,8 @@ class TestArchidektInitialization(unittest.TestCase):
 
     def test_is_authenticated_with_creds(self):
         """Test that is_authenticated returns True with valid credentials."""
-        with patch.object(SessionAuthHandler, "authenticate"):
-            with patch.object(
-                SessionAuthHandler, "is_authenticated", return_value=True
-            ):
+        with patch.object(JWTAuthHandler, "authenticate"):
+            with patch.object(JWTAuthHandler, "is_authenticated", return_value=True):
                 archidekt = Archidekt(username="test_user", password="test_pass")
                 self.assertTrue(archidekt.is_authenticated())
 
@@ -90,13 +110,13 @@ class TestArchidektInitialization(unittest.TestCase):
 
         self.assertIn("Archidekt", repr_str)
         self.assertIn("archidekt", repr_str)
-        self.assertIn("not authenticated", repr_str)
+        self.assertIn("authenticated=False", repr_str)
 
 
 class TestArchidektAuthentication(unittest.TestCase):
     """Test Archidekt authentication methods."""
 
-    @patch.object(SessionAuthHandler, "authenticate")
+    @patch.object(JWTAuthHandler, "authenticate")
     def test_authenticate_with_valid_credentials(self, mock_auth):
         """Tests that authenticate works with valid credentials."""
         archidekt = Archidekt()
@@ -104,7 +124,7 @@ class TestArchidektAuthentication(unittest.TestCase):
 
         mock_auth.assert_called_once()
 
-    @patch.object(SessionAuthHandler, "authenticate")
+    @patch.object(JWTAuthHandler, "authenticate")
     def test_authenticate_logs_info_on_success(self, mock_auth):
         """Tests that authenticate logs an info message on success."""
         archidekt = Archidekt()
@@ -112,11 +132,11 @@ class TestArchidektAuthentication(unittest.TestCase):
             archidekt.authenticate("test_user", "test_pass")
 
         self.assertTrue(
-            any("Archidekt authentication successful" in msg for msg in cm.output),
+            any("Archidekt JWT authentication successful" in msg for msg in cm.output),
             f"Expected auth success log, got: {cm.output}",
         )
 
-    @patch.object(SessionAuthHandler, "authenticate")
+    @patch.object(JWTAuthHandler, "authenticate")
     def test_authenticate_failure(self, mock_auth):
         """Test authentication failure raises AuthenticationError."""
         mock_auth.side_effect = AuthenticationError("Login failed")
@@ -126,7 +146,7 @@ class TestArchidektAuthentication(unittest.TestCase):
         with self.assertRaises(AuthenticationError):
             archidekt.authenticate("test_user", "test_pass")
 
-    @patch.object(SessionAuthHandler, "refresh")
+    @patch.object(JWTAuthHandler, "refresh")
     def test_refresh_auth_with_valid_credentials(self, mock_refresh):
         """Tests that refresh_auth works with valid credentials."""
         archidekt = Archidekt()
@@ -134,7 +154,7 @@ class TestArchidektAuthentication(unittest.TestCase):
 
         mock_refresh.assert_called_once()
 
-    @patch.object(SessionAuthHandler, "refresh")
+    @patch.object(JWTAuthHandler, "refresh")
     def test_refresh_auth_logs_info_on_success(self, mock_refresh):
         """Tests that refresh_auth logs an info message on success."""
         archidekt = Archidekt()
@@ -149,7 +169,7 @@ class TestArchidektAuthentication(unittest.TestCase):
             f"Expected auth refresh log, got: {cm.output}",
         )
 
-    @patch.object(SessionAuthHandler, "refresh")
+    @patch.object(JWTAuthHandler, "refresh")
     def test_refresh_auth_failure(self, mock_refresh):
         """Test authentication refresh failure raises AuthenticationError."""
         mock_refresh.side_effect = AuthenticationError("Refresh failed")
@@ -174,18 +194,24 @@ class TestArchidektGetCard(unittest.TestCase):
         mock_response = MagicMock()
         mock_http_client.get.return_value = mock_response
 
-        # Mock the response data
+        # Mock the response data (now uses search endpoint which returns results list)
         mock_data = {
-            "id": "archidekt-card-123",
-            "name": "Black Lotus",
-            "scryfall_id": "38625902-0567-4f24-85b0-a00843553997",
-            "mana_cost": "{0}",
-            "type_line": "Artifact",
-            "oracle_text": "{T}, Sacrifice this artifact: Add {B}{B}{B}{B}{B}{B}{B}.",
-            "rarity": "mythic",
-            "color_identity": [],
-            "colors": [],
-            "cmc": 0.0,
+            "count": 1,
+            "results": [
+                {
+                    "id": "archidekt-card-123",
+                    "name": "Black Lotus",
+                    "scryfall_id": "38625902-0567-4f24-85b0-a00843553997",
+                    "mana_cost": "{0}",
+                    "type_line": "Artifact",
+                    "oracle_text": "{T}, Sacrifice this artifact: Add {B}{B}{B}{B}{B}{B}{B}.",
+                    "rarity": "mythic",
+                    "color_identity": [],
+                    "colors": [],
+                    "cmc": 0.0,
+                    "oracleCard": {"id": "archidekt-card-123"},
+                }
+            ],
         }
         mock_handle_response.return_value = mock_data
 
@@ -199,15 +225,18 @@ class TestArchidektGetCard(unittest.TestCase):
         )
 
         archidekt = Archidekt()
-        card = archidekt.get_card("archidekt-card-123")
+        card = archidekt.get_card("123")
 
         self.assertIsInstance(card, Card)
         self.assertEqual(card.name, "Black Lotus")
         self.assertEqual(card.scryfall_id, "38625902-0567-4f24-85b0-a00843553997")
         self.assertEqual(card.source, "archidekt")
 
-        # Verify HTTP client was called correctly
-        mock_http_client.get.assert_called_once_with("/api/cards/archidekt-card-123/")
+        # Verify HTTP client was called correctly (now uses search endpoint with numeric ID)
+        mock_http_client.get.assert_called_once_with(
+            "cards/v2/",
+            params={"oracleCardIds": "123", "game": 1, "unique": True, "pageSize": 1},
+        )
 
     @patch.object(Archidekt, "_handle_response")
     @patch.object(Archidekt, "http_client")
@@ -283,7 +312,7 @@ class TestArchidektGetDeck(unittest.TestCase):
         self.assertEqual(deck.source, "archidekt")
 
         # Verify HTTP client was called correctly
-        mock_http_client.get.assert_called_once_with("/api/decks/deck-uuid-123/")
+        mock_http_client.get.assert_called_once_with("decks/v2/deck-uuid-123/")
 
     @patch.object(Archidekt, "_handle_response")
     @patch.object(Archidekt, "http_client")
@@ -357,7 +386,7 @@ class TestArchidektGetUserDecks(unittest.TestCase):
         self.assertEqual(decks[1].id, "deck2")
 
         # Verify HTTP client was called correctly
-        mock_http_client.get.assert_called_once_with("/api/users/test-user/decks/")
+        mock_http_client.get.assert_called_once_with("users/test-user/decks/")
 
     @patch.object(Archidekt, "_handle_response")
     @patch.object(Archidekt, "http_client")
@@ -379,14 +408,18 @@ class TestArchidektGetUserDecks(unittest.TestCase):
             id="deck1", name="My Deck", source="archidekt"
         )
 
+        # Create archidekt with mocked auth handler that has a user_id
         archidekt = Archidekt()
+        # Set the private _user_id attribute directly (property is read-only)
+        archidekt.auth_handler._user_id = "auth-user-123"
+
         decks = archidekt.get_user_decks()
 
         self.assertIsInstance(decks, list)
         self.assertEqual(len(decks), 1)
 
         # Verify HTTP client was called with correct endpoint
-        mock_http_client.get.assert_called_once_with("/api/decks/")
+        mock_http_client.get.assert_called_once_with("users/auth-user-123/decks/")
 
     @patch.object(Archidekt, "_handle_response")
     @patch.object(Archidekt, "http_client")
@@ -414,6 +447,8 @@ class TestArchidektGetUserDecks(unittest.TestCase):
         )
 
         archidekt = Archidekt()
+        # Set the private _user_id attribute directly (property is read-only)
+        archidekt.auth_handler._user_id = "auth-user-123"
 
         with self.assertRaises(NetworkError) as context:
             archidekt.get_user_decks()
@@ -426,21 +461,17 @@ class TestArchidektSearch(unittest.TestCase):
 
     @patch.object(Archidekt, "_handle_response")
     @patch.object(Archidekt, "http_client")
-    @patch.object(Archidekt, "_build_search_query")
     @patch.object(Archidekt, "_parse_card")
     def test_search_returns_results(
-        self, mock_parse_card, mock_build_query, mock_http_client, mock_handle_response
+        self, mock_parse_card, mock_http_client, mock_handle_response
     ):
         """Tests that search returns results for a query."""
-        # Mock query building
-        mock_build_query.return_value = 'name:"Black Lotus"'
-
         # Mock HTTP client
         mock_response = MagicMock()
         mock_http_client.get.return_value = mock_response
 
         # Mock response data
-        mock_data = [{"id": "card1"}, {"id": "card2"}]
+        mock_data = {"results": [{"id": "card1"}, {"id": "card2"}]}
         mock_handle_response.return_value = mock_data
 
         # Mock parse method
@@ -455,15 +486,11 @@ class TestArchidektSearch(unittest.TestCase):
         self.assertIsInstance(cards, list)
         self.assertEqual(len(cards), 2)
 
-        # Verify query building was called correctly
-        mock_build_query.assert_called_once_with(
-            name="Black Lotus", colors=None, identity=None, type_line=None
-        )
-
-        # Verify HTTP client was called correctly
-        mock_http_client.get.assert_called_once_with(
-            "/api/cards/", params={"q": 'name:"Black Lotus"', "limit": 20}
-        )
+        # Verify HTTP client was called correctly with dict parameters
+        call_args = mock_http_client.get.call_args
+        self.assertEqual(call_args[0][0], "cards/v2/")
+        self.assertIn("nameSearch", call_args[1]["params"])
+        self.assertEqual(call_args[1]["params"]["nameSearch"], "Black Lotus")
 
     @patch.object(Archidekt, "_handle_response")
     @patch.object(Archidekt, "http_client")
@@ -477,7 +504,7 @@ class TestArchidektSearch(unittest.TestCase):
         mock_http_client.get.return_value = mock_response
 
         # Mock response data
-        mock_data = [{"id": "card1"}]
+        mock_data = {"results": [{"id": "card1"}]}
         mock_handle_response.return_value = mock_data
 
         # Mock parse method
@@ -492,8 +519,8 @@ class TestArchidektSearch(unittest.TestCase):
 
         # Verify query building was called with colors
         call_args = mock_http_client.get.call_args
-        self.assertIn("q", call_args[1]["params"])
-        self.assertIn("c:WU", call_args[1]["params"]["q"])
+        self.assertIn("colors", call_args[1]["params"])
+        self.assertEqual(call_args[1]["params"]["colors"], "Blue,White")
 
     @patch.object(Archidekt, "_handle_response")
     @patch.object(Archidekt, "http_client")
@@ -543,7 +570,7 @@ class TestArchidektSearchSyntax(unittest.TestCase):
         mock_http_client.get.return_value = mock_response
 
         # Mock response data
-        mock_data = [{"id": "card1", "name": "Test Card"}]
+        mock_data = {"results": [{"id": "card1", "name": "Test Card"}]}
         mock_handle_response.return_value = mock_data
 
         # Mock parse method
@@ -560,9 +587,9 @@ class TestArchidektSearchSyntax(unittest.TestCase):
 
         # Verify HTTP client was called with query
         call_args = mock_http_client.get.call_args
-        self.assertIn("q", call_args[1]["params"])
-        self.assertEqual(call_args[1]["params"]["q"], "c:U type:creature")
-        self.assertEqual(call_args[1]["params"]["limit"], 10)
+        self.assertIn("nameSearch", call_args[1]["params"])
+        self.assertEqual(call_args[1]["params"]["nameSearch"], "c:U type:creature")
+        self.assertEqual(call_args[1]["params"]["pageSize"], 10)
 
     @patch.object(Archidekt, "http_client")
     def test_search_syntax_network_error(self, mock_http_client):
@@ -1127,28 +1154,32 @@ class TestArchidektBuildSearchQuery(unittest.TestCase):
         archidekt = Archidekt()
         query = archidekt._build_search_query(name="Black Lotus")
 
-        self.assertIn('"Black Lotus"', query)
+        self.assertIsInstance(query, dict)
+        self.assertEqual(query.get("nameSearch"), "Black Lotus")
 
     def test_build_query_with_colors(self):
         """Test building query with color parameters."""
         archidekt = Archidekt()
         query = archidekt._build_search_query(colors=[Color.BLUE, Color.BLACK])
 
-        self.assertIn("c:UB", query)
+        self.assertIsInstance(query, dict)
+        self.assertEqual(query.get("colors"), "Blue,Black")
 
     def test_build_query_with_identity(self):
         """Test building query with color identity parameter."""
         archidekt = Archidekt()
         query = archidekt._build_search_query(identity=[Color.WHITE, Color.BLUE])
 
-        self.assertIn("id:WU", query)
+        self.assertIsInstance(query, dict)
+        self.assertEqual(query.get("colorIdentity"), "White,Blue")
 
     def test_build_query_with_type_line(self):
         """Test building query with type line parameter."""
         archidekt = Archidekt()
         query = archidekt._build_search_query(type_line="Creature")
 
-        self.assertIn("t:Creature", query)
+        self.assertIsInstance(query, dict)
+        self.assertEqual(query.get("type"), "Creature")
 
     def test_build_query_combined(self):
         """Test building query with multiple parameters."""
@@ -1159,29 +1190,32 @@ class TestArchidektBuildSearchQuery(unittest.TestCase):
             type_line="Artifact",
         )
 
-        self.assertIn('"Lotus"', query)
-        self.assertIn("c:B", query)
-        self.assertIn("t:Artifact", query)
+        self.assertIsInstance(query, dict)
+        self.assertEqual(query.get("nameSearch"), "Lotus")
+        self.assertEqual(query.get("colors"), "Black")
+        self.assertEqual(query.get("type"), "Artifact")
+
+    def test_build_query_name_parameter(self):
+        """Test that name parameter is correctly set."""
+        archidekt = Archidekt()
+        query = archidekt._build_search_query(name="Card Name")
+        self.assertEqual(query.get("nameSearch"), "Card Name")
 
     def test_build_query_name_sanitization(self):
-        """Test that name is sanitized to prevent query injection.
-
-        This test verifies that backslashes and double quotes in card names
-        are properly escaped to prevent query syntax breakage.
-        """
+        """Test that name parameter is properly sanitized to prevent query injection."""
         archidekt = Archidekt()
 
         # Test backslash escaping
         query = archidekt._build_search_query(name="Card\\Name")
-        assert '"Card\\\\Name"' in query
+        self.assertEqual(query.get("nameSearch"), "Card\\Name")
 
         # Test double quote escaping
         query = archidekt._build_search_query(name='Card"Name')
-        assert '"Card\\"Name"' in query
+        self.assertEqual(query.get("nameSearch"), 'Card"Name')
 
         # Test combined escaping
         query = archidekt._build_search_query(name='Card\\"Name')
-        assert '"Card\\\\\\"Name"' in query
+        self.assertEqual(query.get("nameSearch"), 'Card\\"Name')
 
 
 class TestArchidektNormalizeFlavorText(unittest.TestCase):
@@ -1349,6 +1383,316 @@ class TestArchidektCardFaceFlavorText(unittest.TestCase):
         assert card.card_faces is not None
         flavor = card.card_faces[0].flavor_text
         self.assertIn(type(flavor), (str, type(None)))
+
+
+class TestArchidektCardMetadata(unittest.TestCase):
+    """Tests for card metadata endpoints (editions, subtypes)."""
+
+    @mock_authenticated_and_http_client
+    def test_get_editions_success(self, mock_http_client):
+        """Test that get_editions returns list of editions."""
+        # Mock the HTTP client
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [
+            {
+                "editioncode": "trc",
+                "editionname": "Star Trek Commander",
+                "editiondate": "2026-11-20",
+                "editiontype": "commander",
+                "mtgoCode": "trc",
+            },
+            {
+                "editioncode": "fra",
+                "editionname": "Reality Fracture",
+                "editiondate": "2026-10-02",
+                "editiontype": "expansion",
+                "mtgoCode": "fra",
+            },
+        ]
+        mock_http_client.get.return_value = mock_response
+
+        archidekt = Archidekt()
+
+        editions = archidekt.get_editions()
+
+        self.assertIsInstance(editions, list)
+        self.assertEqual(len(editions), 2)
+        self.assertEqual(editions[0]["editioncode"], "trc")
+        mock_http_client.get.assert_called_once_with("cards/editions/")
+
+    @mock_authenticated_and_http_client
+    def test_get_editions_empty(self, mock_http_client):
+        """Test that get_editions returns empty list on empty response."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = []
+        mock_http_client.get.return_value = mock_response
+
+        archidekt = Archidekt()
+
+        editions = archidekt.get_editions()
+
+        self.assertIsInstance(editions, list)
+        self.assertEqual(len(editions), 0)
+
+    @mock_authenticated_and_http_client
+    def test_get_editions_network_error(self, mock_http_client):
+        """Test that get_editions raises NetworkError on network failure."""
+        mock_http_client.get.side_effect = requests.exceptions.RequestException(
+            "Network error"
+        )
+
+        archidekt = Archidekt()
+
+        with self.assertRaises(NetworkError):
+            archidekt.get_editions()
+
+    @mock_authenticated_and_http_client
+    def test_get_subtypes_success(self, mock_http_client):
+        """Test that get_subtypes returns list of subtypes."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [
+            {"subtypename": "Angel"},
+            {"subtypename": "Zombie"},
+            {"subtypename": "Advisor"},
+        ]
+        mock_http_client.get.return_value = mock_response
+
+        archidekt = Archidekt()
+
+        subtypes = archidekt.get_subtypes()
+
+        self.assertIsInstance(subtypes, list)
+        self.assertEqual(len(subtypes), 3)
+        self.assertEqual(subtypes[0]["subtypename"], "Angel")
+        mock_http_client.get.assert_called_once_with("cards/subtypes/")
+
+    @mock_authenticated_and_http_client
+    def test_get_subtypes_empty(self, mock_http_client):
+        """Test that get_subtypes returns empty list on empty response."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = []
+        mock_http_client.get.return_value = mock_response
+
+        archidekt = Archidekt()
+
+        subtypes = archidekt.get_subtypes()
+
+        self.assertIsInstance(subtypes, list)
+        self.assertEqual(len(subtypes), 0)
+
+
+class TestArchidektDeckOrganization(unittest.TestCase):
+    """Tests for deck organization endpoints (folders, tags)."""
+
+    @patch.object(JWTAuthHandler, "is_authenticated", return_value=True)
+    @patch.object(Archidekt, "http_client")
+    def test_get_folder_success(self, mock_http_client, mock_is_auth):
+        """Test that get_folder returns folder data."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "id": 1735877,
+            "name": "Home",
+            "parentFolder": None,
+            "private": False,
+            "owner": {"id": 1071357, "username": "test_user"},
+            "subfolders": [],
+            "decks": [],
+        }
+        mock_http_client.get.return_value = mock_response
+
+        archidekt = Archidekt()
+
+        folder = archidekt.get_folder("1735877")
+
+        self.assertIsInstance(folder, dict)
+        self.assertEqual(folder["id"], 1735877)
+        self.assertEqual(folder["name"], "Home")
+        mock_http_client.get.assert_called_once_with("decks/folders/1735877/")
+
+    @patch.object(JWTAuthHandler, "is_authenticated", return_value=True)
+    @patch.object(Archidekt, "http_client")
+    def test_get_tags_success(self, mock_http_client, mock_is_auth):
+        """Test that get_tags returns list of tags."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [
+            {
+                "id": 72,
+                "name": "+1/+1 Counters",
+                "aliases": "",
+                "description": "",
+                "created_at": "2023-03-30T12:12:15.761335Z",
+            },
+            {
+                "id": 28,
+                "name": "Aggro",
+                "aliases": "aggressive sligh creatures",
+                "description": "",
+                "created_at": "2023-03-30T12:12:15.494531Z",
+            },
+        ]
+        mock_http_client.get.return_value = mock_response
+
+        archidekt = Archidekt()
+
+        tags = archidekt.get_tags()
+
+        self.assertIsInstance(tags, list)
+        self.assertEqual(len(tags), 2)
+        self.assertEqual(tags[0]["name"], "+1/+1 Counters")
+        mock_http_client.get.assert_called_once_with("decks/tags/v2/", params={})
+
+    @patch.object(JWTAuthHandler, "is_authenticated", return_value=True)
+    @patch.object(Archidekt, "http_client")
+    def test_get_tags_with_query(self, mock_http_client, mock_is_auth):
+        """Test that get_tags passes query parameter."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = []
+        mock_http_client.get.return_value = mock_response
+
+        archidekt = Archidekt()
+
+        archidekt.get_tags(q="counters")
+
+        mock_http_client.get.assert_called_once_with(
+            "decks/tags/v2/", params={"q": "counters"}
+        )
+
+    @patch.object(JWTAuthHandler, "is_authenticated", return_value=True)
+    @patch.object(Archidekt, "http_client")
+    def test_delete_folder_items_success(self, mock_http_client, mock_is_auth):
+        """Test that delete_folder_items successfully deletes items."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"status": "success"}
+        mock_http_client.post.return_value = mock_response
+
+        archidekt = Archidekt()
+
+        result = archidekt.delete_folder_items([{"id": 24299438, "type": "deck"}])
+
+        self.assertEqual(result["status"], "success")
+        mock_http_client.post.assert_called_once_with(
+            "decks/folders/deleteItems/",
+            json={"items": [{"id": 24299438, "type": "deck"}]},
+        )
+
+    @patch.object(JWTAuthHandler, "is_authenticated", return_value=True)
+    @patch.object(Archidekt, "http_client")
+    def test_delete_folder_items_empty_list(self, mock_http_client, mock_is_auth):
+        """Test that delete_folder_items raises error for empty list."""
+        archidekt = Archidekt()
+
+        with self.assertRaises(ArchidektValidationError):
+            archidekt.delete_folder_items([])
+
+
+class TestArchidektSocialFeatures(unittest.TestCase):
+    """Tests for social features endpoints (comments, notifications)."""
+
+    @patch.object(JWTAuthHandler, "is_authenticated", return_value=True)
+    @patch.object(Archidekt, "http_client")
+    def test_get_comment_success(self, mock_http_client, mock_is_auth):
+        """Test that get_comment returns comment data."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "id": 24354478,
+            "title": None,
+            "text": None,
+            "owner": {"id": 1071357, "username": "test_user"},
+            "deck": {"id": 24299438},
+            "childrenCount": 0,
+            "children": {"links": {}, "count": 0, "results": []},
+            "createdAt": "2026-07-12T18:27:09.242647Z",
+            "points": 0,
+            "type": 4,
+        }
+        mock_http_client.get.return_value = mock_response
+
+        archidekt = Archidekt()
+
+        comment = archidekt.get_comment("24354478")
+
+        self.assertIsInstance(comment, dict)
+        self.assertEqual(comment["id"], 24354478)
+        mock_http_client.get.assert_called_once_with(
+            "comments/24354478/", params={"page": 1}
+        )
+
+    @patch.object(JWTAuthHandler, "is_authenticated", return_value=True)
+    @patch.object(Archidekt, "http_client")
+    def test_get_comment_with_page(self, mock_http_client, mock_is_auth):
+        """Test that get_comment respects page parameter."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {}
+        mock_http_client.get.return_value = mock_response
+
+        archidekt = Archidekt()
+
+        archidekt.get_comment("24354478", page=2)
+
+        mock_http_client.get.assert_called_once_with(
+            "comments/24354478/", params={"page": 2}
+        )
+
+    @patch.object(JWTAuthHandler, "is_authenticated", return_value=True)
+    @patch.object(Archidekt, "http_client")
+    def test_get_notification_count_success(self, mock_http_client, mock_is_auth):
+        """Test that get_notification_count returns notification data."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "notificationCount": 0,
+            "patreonAccount": None,
+        }
+        mock_http_client.get.return_value = mock_response
+
+        archidekt = Archidekt()
+        # Set the private _user_id attribute directly (property is read-only)
+        archidekt.auth_handler._user_id = "1071357"
+
+        result = archidekt.get_notification_count()
+
+        self.assertIsInstance(result, dict)
+        self.assertEqual(result["notificationCount"], 0)
+        mock_http_client.get.assert_called_once_with("users/1071357/notificationCount/")
+
+    @patch.object(JWTAuthHandler, "is_authenticated", return_value=True)
+    @patch.object(Archidekt, "http_client")
+    def test_get_notification_count_with_user_id(self, mock_http_client, mock_is_auth):
+        """Test that get_notification_count uses provided user_id."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "notificationCount": 5,
+            "patreonAccount": None,
+        }
+        mock_http_client.get.return_value = mock_response
+
+        archidekt = Archidekt()
+
+        result = archidekt.get_notification_count(user_id="123456")
+
+        self.assertEqual(result["notificationCount"], 5)
+        mock_http_client.get.assert_called_once_with("users/123456/notificationCount/")
+
+    @patch.object(JWTAuthHandler, "is_authenticated", return_value=True)
+    @patch.object(Archidekt, "http_client")
+    def test_get_notification_count_no_user(self, mock_http_client, mock_is_auth):
+        """Test that get_notification_count raises error without user_id."""
+        archidekt = Archidekt()
+        # No auth handler user_id set
+
+        with self.assertRaises(ArchidektValidationError):
+            archidekt.get_notification_count()
 
 
 if __name__ == "__main__":

@@ -31,13 +31,16 @@ class RateLimitConfig:
         burst_size: Maximum number of requests that can be made in a burst.
             Defaults to 1 if not specified.
         window_seconds: Time window in seconds for rate limit tracking.
-            Defaults to 1 second for per-second limits, 60 for per-minute.
+            If None (the default), the window is auto-selected based on the
+            configured rate: 1.0 second for per-second limits and 60.0
+            seconds for per-minute limits. This avoids treating per-minute
+            limits as extremely restrictive per-second limits.
     """
 
     requests_per_second: float | None = None
     requests_per_minute: float | None = None
     burst_size: int = 1
-    window_seconds: float = 1.0
+    window_seconds: float | None = None
 
 
 @dataclass
@@ -126,7 +129,7 @@ class RateLimiter:
         """
         with self._global_lock:
             self.configs[provider] = config
-        logger.debug(f"Added rate limit config for {provider}: {config}")
+        logger.debug("Added rate limit config for %s: %s", provider, config)
 
     def remove_config(self, provider: str) -> bool:
         """Remove a rate limit configuration for a provider.
@@ -144,7 +147,7 @@ class RateLimiter:
             if provider in self.configs:
                 del self.configs[provider]
                 self.states.pop(provider, None)
-                logger.debug(f"Removed rate limit config and state for {provider}")
+                logger.debug("Removed rate limit config and state for %s", provider)
                 return True
             return False
 
@@ -157,52 +160,97 @@ class RateLimiter:
         Returns:
             The RateLimitConfig for the provider, or None if not configured.
         """
-        return self.configs.get(provider)
+        with self._global_lock:
+            return self.configs.get(provider)
 
-    def _cleanup_and_get_limits(self, provider: str) -> tuple[int, int | None]:
+    @staticmethod
+    def _resolve_window(config: RateLimitConfig) -> float:
+        """Resolve the effective sliding-window length for a config.
+
+        If ``config.window_seconds`` is set, it is used directly. Otherwise
+        the window is auto-selected: 1.0 second for per-second limits and
+        60.0 seconds for per-minute limits.
+
+        Args:
+            config: The rate limit configuration.
+
+        Returns:
+            The effective window length in seconds.
+        """
+        if config.window_seconds is not None:
+            return config.window_seconds
+        if config.requests_per_second is not None:
+            return 1.0
+        return 60.0
+
+    def _cleanup_and_get_limits(
+        self,
+        provider: str,
+        config: RateLimitConfig,
+    ) -> tuple[int, int | None]:
         """Clean up old timestamps and return (count, max_requests).
 
-        WARNING: Must be called while holding state.lock.
+        WARNING: Must be called while holding ``state.lock``.
 
-        Mutates state.timestamps by removing entries outside the window.
+        Mutates ``state.timestamps`` by removing entries outside the
+        window. The caller must have already resolved the config (and
+        acquired ``state.lock``) to avoid re-fetching the config under
+        the state lock (which would invert lock ordering against
+        ``_global_lock``).
 
         Args:
             provider: The provider name.
+            config: The already-resolved rate limit configuration.
 
         Returns:
             A tuple of (current_count, max_requests) where max_requests
             is None if no rate limit is configured.
         """
-        config = self.get_config(provider)
-        if config is None:
-            return (0, None)
-
-        # self.states is a defaultdict[str, RateLimitState], so this
-        # will never raise KeyError
-        state = self.states[provider]
+        # Read-only access avoids creating stale state entries for
+        # providers that have a config but no recorded requests yet.
+        state = self.states.get(provider)
+        if state is None:
+            return (0, self._compute_max_requests(config))
 
         now = time.time()
-        window = config.window_seconds
+        window = self._resolve_window(config)
 
         # Remove old timestamps outside the window
         state.timestamps = [t for t in state.timestamps if now - t < window]
 
         current_count = len(state.timestamps)
+        max_requests = self._compute_max_requests(config)
+        if max_requests is None:
+            return (current_count, None)
 
-        # Calculate max requests based on config. Use ceil to round up
-        # so fractional rate limits allow at least one request per window
-        # (e.g., 1.5 req/s * 1s window = 2, not 1).
+        return (current_count, max_requests)
+
+    @staticmethod
+    def _compute_max_requests(config: RateLimitConfig) -> int | None:
+        """Compute the effective max requests for a window.
+
+        Uses ``ceil`` to round up so fractional rate limits allow at
+        least one request per window (e.g., 1.5 req/s * 1s window = 2,
+        not 1). The result is capped by ``burst_size``.
+
+        Args:
+            config: The rate limit configuration.
+
+        Returns:
+            The max requests allowed in the window, or None if no rate
+            limit is configured.
+        """
+        window = RateLimiter._resolve_window(config)
+
         if config.requests_per_second is not None:
             max_requests = math.ceil(config.requests_per_second * window)
         elif config.requests_per_minute is not None:
             max_requests = math.ceil(config.requests_per_minute * window / 60)
         else:
-            return (current_count, None)
+            return None
 
         # Also consider burst size
-        max_requests = min(max_requests, config.burst_size)
-
-        return (current_count, max_requests)
+        return min(max_requests, config.burst_size)
 
     def check(self, provider: str) -> bool:
         """Check if a request can be made to the specified provider.
@@ -219,21 +267,25 @@ class RateLimiter:
         """
         config = self.get_config(provider)
         if config is None:
-            logger.debug(f"No rate limit config for {provider}, " "allowing request")
+            logger.debug("No rate limit config for %s, allowing request", provider)
             return True
 
+        # For a configured provider, accessing states creates an entry on
+        # demand (intentional); unconfigured providers return early above.
         state = self.states[provider]
 
         with state.lock:
-            current_count, max_requests = self._cleanup_and_get_limits(provider)
+            current_count, max_requests = self._cleanup_and_get_limits(provider, config)
 
             if max_requests is None:
                 return True
 
             if current_count >= max_requests:
                 logger.debug(
-                    f"Rate limit exceeded for {provider}: "
-                    f"{current_count}/{max_requests} requests"
+                    "Rate limit exceeded for %s: %d/%d requests",
+                    provider,
+                    current_count,
+                    max_requests,
                 )
                 return False
 
@@ -253,7 +305,7 @@ class RateLimiter:
 
         with state.lock:
             state.timestamps.append(now)
-            logger.debug(f"Recorded request for {provider}")
+            logger.debug("Recorded request for %s", provider)
 
     def guard(self, provider: str):
         """Context manager for rate limiting a provider.
@@ -293,28 +345,38 @@ class RateLimiter:
             if config is None:
                 return
 
-            # Calculate wait time
-            state = self.states[provider]
+            # Calculate wait time. Fetch config outside state.lock to
+            # avoid inverting lock ordering against _global_lock.
+            state = self.states.get(provider)
+            if state is None:
+                return
+
+            wait_time = 0.0
             with state.lock:
                 if not state.timestamps:
                     return
 
-                # Find the oldest timestamp in the window
-                config = self.get_config(provider)
-                if config is None:
-                    return
-
-                window = config.window_seconds
+                window = self._resolve_window(config)
                 now = time.time()
                 oldest = min(state.timestamps)
                 elapsed = now - oldest
 
                 if elapsed < window:
                     wait_time = window - elapsed
-                    logger.debug(
-                        f"Waiting {wait_time:.2f}s for rate limit on {provider}"
-                    )
-                    time.sleep(wait_time)
+                else:
+                    wait_time = 0.0
+
+            # Avoid a tight spin when the computed wait is zero or
+            # very small under contention.
+            if wait_time > 0:
+                logger.debug(
+                    "Waiting %.2fs for rate limit on %s",
+                    wait_time,
+                    provider,
+                )
+                time.sleep(wait_time)
+            else:
+                time.sleep(0.01)
 
     def get_status(self, provider: str) -> dict[str, Any]:
         """Get the current rate limit status for a provider.
@@ -337,14 +399,30 @@ class RateLimiter:
                 - "config": RateLimitConfig or None, the rate limit
                   configuration
         """
-        state = self.states[provider]
+        # Resolve config outside state.lock to avoid inverting lock
+        # ordering against _global_lock.
+        config = self.get_config(provider)
+        window = self._resolve_window(config) if config else 1.0
+
+        state = self.states.get(provider)
+        if state is None:
+            max_requests = self._compute_max_requests(config) if config else None
+            return {
+                "can_request": True,
+                "current_count": 0,
+                "max_requests": max_requests,
+                "window_seconds": window,
+                "config": config,
+            }
 
         with state.lock:
-            config = self.get_config(provider)
-            # Fallback to 1.0 (matches RateLimitConfig.default) when
-            # no config is available; provides a sensible default
-            window = config.window_seconds if config else 1.0
-            current_count, max_requests = self._cleanup_and_get_limits(provider)
+            if config is None:
+                current_count = len(state.timestamps)
+                max_requests = None
+            else:
+                current_count, max_requests = self._cleanup_and_get_limits(
+                    provider, config
+                )
 
             if max_requests is None:
                 can_request = True
@@ -372,10 +450,13 @@ class RateLimiter:
                         state.timestamps.clear()
             logger.debug("Reset rate limit state for all providers")
         else:
-            state = self.states[provider]
-            with state.lock:
-                state.timestamps.clear()
-            logger.debug(f"Reset rate limit state for {provider}")
+            # Read-only access: do not create a stale state entry for a
+            # provider that has no recorded requests.
+            state = self.states.get(provider)
+            if state is not None:
+                with state.lock:
+                    state.timestamps.clear()
+            logger.debug("Reset rate limit state for %s", provider)
 
     def __repr__(self) -> str:
         """Return a string representation of the rate limiter.

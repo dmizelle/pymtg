@@ -8,7 +8,7 @@ providers.
 import warnings
 from typing import Any, ClassVar
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 
 from pymtg.models.base import PyMTGBaseModel
 from pymtg.models.enums import Color, Format, Rarity
@@ -144,6 +144,11 @@ class Card(PyMTGBaseModel):
         "image_uris",
     )
 
+    # Opt-in flag for the _warn_main_face_inconsistency validator.
+    # Defaults to False so bulk imports are not penalized with per-card
+    # warnings; set to True to surface face/top-level field mismatches.
+    _warn_face_inconsistency: ClassVar[bool] = False
+
     id: str
     scryfall_id: str | None = None
     oracle_id: str | None = None
@@ -239,10 +244,15 @@ class Card(PyMTGBaseModel):
     def is_colorless(self) -> bool:
         """Check if this card is colorless.
 
+        A card is colorless when its color identity is absent, empty, or
+        contains only the colorless marker (the empty string).
+
         Returns:
             True if the card has no color identity.
         """
-        return self.color_identity is None or len(self.color_identity) == 0
+        if not self.color_identity:
+            return True
+        return all(c == "" for c in self.color_identity)
 
     def is_multicolor(self) -> bool:
         """Check if this card is multicolor.
@@ -265,9 +275,24 @@ class Card(PyMTGBaseModel):
             return ""
         # WUBRG order for sorting
         color_order = {"W": 0, "U": 1, "B": 2, "R": 3, "G": 4}
-        # Handle both Color enums and strings (due to use_enum_values=True)
-        values = [c.value if isinstance(c, Color) else c for c in self.color_identity]
-        return "".join(sorted(values, key=lambda x: color_order.get(x, 5)))
+        # Decompose each entry into individual single-character colors
+        # before sorting. With use_enum_values=True, list elements are
+        # stored as raw strings, which may be multi-char combinations
+        # (e.g. Color.AZORIUS == "WU") that must be split apart.
+        result_chars: list[str] = []
+        for c in self.color_identity:
+            val = c.value if isinstance(c, Color) else c
+            if not val:
+                continue
+            result_chars.extend(list(val))
+        # Deduplicate while preserving WUBRG order.
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for ch in sorted(result_chars, key=lambda x: color_order.get(x, 5)):
+            if ch not in seen:
+                seen.add(ch)
+                ordered.append(ch)
+        return "".join(ordered)
 
     def get_mana_value(self) -> float:
         """Get the mana value (converted mana cost) of the card.
@@ -277,13 +302,27 @@ class Card(PyMTGBaseModel):
         """
         return self.cmc or 0.0
 
+    def _type_tokens(self) -> set[str]:
+        """Returns the set of whitespace-delimited tokens in the type line.
+
+        Strips the em-dash separator used to split the supertype/subtype
+        portions of an MTG type line so each token is matched
+        independently rather than via fragile substring containment.
+
+        Returns:
+            A set of tokens, or an empty set if type_line is unset.
+        """
+        if not self.type_line:
+            return set()
+        return {t for t in self.type_line.replace("—", " ").split()}
+
     def is_creature(self) -> bool:
         """Check if this card is a creature.
 
         Returns:
             True if the card's type line contains "Creature".
         """
-        return self.type_line is not None and "Creature" in self.type_line
+        return "Creature" in self._type_tokens()
 
     def is_instant(self) -> bool:
         """Check if this card is an instant.
@@ -291,7 +330,7 @@ class Card(PyMTGBaseModel):
         Returns:
             True if the card's type line contains "Instant".
         """
-        return self.type_line is not None and "Instant" in self.type_line
+        return "Instant" in self._type_tokens()
 
     def is_sorcery(self) -> bool:
         """Check if this card is a sorcery.
@@ -299,7 +338,7 @@ class Card(PyMTGBaseModel):
         Returns:
             True if the card's type line contains "Sorcery".
         """
-        return self.type_line is not None and "Sorcery" in self.type_line
+        return "Sorcery" in self._type_tokens()
 
     def is_artifact(self) -> bool:
         """Check if this card is an artifact.
@@ -307,7 +346,7 @@ class Card(PyMTGBaseModel):
         Returns:
             True if the card's type line contains "Artifact".
         """
-        return self.type_line is not None and "Artifact" in self.type_line
+        return "Artifact" in self._type_tokens()
 
     def is_enchantment(self) -> bool:
         """Check if this card is an enchantment.
@@ -315,7 +354,7 @@ class Card(PyMTGBaseModel):
         Returns:
             True if the card's type line contains "Enchantment".
         """
-        return self.type_line is not None and "Enchantment" in self.type_line
+        return "Enchantment" in self._type_tokens()
 
     def is_land(self) -> bool:
         """Check if this card is a land.
@@ -323,7 +362,7 @@ class Card(PyMTGBaseModel):
         Returns:
             True if the card's type line contains "Land".
         """
-        return self.type_line is not None and "Land" in self.type_line
+        return "Land" in self._type_tokens()
 
     def is_planeswalker(self) -> bool:
         """Check if this card is a planeswalker.
@@ -331,7 +370,7 @@ class Card(PyMTGBaseModel):
         Returns:
             True if the card's type line contains "Planeswalker".
         """
-        return self.type_line is not None and "Planeswalker" in self.type_line
+        return "Planeswalker" in self._type_tokens()
 
     def is_battle(self) -> bool:
         """Check if this card is a battle.
@@ -339,7 +378,7 @@ class Card(PyMTGBaseModel):
         Returns:
             True if the card's type line contains "Battle".
         """
-        return self.type_line is not None and "Battle" in self.type_line
+        return "Battle" in self._type_tokens()
 
     def get_main_face(self) -> CardFace | None:
         """Get the main face of the card.
@@ -380,20 +419,24 @@ class Card(PyMTGBaseModel):
     def _warn_main_face_inconsistency(self) -> "Card":
         """Warns if top-level Card fields differ from the main face's fields.
 
-        Runs automatically after model validation. Emits a
-        ``UserWarning`` for each shared field whose top-level value does not
-        match the corresponding ``card_faces[0]`` value. Stays silent when
-        the card has no faces or all shared fields are consistent.
+        Emits a ``UserWarning`` for each shared field whose top-level
+        value does not match the corresponding ``card_faces[0]`` value.
+        Stays silent when the card has no faces or all shared fields are
+        consistent.
 
-        Warnings (not exceptions) are used because some card layouts (e.g.,
-        split cards) may legitimately carry combined values at the top level
-        that differ from the first face. Callers who want hard enforcement
-        can invoke ``validate_main_face_consistency()`` and raise on any
-        non-empty result.
+        This validator is gated behind the class-level
+        ``_warn_face_inconsistency`` flag (default ``False``) so that
+        bulk-import paths are not penalized with per-card warnings.
+        Subclasses or callers that want the warnings can set
+        ``Card._warn_face_inconsistency = True``. Callers who want hard
+        enforcement can invoke ``validate_main_face_consistency()``
+        directly and raise on any non-empty result.
 
         Returns:
             The validated Card instance (unchanged).
         """
+        if not getattr(self, "_warn_face_inconsistency", False):
+            return self
         mismatches = self.validate_main_face_consistency()
         for field, (card_value, face_value) in mismatches.items():
             warnings.warn(
@@ -450,5 +493,5 @@ class DeckCard(PyMTGBaseModel):
     """
 
     card: Card
-    count: int
+    count: int = Field(ge=0)
     board: str | None = None

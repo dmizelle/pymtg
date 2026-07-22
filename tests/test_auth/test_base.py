@@ -6,8 +6,10 @@ docstrings, and that the abstract interface is well-formed.
 """
 
 import inspect
+import typing
 
 import pytest
+import requests
 
 from pymtg.auth.base import BaseAuthHandler
 from pymtg.exceptions import AuthenticationError
@@ -40,7 +42,7 @@ class TestBaseAuthHandlerInterface:
 
     def test_base_auth_handler_is_abstract(self):
         """Test that BaseAuthHandler cannot be instantiated directly."""
-        with pytest.raises(TypeError):
+        with pytest.raises(TypeError, match="abstract methods"):
             BaseAuthHandler()  # type: ignore[abstract]  # intentional
 
     def test_abstract_methods_exist(self):
@@ -83,19 +85,31 @@ class TestBaseAuthHandlerInterface:
         assert "AuthenticationError" in doc
 
     def test_authenticate_signature(self):
-        """Test that authenticate accepts arbitrary keyword arguments."""
+        """Test that authenticate is a callable method with no required params."""
         sig = inspect.signature(BaseAuthHandler.authenticate)
         params = list(sig.parameters.values())
-        assert any(
-            p.kind == inspect.Parameter.VAR_KEYWORD for p in params
-        ), "authenticate must accept **kwargs"
+        # authenticate should accept only self (no required args beyond self)
+        required = [
+            p
+            for p in params
+            if p.default is inspect.Parameter.empty
+            and p.kind
+            not in (
+                inspect.Parameter.VAR_POSITIONAL,
+                inspect.Parameter.VAR_KEYWORD,
+            )
+        ]
+        assert (
+            len(required) <= 1
+        ), "authenticate must not require parameters beyond self"
 
     def test_is_authenticated_returns_bool(self):
         """Test that is_authenticated is annotated to return bool."""
-        sig = inspect.signature(BaseAuthHandler.is_authenticated)
-        assert sig.return_annotation is bool
+        hints = typing.get_type_hints(BaseAuthHandler.is_authenticated)
+        assert hints.get("return") is bool
 
     def test_apply_auth_accepts_session(self):
         """Test that apply_auth accepts a requests.Session parameter."""
         sig = inspect.signature(BaseAuthHandler.apply_auth)
         assert "session" in sig.parameters
+        assert sig.parameters["session"].annotation is requests.Session

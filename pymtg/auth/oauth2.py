@@ -7,7 +7,6 @@ TCGPlayer that use OAuth2 client credentials flow.
 import logging
 import threading
 from datetime import datetime, timedelta
-from typing import Any
 
 import requests
 
@@ -49,7 +48,7 @@ class OAuth2ClientCredentialsHandler(BaseAuthHandler):
             client_secret: The OAuth2 client secret.
             scope: The scope of the access token.
         """
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self.token_url = token_url
         self._client_id = client_id
         self._client_secret = client_secret
@@ -63,7 +62,7 @@ class OAuth2ClientCredentialsHandler(BaseAuthHandler):
         self,
         client_id: str | None = None,
         client_secret: str | None = None,
-        **kwargs: Any,
+        scope: str | None = None,
     ) -> None:
         """Authenticate with the provider using client credentials.
 
@@ -78,7 +77,7 @@ class OAuth2ClientCredentialsHandler(BaseAuthHandler):
             client_id: The OAuth2 client ID (overrides initialization value).
             client_secret: The OAuth2 client secret (overrides initialization
                 value).
-            **kwargs: Additional authentication parameters.
+            scope: The OAuth2 scope (overrides initialization value).
 
         Raises:
             AuthenticationError: If authentication fails.
@@ -87,7 +86,7 @@ class OAuth2ClientCredentialsHandler(BaseAuthHandler):
         with self._lock:
             self._client_id = client_id or self._client_id
             self._client_secret = client_secret or self._client_secret
-            self._scope = kwargs.get("scope", self._scope)
+            self._scope = scope or self._scope
 
             if not self._client_id or not self._client_secret:
                 raise AuthenticationError(
@@ -156,8 +155,16 @@ class OAuth2ClientCredentialsHandler(BaseAuthHandler):
                 # expires_in is a non-numeric type (e.g. a string); computing it
                 # before any state is updated prevents a partial write.
                 expires_in = token_data.get("expires_in")
-                if expires_in:
-                    new_expires_at = datetime.now() + timedelta(seconds=expires_in)
+                if expires_in is not None:
+                    try:
+                        new_expires_at = datetime.now() + timedelta(seconds=expires_in)
+                    except (TypeError, ValueError) as e:
+                        raise AuthenticationError(
+                            f"Invalid expires_in value in token response: "
+                            f"{expires_in!r}",
+                            auth_type="oauth2",
+                            status_code=response.status_code,
+                        ) from e
                 else:
                     new_expires_at = None
 
@@ -168,8 +175,20 @@ class OAuth2ClientCredentialsHandler(BaseAuthHandler):
                 self._authenticated = True
                 logger.info("OAuth2 authentication successful")
 
+            except AuthenticationError:
+                # Clear stale token state on any authentication failure
+                # so callers do not continue using a revoked token.
+                self.access_token = None
+                self.token_type = None
+                self.expires_at = None
+                self._authenticated = False
+                raise
             except requests.exceptions.RequestException as e:
                 logger.error(f"Network error during OAuth2 authentication: {e}")
+                self.access_token = None
+                self.token_type = None
+                self.expires_at = None
+                self._authenticated = False
                 raise NetworkError(
                     "Network error during OAuth2 authentication",
                     original_exception=e,

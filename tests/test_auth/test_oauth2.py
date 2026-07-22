@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
 
 from pymtg.auth.oauth2 import OAuth2ClientCredentialsHandler
 from pymtg.exceptions import AuthenticationError, NetworkError
@@ -77,11 +78,10 @@ class TestOAuth2AtomicStateUpdate:
         """Test that a non-numeric expires_in leaves state fully clean.
 
         This is the core scenario from issue #180: if expires_in is a
-        string, timedelta(seconds=expires_in) raises TypeError. Before
-        the fix, access_token and token_type were already set while
-        _authenticated remained False, creating inconsistent state. After
-        the fix, the TypeError propagates before any instance attribute
-        is written.
+        string, timedelta(seconds=expires_in) raises TypeError. The fix
+        catches this and raises AuthenticationError instead, so the
+        method's documented contract is honored. All instance attributes
+        must remain at their pre-authenticate defaults.
         """
         handler = OAuth2ClientCredentialsHandler(
             token_url="https://example.com/token",
@@ -93,10 +93,9 @@ class TestOAuth2AtomicStateUpdate:
         mock_response.json.return_value["expires_in"] = "not_a_number"
 
         with patch("pymtg.auth.oauth2.requests.post", return_value=mock_response):
-            # The TypeError from timedelta propagates out of authenticate().
-            # We do NOT catch it as AuthenticationError because it is a
-            # programming/data-contract error, not an auth failure.
-            with pytest.raises(TypeError):
+            # The TypeError from timedelta is now caught and re-raised as
+            # AuthenticationError, consistent with the method's contract.
+            with pytest.raises(AuthenticationError):
                 handler.authenticate()
 
         # All state fields must remain at their pre-authenticate defaults.
@@ -122,13 +121,13 @@ class TestOAuth2AtomicStateUpdate:
         mock_response.json.return_value["expires_in"] = "bad"
 
         with patch("pymtg.auth.oauth2.requests.post", return_value=mock_response):
-            with pytest.raises(TypeError):
+            with pytest.raises(AuthenticationError):
                 handler.authenticate()
 
         session = MagicMock()
         handler.apply_auth(session)
-        # Authorization header must not have been set.
-        assert "Authorization" not in session.headers
+        # apply_auth() must not modify the session when no token is set.
+        session.headers.update.assert_not_called()
 
     def test_missing_expires_in_authenticates_without_expiry(self):
         """Test that a missing expires_in field authenticates successfully.
@@ -153,10 +152,11 @@ class TestOAuth2AtomicStateUpdate:
         assert handler.is_authenticated() is True
 
     def test_zero_expires_in_authenticates(self):
-        """Test that expires_in=0 is treated as falsy (no expiry set).
+        """Test that expires_in=0 sets an immediately-expired token.
 
-        A zero expires_in is falsy, so expires_at is set to None. The
-        handler is still authenticated.
+        A zero expires_in means the token is expired now, so expires_at
+        should be set to (approximately) the current time and
+        is_authenticated() should return False.
         """
         handler = OAuth2ClientCredentialsHandler(
             token_url="https://example.com/token",
@@ -169,7 +169,8 @@ class TestOAuth2AtomicStateUpdate:
             handler.authenticate()
 
         assert handler._authenticated is True
-        assert handler.expires_at is None
+        assert handler.expires_at is not None
+        assert handler.is_authenticated() is False
 
     def test_failed_http_response_does_not_set_state(self):
         """Test that a non-200 response leaves all state untouched.
@@ -206,8 +207,6 @@ class TestOAuth2AtomicStateUpdate:
             client_id="cid",
             client_secret="csecret",
         )
-        import requests
-
         with patch(
             "pymtg.auth.oauth2.requests.post",
             side_effect=requests.exceptions.ConnectionError("refused"),
@@ -231,11 +230,11 @@ class TestOAuth2AtomicStateUpdate:
             client_id="cid",
             client_secret="csecret",
         )
-        # First attempt: bad expires_in causes TypeError.
+        # First attempt: bad expires_in causes AuthenticationError.
         bad_response = _make_success_response(expires_in=3600)
         bad_response.json.return_value["expires_in"] = "bad"
         with patch("pymtg.auth.oauth2.requests.post", return_value=bad_response):
-            with pytest.raises(TypeError):
+            with pytest.raises(AuthenticationError):
                 handler.authenticate()
         assert handler.is_authenticated() is False
 

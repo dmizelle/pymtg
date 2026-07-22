@@ -17,6 +17,7 @@ import requests
 
 from pymtg.auth.api_key import APIKeyAuthHandler
 from pymtg.exceptions import (
+    APIError,
     AuthenticationError,
     NetworkError,
     NotFoundError,
@@ -214,6 +215,15 @@ class TestMoxfieldGetCard(unittest.TestCase):
         mock_response.headers = {"Retry-After": "60"}
         with patch.object(moxfield.http_client, "get", return_value=mock_response):
             with self.assertRaises(RateLimitError):
+                moxfield.get_card("test-card-id")
+
+    def test_get_card_server_error(self):
+        """Test that get_card raises APIError on 5xx server error."""
+        moxfield = Moxfield(api_key="test-key")
+        mock_response = MagicMock()
+        mock_response.status_code = 500
+        with patch.object(moxfield.http_client, "get", return_value=mock_response):
+            with self.assertRaises(APIError):
                 moxfield.get_card("test-card-id")
 
 
@@ -598,6 +608,16 @@ class TestMoxfieldCardParsing(unittest.TestCase):
         card_faces = card.card_faces
         assert card_faces is not None
         self.assertEqual(len(card_faces), 2)
+        # Verify face field mappings
+        self.assertEqual(card_faces[0].name, "Delver of Secrets")
+        self.assertEqual(card_faces[0].mana_cost, "{U}")
+        self.assertEqual(card_faces[0].type_line, "Creature Human Wizard")
+        self.assertEqual(card_faces[0].power, "1")
+        self.assertEqual(card_faces[0].toughness, "1")
+        self.assertEqual(card_faces[1].name, "Insectile Aberration")
+        self.assertEqual(card_faces[1].type_line, "Creature Insect Horror")
+        self.assertEqual(card_faces[1].power, "3")
+        self.assertEqual(card_faces[1].toughness, "2")
 
     def test_parse_card_flavor_text_list_filters_none(self):
         """Test that None values are filtered from flavor_text list."""
@@ -785,6 +805,13 @@ class TestMoxfieldDeckParsing(unittest.TestCase):
         self.assertEqual(deck.id, "deck-789")
         cards = deck.cards or []
         self.assertEqual(len(cards), 2)
+        # Verify board assignments are correct after merging
+        main_cards = [c for c in cards if c.board == Board.MAIN]
+        side_cards = [c for c in cards if c.board == Board.SIDEBOARD]
+        self.assertEqual(len(main_cards), 1)
+        self.assertEqual(len(side_cards), 1)
+        self.assertEqual(main_cards[0].card.name, "Plains")
+        self.assertEqual(side_cards[0].card.name, "Disallow")
 
     def test_parse_deck_invalid_board_defaults_to_main_with_warning(self):
         """Test that invalid board strings default to MAIN with a warning.
@@ -946,21 +973,37 @@ class TestMoxfieldIterSearch(unittest.TestCase):
     """Test Moxfield.iter_search() method (inherited from BaseProvider)."""
 
     def test_iter_search_basic(self):
-        """Test basic iter_search functionality."""
+        """Test basic iter_search functionality and pagination.
+
+        Verifies that iter_search fetches pages until the limit is reached
+        or a page is empty/partial, and that the ``page`` argument
+        increments across calls.
+        """
         moxfield = Moxfield(api_key="test-key")
-        mock_card1 = Card(id="1", name="Card 1", source="moxfield")
-        mock_card2 = Card(id="2", name="Card 2", source="moxfield")
+        # A full first page (page_size cards) so iter_search fetches a
+        # second page; the second page is empty, terminating iteration.
+        first_page = [
+            Card(id=str(i), name=f"Card {i}", source="moxfield") for i in range(5)
+        ]
         # Use side_effect to return results first, then empty list (simulating pagination)
         with patch.object(
             moxfield,
             "search",
             side_effect=[
-                [mock_card1, mock_card2],
+                first_page,
                 [],
-            ],  # First page has results, second is empty
-        ):
+            ],
+        ) as mock_search:
             results = list(moxfield.iter_search(name="Test", limit=10, page_size=5))
-        self.assertEqual(len(results), 2)
+        self.assertEqual(len(results), 5)
+        # Verify pagination incremented correctly across calls
+        self.assertEqual(mock_search.call_count, 2)
+        first_call = mock_search.call_args_list[0]
+        second_call = mock_search.call_args_list[1]
+        self.assertEqual(first_call.kwargs["page"], 1)
+        self.assertEqual(first_call.kwargs["limit"], 5)
+        self.assertEqual(second_call.kwargs["page"], 2)
+        self.assertEqual(second_call.kwargs["limit"], 5)
 
 
 class TestMoxfieldErrorHandling(unittest.TestCase):

@@ -48,14 +48,10 @@ class BaseProvider(ABC):
     base_url: str | None = None
     config: ProviderConfig = None  # type: ignore[assignment]
     http_client: HTTPClient = None  # type: ignore[assignment]
-    rate_limit: dict[str, Any] = {}
+    rate_limit: dict[str, Any] | None = None
 
-    def __init__(self, **kwargs: Any) -> None:
-        """Initialize the base provider.
-
-        Args:
-            **kwargs: Provider-specific initialization parameters.
-        """
+    def __init__(self) -> None:
+        """Initialize the base provider."""
         # Initialize thread safety lock
         self._lock = threading.Lock()
 
@@ -78,15 +74,10 @@ class BaseProvider(ABC):
             )
 
         # Provider-specific initialization
-        self._initialize(**kwargs)
+        self._initialize()
 
-    def _initialize(self, **kwargs: Any) -> None:
-        """Provider-specific initialization.
-
-        Args:
-            **kwargs: Provider-specific initialization parameters.
-        """
-        pass
+    def _initialize(self) -> None:
+        """Provider-specific initialization hook for subclasses to override."""
 
     @abstractmethod
     def search(
@@ -98,7 +89,6 @@ class BaseProvider(ABC):
         limit: int = 20,
         page: int = 1,
         order: str | None = None,
-        **kwargs: Any,
     ) -> list[Card]:
         """Search for cards with generic parameters.
 
@@ -114,7 +104,6 @@ class BaseProvider(ABC):
             limit: Maximum number of results to return.
             page: Page number for pagination.
             order: Sort order for results.
-            **kwargs: Provider-specific search parameters.
 
         Returns:
             A list of Card objects matching the search criteria.
@@ -127,7 +116,13 @@ class BaseProvider(ABC):
         pass
 
     @abstractmethod
-    def search_syntax(self, query: str, limit: int = 20, **kwargs: Any) -> list[Card]:
+    def search_syntax(
+        self,
+        query: str,
+        limit: int = 20,
+        page: int = 1,
+        order: str | None = None,
+    ) -> list[Card]:
         """Search for cards using provider-specific query syntax.
 
         This method provides an escape hatch for power users who need to use
@@ -137,7 +132,8 @@ class BaseProvider(ABC):
         Args:
             query: The provider-specific query string.
             limit: Maximum number of results to return.
-            **kwargs: Provider-specific parameters.
+            page: Page number for pagination.
+            order: Sort order for results.
 
         Returns:
             A list of Card objects matching the query.
@@ -150,12 +146,11 @@ class BaseProvider(ABC):
         pass
 
     @abstractmethod
-    def get_card(self, card_id: str, **kwargs: Any) -> Card:
+    def get_card(self, card_id: str) -> Card:
         """Get a specific card by its ID.
 
         Args:
             card_id: The provider-specific card ID.
-            **kwargs: Provider-specific parameters.
 
         Returns:
             A Card object for the specified card.
@@ -167,7 +162,7 @@ class BaseProvider(ABC):
         """
         pass
 
-    def get_deck(self, deck_id: str, **kwargs: Any) -> Deck:
+    def get_deck(self, deck_id: str) -> Deck:
         """Get a specific deck by its ID.
 
         This is an optional method that providers can override if they
@@ -175,7 +170,6 @@ class BaseProvider(ABC):
 
         Args:
             deck_id: The provider-specific deck ID.
-            **kwargs: Provider-specific parameters.
 
         Returns:
             A Deck object for the specified deck.
@@ -188,7 +182,7 @@ class BaseProvider(ABC):
         """
         raise NotImplementedError(f"{self.name} does not support deck retrieval")
 
-    def get_user_decks(self, user_id: str | None = None, **kwargs: Any) -> list[Deck]:
+    def get_user_decks(self, user_id: str | None = None) -> list[Deck]:
         """Get all decks for a specific user.
 
         This is an optional method that providers can override if they
@@ -196,7 +190,6 @@ class BaseProvider(ABC):
 
         Args:
             user_id: The user ID, or None for the authenticated user.
-            **kwargs: Provider-specific parameters.
 
         Returns:
             A list of Deck objects for the user's decks.
@@ -209,7 +202,7 @@ class BaseProvider(ABC):
         """
         raise NotImplementedError(f"{self.name} does not support user deck retrieval")
 
-    def autocomplete(self, query: str, limit: int = 10, **kwargs: Any) -> list[str]:
+    def autocomplete(self, query: str, limit: int = 10) -> list[str]:
         """Get autocomplete suggestions for a query.
 
         This is an optional method that providers can override if they
@@ -218,7 +211,6 @@ class BaseProvider(ABC):
         Args:
             query: The partial query string.
             limit: Maximum number of suggestions to return.
-            **kwargs: Provider-specific parameters.
 
         Returns:
             A list of autocomplete suggestions.
@@ -264,7 +256,7 @@ class BaseProvider(ABC):
         Returns:
             A dictionary containing rate limit information.
         """
-        return self.rate_limit
+        return self.rate_limit or {}
 
     def iter_search(
         self,
@@ -274,7 +266,6 @@ class BaseProvider(ABC):
         type_line: str | None = None,
         limit: int = 100,
         page_size: int = 50,
-        **kwargs: Any,
     ) -> Generator[Card, None, None]:
         """Iterate through all search results page by page.
 
@@ -288,7 +279,6 @@ class BaseProvider(ABC):
             type_line: Type line the card must include.
             limit: Maximum total number of results to return.
             page_size: Number of results per page.
-            **kwargs: Provider-specific search parameters.
 
         Yields:
             Card objects matching the search criteria.
@@ -314,7 +304,6 @@ class BaseProvider(ABC):
                 type_line=type_line,
                 limit=page_size,
                 page=page,
-                **kwargs,
             )
 
             if not results:
@@ -325,6 +314,12 @@ class BaseProvider(ABC):
                     return
                 yield card
                 total_yielded += 1
+
+            # Stop if this was the last (partial) page. Relying solely on the
+            # next request returning an empty list can loop forever if a
+            # provider re-yields the last page for out-of-range page numbers.
+            if len(results) < page_size:
+                break
 
             page += 1
 
@@ -364,11 +359,14 @@ class BaseProvider(ABC):
 
                     retry_after_date = parsedate_to_datetime(retry_after_header)
                     if retry_after_date is None:
-                        raise ValueError("Invalid date format")
-                    retry_after_date = retry_after_date.replace(tzinfo=timezone.utc)
-                    retry_after = int(
-                        (retry_after_date - datetime.now(timezone.utc)).total_seconds()
-                    )
+                        retry_after = 0
+                    else:
+                        retry_after_date = retry_after_date.replace(tzinfo=timezone.utc)
+                        retry_after = int(
+                            (
+                                retry_after_date - datetime.now(timezone.utc)
+                            ).total_seconds()
+                        )
                 except (ValueError, TypeError):
                     retry_after = 0
             raise RateLimitError(

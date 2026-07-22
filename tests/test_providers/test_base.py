@@ -45,7 +45,7 @@ class MockProvider(BaseProvider):
         self.rate_limit: dict[str, Any] = {}
         self._lock = threading.Lock()
 
-    def authenticate(self, **kwargs) -> None:
+    def authenticate(self) -> None:
         """Mock authentication."""
         pass
 
@@ -57,15 +57,30 @@ class MockProvider(BaseProvider):
         """Mock refresh."""
         pass
 
-    def search(self, **kwargs: Any) -> list:
+    def search(
+        self,
+        name: str | None = None,
+        colors: list | None = None,
+        identity: list | None = None,
+        type_line: str | None = None,
+        limit: int = 20,
+        page: int = 1,
+        order: str | None = None,
+    ) -> list:
         """Mock search. Required by BaseProvider abstract interface."""
         return []
 
-    def search_syntax(self, query: str, **kwargs: Any) -> list:
+    def search_syntax(
+        self,
+        query: str,
+        limit: int = 20,
+        page: int = 1,
+        order: str | None = None,
+    ) -> list:
         """Mock search_syntax. Required by BaseProvider abstract interface."""
         return []
 
-    def get_card(self, card_id: str, **kwargs: Any) -> None:
+    def get_card(self, card_id: str) -> None:
         """Mock get_card. Required by BaseProvider abstract interface."""
         return None
 
@@ -84,6 +99,29 @@ class TestHandleResponse:
         result = provider._handle_response(response)
         assert result == {"data": "test"}
 
+    def test_handle_response_201_ok(self):
+        """Test that other 2xx status codes also return parsed JSON."""
+        provider = MockProvider()
+        response = MagicMock()
+        response.status_code = 201
+        response.headers = {}
+        response.json.return_value = {"data": "created"}
+
+        result = provider._handle_response(response)
+        assert result == {"data": "created"}
+
+    def test_handle_response_json_fallback_to_text(self):
+        """Test that a JSON parse failure returns response.text instead."""
+        provider = MockProvider()
+        response = MagicMock()
+        response.status_code = 200
+        response.headers = {}
+        response.json.side_effect = ValueError("invalid JSON")
+        response.text = "<html>not json</html>"
+
+        result = provider._handle_response(response)
+        assert result == "<html>not json</html>"
+
     def test_handle_response_404_raises_not_found(self):
         """Test that 404 status code raises NotFoundError."""
         provider = MockProvider()
@@ -96,6 +134,18 @@ class TestHandleResponse:
 
         assert exc_info.value.provider == "test"
         assert exc_info.value.status_code == 404
+
+    def test_handle_response_404_with_resource_type(self):
+        """Test that resource_type propagates onto NotFoundError."""
+        provider = MockProvider()
+        response = MagicMock()
+        response.status_code = 404
+        response.headers = {}
+
+        with pytest.raises(NotFoundError) as exc_info:
+            provider._handle_response(response, resource_type="card")
+
+        assert exc_info.value.resource_type == "card"
 
     def test_handle_response_401_raises_authentication_error(self):
         """Test that 401 status code raises AuthenticationError."""

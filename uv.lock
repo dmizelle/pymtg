@@ -385,7 +385,6 @@ source = { editable = "." }
 dependencies = [
     { name = "packaging" },
     { name = "pydantic" },
-    { name = "pytest" },
     { name = "requests" },
     { name = "typing-extensions" },
 ]
@@ -405,7 +404,6 @@ requires-dist = [
     { name = "packaging", specifier = ">=26.2" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1.411" },
-    { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0" },
     { name = "pytest-mock", marker = "extra == 'dev'", specifier = ">=3.0" },

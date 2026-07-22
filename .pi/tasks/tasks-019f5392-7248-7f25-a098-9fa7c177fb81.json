@@ -1,0 +1,17 @@
+{
+  "nextId": 2,
+  "tasks": [
+    {
+      "id": "1",
+      "subject": "Investigate GitHub issues for pymtg repository",
+      "description": "Systematically investigate 23 remaining GitHub issues to determine if they are FIXED, STILL VALID, or NOT A BUG after PR #319 merge. Focus on security bugs and thread safety issues first.",
+      "status": "completed",
+      "activeForm": "Investigating GitHub issues systematically",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1783813544891,
+      "updatedAt": 1783813732510
+    }
+  ]
+}

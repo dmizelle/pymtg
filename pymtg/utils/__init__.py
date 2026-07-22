@@ -1,9 +1,10 @@
 """Utility modules for the pymtg library.
 
 This module contains various utilities including HTTP client, rate limiting,
-and retry logic.
+retry logic, and HAR logging.
 """
 
+from pymtg.utils.har_logger import HARLogger
 from pymtg.utils.http import HTTPClient
 from pymtg.utils.rate_limiting import (
     RateLimitConfig,
@@ -23,6 +24,7 @@ from pymtg.utils.retry import (
 
 __all__ = [
     "HTTPClient",
+    "HARLogger",
     "RateLimitConfig",
     "RateLimitState",
     "RateLimiter",

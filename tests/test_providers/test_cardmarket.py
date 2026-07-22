@@ -661,7 +661,7 @@ class TestCardmarketPricing:
                     "skuId": 67891,
                     "price": 99.99,
                     "conditionId": 2,
-                    "conditionName": "Good",
+                    "conditionName": "Excellent",
                 },
             ]
         }
@@ -871,9 +871,11 @@ class TestCardmarketClose:
         # Close should not raise any errors
         cardmarket.close()
 
-        # After close, authentication should still be valid
-        # (credentials are cleared from auth_handler, but the provider still has them)
+        # After close, all credentials are cleared from auth_handler
         assert cardmarket.auth_handler.consumer_key is None
+        assert cardmarket.auth_handler.consumer_secret is None
+        assert cardmarket.auth_handler.access_token is None
+        assert cardmarket.auth_handler.access_token_secret is None
 
 
 class TestCardmarketRepr:
@@ -1395,13 +1397,15 @@ class TestOAuth1Handler:
         assert handler.is_authenticated()
 
     def test_oauth1_handler_authenticate_empty_string_pair_passes_validation(self):
-        """Test that empty strings pass pair validation but keep existing.
+        """Test that empty strings pass pair validation and overwrite stored.
 
         Pair validation uses `is not None` checks, so empty strings count
-        as 'provided' and pass the pair check. However, the credential
-        update uses truthiness (`or`), so empty strings are treated as
-        falsy and the existing stored value is retained. This documents
-        the pre-existing `or`-based update behavior.
+        as 'provided' and pass the pair check. With explicit None-based
+        updates (rather than truthiness via `or`), an empty string is
+        treated as a deliberate value and overwrites the previously stored
+        credential. Passing all-empty strings therefore clears every
+        credential, and the subsequent required-credential check raises
+        AuthenticationError because empty consumer_key/secret are falsy.
         """
         handler = OAuth1Handler(
             consumer_key="ck",
@@ -1410,19 +1414,21 @@ class TestOAuth1Handler:
             access_token_secret="ats",
         )
 
-        handler.authenticate(
-            consumer_key="",
-            consumer_secret="",
-            access_token="",
-            access_token_secret="",
-        )
+        with pytest.raises(AuthenticationError) as exc_info:
+            handler.authenticate(
+                consumer_key="",
+                consumer_secret="",
+                access_token="",
+                access_token_secret="",
+            )
 
-        # Empty strings are falsy, so `or` keeps existing values
-        assert handler.consumer_key == "ck"
-        assert handler.consumer_secret == "cs"
-        assert handler.access_token == "at"
-        assert handler.access_token_secret == "ats"
-        assert handler.is_authenticated()
+        assert "Consumer key and consumer secret are required" in str(exc_info.value)
+        # Empty strings are stored verbatim (not retained from before).
+        assert handler.consumer_key == ""
+        assert handler.consumer_secret == ""
+        assert handler.access_token == ""
+        assert handler.access_token_secret == ""
+        assert not handler.is_authenticated()
 
     def test_oauth1_handler_is_authenticated(self):
         """Test OAuth1Handler is_authenticated method."""

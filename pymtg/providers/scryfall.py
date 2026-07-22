@@ -94,25 +94,16 @@ class Scryfall(BaseProvider):
         "release",
     }
 
-    def __init__(self, **kwargs: Any) -> None:
-        """Initialize the Scryfall provider.
-
-        Args:
-            **kwargs: Additional initialization parameters
-                (ignored for Scryfall).
-        """
-        super().__init__(**kwargs)
+    def __init__(self) -> None:
+        """Initialize the Scryfall provider."""
+        super().__init__()
         self.name = "scryfall"
         self.config = PROVIDER_CONFIGS.get("scryfall", self.config)
         self.base_url = self.config.base_url
         self.auth_handler = NoAuthHandler()
 
-    def _initialize(self, **kwargs: Any) -> None:
-        """Scryfall-specific initialization.
-
-        Args:
-            **kwargs: Additional initialization parameters.
-        """
+    def _initialize(self) -> None:
+        """Scryfall-specific initialization."""
         # Scryfall uses no authentication
         pass
 
@@ -135,7 +126,28 @@ class Scryfall(BaseProvider):
         limit: int = 20,
         page: int = 1,
         order: str | None = None,
-        **kwargs: Any,
+        set_code: str | None = None,
+        rarity: Rarity | str | None = None,
+        cmc: int | dict[str, int] | None = None,
+        power: str | dict[str, int] | None = None,
+        toughness: str | dict[str, int] | None = None,
+        loyalty: str | int | None = None,
+        format: Format | str | None = None,
+        is_reserved: bool | None = None,
+        is_foil: bool | None = None,
+        is_nonfoil: bool | None = None,
+        include_extras: bool | None = None,
+        include_multilingual: bool | None = None,
+        include_variations: bool | None = None,
+        set_type: str | None = None,
+        color: str | None = None,
+        card_type: str | None = None,
+        subtype: str | None = None,
+        keyword: str | None = None,
+        mana_value: int | dict[str, int] | None = None,
+        textsearch: str | None = None,
+        artist: str | None = None,
+        release: str | None = None,
     ) -> list[Card]:
         """Search for cards with generic parameters.
 
@@ -152,24 +164,30 @@ class Scryfall(BaseProvider):
             limit: Maximum number of results to return (max 175 per page).
             page: Page number for pagination (1-based).
             order: Sort order for results. Common values: "name",
-                "released", "power", "toughness"
-            **kwargs: Additional Scryfall-specific parameters:
-                - set_code: Set code to filter by (e.g., "LEA", "M20").
-                - rarity: Card rarity to filter by.
-                - cmc: Converted mana cost to filter by
-                  (int or dict with "gte", "lte").
-                - power: Power to filter by (str or dict).
-                - toughness: Toughness to filter by (str or dict).
-                - loyalty: Loyalty to filter by.
-                - format: Format legality to filter by.
-                - is_reserved: Whether the card is on the Reserved List.
-                - is_foil: Whether the card is foil.
-                - is_nonfoil: Whether the card is non-foil.
-                - include_extras: Whether to include extra cards
-                  (tokens, etc.).
-                - include_multilingual: Whether to include non-English
-                  printings.
-                - include_variations: Whether to include variations.
+                "released", "power", "toughness".
+            set_code: Set code to filter by (e.g., "LEA", "M20").
+            rarity: Card rarity to filter by.
+            cmc: Converted mana cost to filter by
+                (int or dict with "gte", "lte").
+            power: Power to filter by (str or dict).
+            toughness: Toughness to filter by (str or dict).
+            loyalty: Loyalty to filter by.
+            format: Format legality to filter by.
+            is_reserved: Whether the card is on the Reserved List.
+            is_foil: Whether the card is foil.
+            is_nonfoil: Whether the card is non-foil.
+            include_extras: Whether to include extra cards (tokens, etc.).
+            include_multilingual: Whether to include non-English printings.
+            include_variations: Whether to include variations.
+            set_type: Set type to filter by.
+            color: Color to filter by.
+            card_type: Card type to filter by.
+            subtype: Card subtype to filter by.
+            keyword: Keyword to filter by.
+            mana_value: Mana value to filter by (int or dict).
+            textsearch: Oracle text to search for.
+            artist: Artist to filter by.
+            release: Release date to filter by.
 
         Returns:
             A list of Card objects matching the search criteria.
@@ -205,7 +223,12 @@ class Scryfall(BaseProvider):
                     colors=colors,
                     identity=identity,
                     type_line=type_line,
-                    **kwargs,
+                    set_code=set_code,
+                    rarity=rarity,
+                    cmc=cmc,
+                    power=power,
+                    toughness=toughness,
+                    format=format,
                 ),
                 "page": page,
                 "limit": min(limit, 175),
@@ -215,18 +238,52 @@ class Scryfall(BaseProvider):
             if order:
                 params["order"] = order
 
-            # Add additional kwargs as query parameters
-            for key, value in kwargs.items():
-                if key.lower() in self.VALID_SEARCH_PARAMS:
-                    param_key = key.lower()
+            # Add additional search parameters to HTTP query. Keys that
+            # _build_search_query already translated into the `q`
+            # query string must NOT also be forwarded as standalone
+            # query parameters, or Scryfall would receive duplicate /
+            # conflicting filters.
+            _query_handled_keys = {
+                "set_code",
+                "rarity",
+                "cmc",
+                "power",
+                "toughness",
+                "format",
+            }
+            extra_params: dict[str, Any] = {
+                "rarity": rarity,
+                "cmc": cmc,
+                "power": power,
+                "toughness": toughness,
+                "loyalty": loyalty,
+                "format": format,
+                "is_reserved": is_reserved,
+                "is_foil": is_foil,
+                "is_nonfoil": is_nonfoil,
+                "include_extras": include_extras,
+                "include_multilingual": include_multilingual,
+                "include_variations": include_variations,
+                "set_type": set_type,
+                "color": color,
+                "type": card_type,
+                "subtype": subtype,
+                "keyword": keyword,
+                "mana_value": mana_value,
+                "textsearch": textsearch,
+                "artist": artist,
+                "release": release,
+            }
+
+            for key, value in extra_params.items():
+                if key in _query_handled_keys:
+                    continue
+                if value is not None:
                     if isinstance(value, dict):
-                        # Handle dict parameters like {"gte": 3, "lte": 5}
                         for subkey, subvalue in value.items():
-                            params[f"{param_key}_{subkey}"] = subvalue
+                            params[f"{key}_{subkey}"] = subvalue
                     else:
-                        params[param_key] = value
-                else:
-                    logger.warning(f"Ignoring unknown Scryfall search parameter: {key}")
+                        params[key] = value
 
             response = self.http_client.get("/cards/search", params=params)
             data = self._handle_response(response, "cards")
@@ -250,7 +307,7 @@ class Scryfall(BaseProvider):
             return [self._parse_card(scryfall_data) for scryfall_data in data["data"]]
 
         except requests.exceptions.RequestException as e:
-            logger.error(f"Network error during Scryfall search: {e}")
+            logger.error("Network error during Scryfall search: %s", e)
             raise NetworkError(
                 "Network error during search", original_exception=e
             ) from e
@@ -261,7 +318,12 @@ class Scryfall(BaseProvider):
         colors: list[Color] | None = None,
         identity: list[Color] | None = None,
         type_line: str | None = None,
-        **kwargs: Any,
+        set_code: str | None = None,
+        rarity: Rarity | str | None = None,
+        cmc: int | dict[str, int] | None = None,
+        power: str | dict[str, int] | None = None,
+        toughness: str | dict[str, int] | None = None,
+        format: Format | str | None = None,
     ) -> str:
         """Build a Scryfall query string from search parameters.
 
@@ -271,7 +333,12 @@ class Scryfall(BaseProvider):
             identity: List of colors the card's color identity must exactly
                 match.
             type_line: Type line the card must include.
-            **kwargs: Additional search parameters.
+            set_code: Set code to filter by.
+            rarity: Card rarity to filter by.
+            cmc: Converted mana cost (int or dict with "gte", "lte").
+            power: Power to filter by (str or dict).
+            toughness: Toughness to filter by (str or dict).
+            format: Format legality to filter by.
 
         Returns:
             A Scryfall query string.
@@ -296,48 +363,57 @@ class Scryfall(BaseProvider):
         if type_line:
             query_parts.append(f'"{type_line}"')
 
-        # Handle additional kwargs
-        for key, value in kwargs.items():
-            if key == "set_code" and value:
-                query_parts.append(f"set:{value}")
-            elif key == "rarity" and value:
-                if isinstance(value, Rarity):
-                    query_parts.append(f"r:{value.value}")
-                else:
-                    query_parts.append(f"r:{value}")
-            elif key == "cmc" and value:
-                if isinstance(value, dict):
-                    if "gte" in value:
-                        query_parts.append(f"cmc>={value['gte']}")
-                    if "lte" in value:
-                        query_parts.append(f"cmc<={value['lte']}")
-                else:
-                    query_parts.append(f"cmc:{value}")
-            elif key == "power" and value:
-                if isinstance(value, dict):
-                    if "gte" in value:
-                        query_parts.append(f"pow>={value['gte']}")
-                    if "lte" in value:
-                        query_parts.append(f"pow<={value['lte']}")
-                else:
-                    query_parts.append(f"pow:{value}")
-            elif key == "toughness" and value:
-                if isinstance(value, dict):
-                    if "gte" in value:
-                        query_parts.append(f"tou>={value['gte']}")
-                    if "lte" in value:
-                        query_parts.append(f"tou<={value['lte']}")
-                else:
-                    query_parts.append(f"tou:{value}")
-            elif key == "format" and value:
-                if isinstance(value, Format):
-                    query_parts.append(f"f:{value.value}")
-                else:
-                    query_parts.append(f"f:{value}")
+        if set_code:
+            query_parts.append(f"set:{set_code}")
+        if rarity:
+            if isinstance(rarity, Rarity):
+                query_parts.append(f"r:{rarity.value}")
+            else:
+                query_parts.append(f"r:{rarity}")
+        if cmc:
+            if isinstance(cmc, dict):
+                if "gte" in cmc:
+                    query_parts.append(f"cmc>={cmc['gte']}")
+                if "lte" in cmc:
+                    query_parts.append(f"cmc<={cmc['lte']}")
+            else:
+                query_parts.append(f"cmc:{cmc}")
+        if power:
+            if isinstance(power, dict):
+                if "gte" in power:
+                    query_parts.append(f"pow>={power['gte']}")
+                if "lte" in power:
+                    query_parts.append(f"pow<={power['lte']}")
+            else:
+                query_parts.append(f"pow:{power}")
+        if toughness:
+            if isinstance(toughness, dict):
+                if "gte" in toughness:
+                    query_parts.append(f"tou>={toughness['gte']}")
+                if "lte" in toughness:
+                    query_parts.append(f"tou<={toughness['lte']}")
+            else:
+                query_parts.append(f"tou:{toughness}")
+        if format:
+            if isinstance(format, Format):
+                query_parts.append(f"f:{format.value}")
+            else:
+                query_parts.append(f"f:{format}")
 
         return " ".join(query_parts)
 
-    def search_syntax(self, query: str, limit: int = 20, **kwargs: Any) -> list[Card]:
+    def search_syntax(
+        self,
+        query: str,
+        limit: int = 20,
+        page: int | None = None,
+        order: str | None = None,
+        unique: str | None = None,
+        dir: str | None = None,
+        include_extras: bool | None = None,
+        include_multilingual: bool | None = None,
+        include_variations: bool | None = None,
+    ) -> list[Card]:
         """Search for cards using Scryfall query syntax.
 
         This method provides an escape hatch for power users who need to use
@@ -346,16 +422,14 @@ class Scryfall(BaseProvider):
         Args:
             query: The Scryfall query string (see https://scryfall.com/docs/syntax).
             limit: Maximum number of results to return (max 175 per page).
-            **kwargs: Additional parameters:
-                - page: Page number for pagination (1-based).
-                - order: Sort order for results.
-                - unique: Whether to return only unique card names
-                  ("cards", "prints", "art", "versions").
-                - dir: Sort direction ("auto", "asc", "desc").
-                - include_extras: Whether to include extra cards.
-                - include_multilingual: Whether to include non-English
-                  printings.
-                - include_variations: Whether to include variations.
+            page: Page number for pagination (1-based).
+            order: Sort order for results.
+            unique: Whether to return only unique card names
+                ("cards", "prints", "art", "versions").
+            dir: Sort direction ("auto", "asc", "desc").
+            include_extras: Whether to include extra cards.
+            include_multilingual: Whether to include non-English printings.
+            include_variations: Whether to include variations.
 
         Returns:
             A list of Card objects matching the query.
@@ -391,25 +465,24 @@ class Scryfall(BaseProvider):
             }
 
             # Add optional parameters
-            if "page" in kwargs:
-                page_value = kwargs["page"]
-                if not isinstance(page_value, int) or page_value < 1:
+            if page is not None:
+                if not isinstance(page, int) or page < 1:
                     raise InvalidQueryError(
-                        "page must be a positive integer (>= 1), got " f"{page_value!r}"
+                        "page must be a positive integer (>= 1), got " f"{page!r}"
                     )
-                params["page"] = page_value
-            if "order" in kwargs:
-                params["order"] = kwargs["order"]
-            if "unique" in kwargs:
-                params["unique"] = kwargs["unique"]
-            if "dir" in kwargs:
-                params["dir"] = kwargs["dir"]
-            if "include_extras" in kwargs:
-                params["include_extras"] = kwargs["include_extras"]
-            if "include_multilingual" in kwargs:
-                params["include_multilingual"] = kwargs["include_multilingual"]
-            if "include_variations" in kwargs:
-                params["include_variations"] = kwargs["include_variations"]
+                params["page"] = page
+            if order is not None:
+                params["order"] = order
+            if unique is not None:
+                params["unique"] = unique
+            if dir is not None:
+                params["dir"] = dir
+            if include_extras is not None:
+                params["include_extras"] = include_extras
+            if include_multilingual is not None:
+                params["include_multilingual"] = include_multilingual
+            if include_variations is not None:
+                params["include_variations"] = include_variations
 
             response = self.http_client.get("/cards/search", params=params)
             data = self._handle_response(response, "cards")
@@ -420,17 +493,16 @@ class Scryfall(BaseProvider):
             return [self._parse_card(scryfall_data) for scryfall_data in data["data"]]
 
         except requests.exceptions.RequestException as e:
-            logger.error(f"Network error during Scryfall syntax search: {e}")
+            logger.error("Network error during Scryfall syntax search: %s", e)
             raise NetworkError(
                 "Network error during syntax search", original_exception=e
             ) from e
 
-    def get_card(self, card_id: str, **kwargs: Any) -> Card:
+    def get_card(self, card_id: str) -> Card:
         """Get a specific card by its Scryfall ID.
 
         Args:
             card_id: The Scryfall UUID for the card.
-            **kwargs: Additional parameters (currently ignored).
 
         Returns:
             A Card object for the specified card.
@@ -476,13 +548,17 @@ class Scryfall(BaseProvider):
             return self._parse_card(data)
 
         except requests.exceptions.RequestException as e:
-            logger.error(f"Network error getting card {card_id}: {e}")
+            logger.error("Network error getting card %s: %s", card_id, e)
             raise NetworkError(
                 f"Network error getting card {card_id}", original_exception=e
             ) from e
 
     def get_cards_by_name(
-        self, name: str, fuzzy: bool = True, **kwargs: Any
+        self,
+        name: str,
+        fuzzy: bool = True,
+        set_code: str | None = None,
+        language: str | None = None,
     ) -> list[Card]:
         """Get cards by name using the /cards/named endpoint.
 
@@ -493,9 +569,8 @@ class Scryfall(BaseProvider):
             name: The card name to search for.
             fuzzy: Whether to use fuzzy matching (True) or exact
                 matching (False).
-            **kwargs: Additional parameters:
-                - set_code: Set code to filter by (e.g., "LEA", "M20").
-                - language: Language code to filter by (e.g., "en", "fr").
+            set_code: Set code to filter by (e.g., "LEA", "M20").
+            language: Language code to filter by (e.g., "en", "fr").
 
         Returns:
             A list of Card objects matching the name.
@@ -517,19 +592,15 @@ class Scryfall(BaseProvider):
             if not name or not isinstance(name, str):
                 raise InvalidQueryError("Name must be a non-empty string")
 
-            params: dict[str, Any] = {"fuzzy": str(fuzzy).lower()}
+            params: dict[str, Any] = {("fuzzy" if fuzzy else "exact"): name}
 
-            if "set_code" in kwargs:
-                params["set"] = kwargs["set_code"]
-            if "language" in kwargs:
-                params["lang"] = kwargs["language"]
-
-            # URL encode the name for the path
-            import urllib.parse
+            if set_code:
+                params["set"] = set_code
+            if language:
+                params["lang"] = language
 
             response = self.http_client.get(
-                f"/cards/named?{urllib.parse.urlencode(params)}",
-                allow_redirects=True,
+                "/cards/named", params=params, allow_redirects=True
             )
             data = self._handle_response(response, "card")
 
@@ -548,18 +619,17 @@ class Scryfall(BaseProvider):
                 return [self._parse_card(data)]
 
         except requests.exceptions.RequestException as e:
-            logger.error(f"Network error getting cards by name '{name}': {e}")
+            logger.error("Network error getting cards by name %r: %s", name, e)
             raise NetworkError(
                 "Network error getting cards by name", original_exception=e
             ) from e
 
-    def autocomplete(self, query: str, limit: int = 10, **kwargs: Any) -> list[str]:
+    def autocomplete(self, query: str, limit: int = 10) -> list[str]:
         """Get autocomplete suggestions for a card name query.
 
         Args:
             query: The partial card name to autocomplete.
             limit: Maximum number of suggestions to return (max 20).
-            **kwargs: Additional parameters (currently ignored).
 
         Returns:
             A list of autocomplete suggestions (card names).
@@ -605,7 +675,7 @@ class Scryfall(BaseProvider):
             return data["data"]
 
         except requests.exceptions.RequestException as e:
-            logger.error(f"Network error during autocomplete: {e}")
+            logger.error("Network error during autocomplete: %s", e)
             raise NetworkError(
                 "Network error during autocomplete", original_exception=e
             ) from e
@@ -692,7 +762,7 @@ class Scryfall(BaseProvider):
             try:
                 set_type = SetType(set_type_str.lower())
             except ValueError:
-                logger.debug(f"Unknown set type: {set_type_str}")
+                logger.debug("Unknown set type: %s", set_type_str)
 
         # Map rarity
         rarity_str = scryfall_data.get("rarity")
@@ -701,7 +771,7 @@ class Scryfall(BaseProvider):
             try:
                 rarity = Rarity[rarity_str.upper()]
             except KeyError:
-                logger.debug(f"Unknown rarity: {rarity_str}")
+                logger.debug("Unknown rarity: %s", rarity_str)
 
         return Card(
             id=card_id,
@@ -823,7 +893,7 @@ class Scryfall(BaseProvider):
                 try:
                     valid_colors.append(Color(color.upper()))
                 except ValueError:
-                    logger.debug(f"Unknown color: {color}")
+                    logger.debug("Unknown color: %s", color)
             return valid_colors if valid_colors else None
 
     def _parse_pricing(self, pricing_data: dict[str, Any] | None) -> Pricing:
@@ -927,14 +997,13 @@ class Scryfall(BaseProvider):
             if status != "not_legal"
         }
 
-    def get_deck(self, deck_id: str, **kwargs: Any) -> Deck:
+    def get_deck(self, deck_id: str) -> Deck:
         """Get a deck by its ID.
 
         Scryfall does not support deck retrieval.
 
         Args:
             deck_id: The deck ID.
-            **kwargs: Additional parameters (currently ignored).
 
         Returns:
             Never returns - always raises NotImplementedError.
@@ -944,14 +1013,13 @@ class Scryfall(BaseProvider):
         """
         raise NotImplementedError("Scryfall does not support deck retrieval")
 
-    def get_user_decks(self, user_id: str | None = None, **kwargs: Any) -> list[Deck]:
+    def get_user_decks(self, user_id: str | None = None) -> list[Deck]:
         """Get all user decks.
 
         Scryfall does not support user deck retrieval.
 
         Args:
             user_id: The user ID (ignored for Scryfall).
-            **kwargs: Additional parameters (currently ignored).
 
         Returns:
             Never returns - always raises NotImplementedError.

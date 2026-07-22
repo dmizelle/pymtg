@@ -5,7 +5,7 @@ and Moxfield that use session cookie-based authentication.
 """
 
 import logging
-from typing import Any
+import time
 
 import requests
 
@@ -52,16 +52,16 @@ class SessionAuthHandler(BaseAuthHandler):
         self.session_cookies: dict[str, str | None] = {}
         self._session: requests.Session | None = None
         self._authenticated = False
+        self._expires_at: float | None = None
         self._username: str | None = None
         self._password: str | None = None
 
-    def authenticate(self, *, username: str, password: str, **kwargs: Any) -> None:
+    def authenticate(self, *, username: str, password: str) -> None:
         """Authenticate with the provider using username and password.
 
         Args:
             username: The username for authentication.
             password: The password for authentication.
-            **kwargs: Additional authentication parameters.
 
         Raises:
             AuthenticationError: If authentication fails.
@@ -125,18 +125,40 @@ class SessionAuthHandler(BaseAuthHandler):
                     auth_type="session",
                 )
 
-            # Store session cookies
+            # Build the session cookie dict from the auth session's cookies.
             self.session_cookies = {
                 cookie.name: cookie.value for cookie in auth_session.cookies
             }
+
+            # Relying solely on status_code == 200 is unreliable: a failed
+            # login with allow_redirects=True often redirects back to the
+            # login page which itself returns 200. Verify a session cookie
+            # was actually established before treating the login as
+            # successful.
+            if "sessionid" not in self.session_cookies:
+                raise AuthenticationError(
+                    "Login failed: no session cookie established",
+                    auth_type="session",
+                )
+
             self._session = auth_session
             self._authenticated = True
             session_stored = True
 
-            # Clear credentials from memory after successful authentication
-            self._username = None
-            self._password = None
+            # Track the earliest cookie expiry so is_authenticated() can
+            # reject stale/expired sessions. Only real numeric expiry values
+            # are considered; cookies without an expiry (true session
+            # cookies) leave _expires_at as None.
+            expiry_candidates: list[float] = []
+            for cookie in auth_session.cookies:
+                expires = getattr(cookie, "expires", None)
+                if isinstance(expires, (int, float)):
+                    expiry_candidates.append(float(expires))
+            self._expires_at = min(expiry_candidates) if expiry_candidates else None
 
+            # Credentials are intentionally retained on the instance so that
+            # refresh() can re-authenticate later. Use clear_auth() for
+            # explicit credential cleanup.
             logger.info("Session authentication successful")
 
         except requests.exceptions.RequestException as e:
@@ -150,6 +172,7 @@ class SessionAuthHandler(BaseAuthHandler):
                 auth_session.close()
                 # Reset authenticated flag and clean up credentials on failure
                 self._authenticated = False
+                self._expires_at = None
                 self._username = None
                 self._password = None
 
@@ -157,9 +180,14 @@ class SessionAuthHandler(BaseAuthHandler):
         """Check if authentication is valid.
 
         Returns:
-            True if session cookies are present, False otherwise.
+            True if session cookies are present and not expired,
+            False otherwise.
         """
-        return self._authenticated and bool(self.session_cookies)
+        if not self._authenticated or not self.session_cookies:
+            return False
+        if self._expires_at is not None and time.time() >= self._expires_at:
+            return False
+        return True
 
     def refresh(self) -> None:
         """Refresh authentication.
@@ -197,6 +225,7 @@ class SessionAuthHandler(BaseAuthHandler):
         """Clear authentication credentials."""
         self.session_cookies.clear()
         self._authenticated = False
+        self._expires_at = None
         self._username = None
         self._password = None
         if self._session:

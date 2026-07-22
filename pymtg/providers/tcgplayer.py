@@ -37,6 +37,26 @@ from pymtg.providers.base import BaseProvider
 
 logger = logging.getLogger(__name__)
 
+# Condition keys that map directly to TCGPlayerPricing model fields.
+# Unknown condition names (e.g. "lightly_played") are skipped rather
+# than passed to TCGPlayerPricing(**...), which uses extra="forbid" and
+# would otherwise raise a ValidationError and drop the whole card/pricing.
+_TCGPLAYER_VALID_CONDITIONS: frozenset[str] = frozenset(
+    {
+        "market",
+        "mid",
+        "low",
+        "high",
+        "direct_low",
+        "near_mint",
+        "good",
+        "excellent",
+        "very_good",
+        "fair",
+        "poor",
+    }
+)
+
 
 class TCGPlayer(BaseProvider):
     """TCGPlayer API provider implementation.
@@ -99,7 +119,6 @@ class TCGPlayer(BaseProvider):
         client_id: str | None = None,
         client_secret: str | None = None,
         scope: str | None = None,
-        **kwargs: Any,
     ) -> None:
         """Initialize the TCGPlayer provider.
 
@@ -107,7 +126,6 @@ class TCGPlayer(BaseProvider):
             client_id: OAuth2 client ID for TCGPlayer API.
             client_secret: OAuth2 client secret for TCGPlayer API.
             scope: OAuth2 scope for token requests.
-            **kwargs: Additional initialization parameters.
 
         Raises:
             AuthenticationError: If authentication fails during initialization.
@@ -134,7 +152,7 @@ class TCGPlayer(BaseProvider):
         self.client_secret = client_secret
         self.scope = scope
 
-        super().__init__(**kwargs)
+        super().__init__()
         self.name = "tcgplayer"
         self.config = PROVIDER_CONFIGS.get("tcgplayer", self.config)
         self.base_url = self.config.base_url
@@ -152,13 +170,10 @@ class TCGPlayer(BaseProvider):
         # Note: Authentication is lazy - it happens on first API call or explicit authenticate()
         # This avoids initialization order issues and allows setting credentials later
 
-    def _initialize_auth(self, **kwargs: Any) -> None:
+    def _initialize_auth(self) -> None:
         """TCGPlayer-specific authentication initialization.
 
         Authenticates with OAuth2 if credentials are provided.
-
-        Args:
-            **kwargs: Additional initialization parameters.
 
         Raises:
             AuthenticationError: If authentication fails.
@@ -243,7 +258,21 @@ class TCGPlayer(BaseProvider):
         limit: int = 20,
         page: int = 1,
         order: str | None = None,
-        **kwargs: Any,
+        category: str | None = None,
+        game: str | None = None,
+        format: str | None = None,
+        rarity: str | None = None,
+        color: str | None = None,
+        card_type: str | None = None,
+        subtype: str | None = None,
+        power: str | None = None,
+        toughness: str | None = None,
+        cmc: int | None = None,
+        textsearch: str | None = None,
+        keyword: str | None = None,
+        artist: str | None = None,
+        release: str | None = None,
+        set_type: str | None = None,
     ) -> list[Card]:
         """Search for cards with generic parameters.
 
@@ -259,7 +288,21 @@ class TCGPlayer(BaseProvider):
             limit: Maximum number of results to return (default: 20).
             page: Page number for pagination (default: 1).
             order: Sort order for results.
-            **kwargs: Additional search parameters.
+            category: Category filter.
+            game: Game filter.
+            format: Format filter.
+            rarity: Rarity filter.
+            color: Color filter.
+            card_type: Card type filter.
+            subtype: Card subtype filter.
+            power: Power filter.
+            toughness: Toughness filter.
+            cmc: Converted mana cost filter.
+            textsearch: Oracle text search filter.
+            keyword: Keyword filter.
+            artist: Artist filter.
+            release: Release date filter.
+            set_type: Set type filter.
 
         Returns:
             List of Card objects matching the search criteria.
@@ -273,36 +316,41 @@ class TCGPlayer(BaseProvider):
         """
         self._check_authenticated()
 
-        # Validate kwargs against allowed parameters
-        for key in kwargs:
-            if not isinstance(key, str) or key.lower() not in self.VALID_SEARCH_PARAMS:
-                raise InvalidQueryError(
-                    f"Invalid search parameter: {key}. "
-                    f"Valid parameters: {', '.join(sorted(self.VALID_SEARCH_PARAMS))}"
-                )
-
         # Build search parameters
         params: dict[str, Any] = {
             "limit": limit,
             "offset": (page - 1) * limit,
         }
 
-        # Map generic parameters to TCGPlayer-specific parameters
-        if name:
-            params["search"] = name
-
-        # TCGPlayer uses different parameter names
-        # Build the query string for the search endpoint
+        # Build the query string for the search endpoint. The query
+        # string (when present) takes precedence over the bare name;
+        # otherwise fall back to the bare name as the search term.
         query_string = self._build_search_query(
             name=name,
             colors=colors,
             identity=identity,
             type_line=type_line,
-            **kwargs,
+            category=category,
+            game=game,
+            format=format,
+            rarity=rarity,
+            color=color,
+            card_type=card_type,
+            subtype=subtype,
+            power=power,
+            toughness=toughness,
+            cmc=cmc,
+            textsearch=textsearch,
+            keyword=keyword,
+            artist=artist,
+            release=release,
+            set_type=set_type,
         )
 
         if query_string:
             params["search"] = query_string
+        elif name:
+            params["search"] = name
 
         # Handle sorting
         if order:
@@ -320,8 +368,26 @@ class TCGPlayer(BaseProvider):
             else:
                 params["sort"] = order
 
-        # Add any additional kwargs as parameters
-        for key, value in kwargs.items():
+        # Add any additional parameters
+        extra_params: dict[str, Any] = {
+            "category": category,
+            "game": game,
+            "format": format,
+            "rarity": rarity,
+            "color": color,
+            "type": card_type,
+            "subtype": subtype,
+            "power": power,
+            "toughness": toughness,
+            "cmc": cmc,
+            "textsearch": textsearch,
+            "keyword": keyword,
+            "artist": artist,
+            "release": release,
+            "set_type": set_type,
+        }
+
+        for key, value in extra_params.items():
             if value is not None and key not in params:
                 params[key] = value
 
@@ -338,12 +404,33 @@ class TCGPlayer(BaseProvider):
             # _handle_http_error always raises, but pyright doesn't know this
             raise  # This should never be reached
         except requests.exceptions.RequestException as e:
-            logger.error(f"Network error during search: {e}")
+            logger.error("Network error during search: %s", e)
             raise NetworkError(
                 "Network error during TCGPlayer search", original_exception=e
             ) from e
 
-    def search_syntax(self, query: str, limit: int = 20, **kwargs: Any) -> list[Card]:
+    def search_syntax(
+        self,
+        query: str,
+        limit: int = 20,
+        page: int = 1,
+        order: str | None = None,
+        category: str | None = None,
+        game: str | None = None,
+        format: str | None = None,
+        rarity: str | None = None,
+        color: str | None = None,
+        card_type: str | None = None,
+        subtype: str | None = None,
+        power: str | None = None,
+        toughness: str | None = None,
+        cmc: int | None = None,
+        textsearch: str | None = None,
+        keyword: str | None = None,
+        artist: str | None = None,
+        release: str | None = None,
+        set_type: str | None = None,
+    ) -> list[Card]:
         """Search for cards using TCGPlayer-specific query syntax.
 
         TCGPlayer uses a custom search syntax for the catalog endpoint.
@@ -352,7 +439,23 @@ class TCGPlayer(BaseProvider):
         Args:
             query: Search query string in TCGPlayer syntax.
             limit: Maximum number of results to return (default: 20).
-            **kwargs: Additional search parameters (offset, sort, etc.).
+            page: Page number for pagination (default: 1).
+            order: Sort order for results.
+            category: Category filter.
+            game: Game filter.
+            format: Format filter.
+            rarity: Rarity filter.
+            color: Color filter.
+            card_type: Card type filter.
+            subtype: Card subtype filter.
+            power: Power filter.
+            toughness: Toughness filter.
+            cmc: Converted mana cost filter.
+            textsearch: Oracle text search filter.
+            keyword: Keyword filter.
+            artist: Artist filter.
+            release: Release date filter.
+            set_type: Set type filter.
 
         Returns:
             List of Card objects matching the query.
@@ -372,25 +475,39 @@ class TCGPlayer(BaseProvider):
         self._check_authenticated()
 
         params: dict[str, Any] = {"search": query}
-
-        # Add standard pagination and sorting
-        page = kwargs.get("page", 1)
         params["limit"] = limit
         params["offset"] = (page - 1) * limit
 
-        if "order" in kwargs:
+        if order:
             sort_mapping = {
                 "name_asc": "ProductName Ascending",
                 "name_desc": "ProductName Descending",
                 "price_asc": "PriceLowToHigh",
                 "price_desc": "PriceHighToLow",
             }
-            order = kwargs["order"]
             params["sort"] = sort_mapping.get(order, order)
 
-        # Add any additional parameters
-        for key, value in kwargs.items():
-            if value is not None and key not in ["limit", "page", "order"]:
+        # Add any additional filter parameters
+        extra_params: dict[str, Any] = {
+            "category": category,
+            "game": game,
+            "format": format,
+            "rarity": rarity,
+            "color": color,
+            "type": card_type,
+            "subtype": subtype,
+            "power": power,
+            "toughness": toughness,
+            "cmc": cmc,
+            "textsearch": textsearch,
+            "keyword": keyword,
+            "artist": artist,
+            "release": release,
+            "set_type": set_type,
+        }
+
+        for key, value in extra_params.items():
+            if value is not None and key not in params:
                 params[key] = value
 
         endpoint = "/v2/catalog/products"
@@ -404,18 +521,19 @@ class TCGPlayer(BaseProvider):
             # _handle_http_error always raises, but pyright doesn't know this
             raise  # This should never be reached
         except requests.exceptions.RequestException as e:
-            logger.error(f"Network error during syntax search: {e}")
+            logger.error("Network error during syntax search: %s", e)
             raise NetworkError(
                 "Network error during TCGPlayer syntax search",
                 original_exception=e,
             ) from e
 
-    def get_card(self, card_id: str, **kwargs: Any) -> Card:
+    def get_card(self, card_id: str, include: str = "", pricing: bool = False) -> Card:
         """Get a single card by its TCGPlayer product ID.
 
         Args:
             card_id: TCGPlayer product ID for the card.
-            **kwargs: Additional parameters (e.g., include=pricing for additional data).
+            include: Comma-separated list of additional data to include.
+            pricing: Whether to include pricing data in the include parameter.
 
         Returns:
             Card object with full details.
@@ -435,8 +553,7 @@ class TCGPlayer(BaseProvider):
             )
 
         # Build include parameter for additional data
-        include = kwargs.get("include", "")
-        if "pricing" in kwargs and kwargs["pricing"]:
+        if pricing:
             include = f"{include},pricing" if include else "pricing"
 
         params: dict[str, Any] = {}
@@ -456,13 +573,13 @@ class TCGPlayer(BaseProvider):
             # _handle_http_error always raises, but pyright doesn't know this
             raise  # This should never be reached
         except requests.exceptions.RequestException as e:
-            logger.error(f"Network error during get_card: {e}")
+            logger.error("Network error during get_card: %s", e)
             raise NetworkError(
                 "Network error during TCGPlayer get_card",
                 original_exception=e,
             ) from e
 
-    def get_deck(self, deck_id: str | int | None = None, **kwargs: Any) -> Deck:
+    def get_deck(self, deck_id: str | int | None = None) -> Deck:
         """Get a deck by its TCGPlayer deck ID.
 
         Note:
@@ -471,7 +588,7 @@ class TCGPlayer(BaseProvider):
 
         Args:
             deck_id: TCGPlayer deck ID.
-            **kwargs: Additional parameters.
+
 
         Returns:
             Deck object with deck details.
@@ -491,7 +608,7 @@ class TCGPlayer(BaseProvider):
             "TCGPlayer API focuses on catalog and pricing data."
         )
 
-    def get_user_decks(self, user_id: str | None = None, **kwargs: Any) -> list[Deck]:
+    def get_user_decks(self, user_id: str | None = None) -> list[Deck]:
         """Get decks for the authenticated user.
 
         Note:
@@ -499,7 +616,7 @@ class TCGPlayer(BaseProvider):
             This method is a placeholder and may raise NotImplementedError.
 
         Args:
-            **kwargs: Additional parameters.
+
 
         Returns:
             List of Deck objects for the authenticated user.
@@ -515,27 +632,28 @@ class TCGPlayer(BaseProvider):
             "TCGPlayer API focuses on catalog and pricing data."
         )
 
-    def get_pricing(self, product_id: int, **kwargs: Any) -> Pricing:
+    def get_pricing(self, product_id: int) -> Pricing:
         """Get pricing information for a card by its product ID.
 
         Args:
-            product_id: TCGPlayer product ID for the card.
-            **kwargs: Additional parameters.
+            product_id: TCGPlayer product ID for the card. Must be a
+                positive integer.
 
         Returns:
             Pricing object containing price data from TCGPlayer.
 
         Raises:
             AuthenticationError: If not authenticated.
+            InvalidQueryError: If product_id is not a positive integer.
             NotFoundError: If the card or pricing data is not found.
             NetworkError: If there is a network error.
             APIError: If the API returns an error.
         """
         self._check_authenticated()
 
-        if not product_id:
+        if not isinstance(product_id, int) or product_id < 1:
             raise InvalidQueryError(
-                "product_id is required for TCGPlayer.get_pricing()",
+                "product_id must be a positive integer for " "TCGPlayer.get_pricing()",
                 provider=self.name,
             )
 
@@ -552,19 +670,18 @@ class TCGPlayer(BaseProvider):
             # _handle_http_error always raises, but pyright doesn't know this
             raise  # This should never be reached
         except requests.exceptions.RequestException as e:
-            logger.error(f"Network error during get_pricing: {e}")
+            logger.error("Network error during get_pricing: %s", e)
             raise NetworkError(
                 "Network error during TCGPlayer get_pricing",
                 original_exception=e,
             ) from e
 
-    def autocomplete(self, query: str, limit: int = 10, **kwargs: Any) -> list[str]:
+    def autocomplete(self, query: str, limit: int = 10) -> list[str]:
         """Get autocomplete suggestions for a search query.
 
         Args:
             query: Partial card name to get suggestions for.
             limit: Maximum number of suggestions to return. Defaults to 10.
-            **kwargs: Additional parameters (currently ignored).
 
         Returns:
             List of suggested card names.
@@ -595,7 +712,7 @@ class TCGPlayer(BaseProvider):
             # _handle_http_error always raises, but pyright doesn't know this
             raise  # This should never be reached
         except requests.exceptions.RequestException as e:
-            logger.error(f"Network error during autocomplete: {e}")
+            logger.error("Network error during autocomplete: %s", e)
             raise NetworkError(
                 "Network error during TCGPlayer autocomplete",
                 original_exception=e,
@@ -609,7 +726,6 @@ class TCGPlayer(BaseProvider):
         type_line: str | None = None,
         limit: int = 100,
         page_size: int = 50,
-        **kwargs: Any,
     ) -> Generator[Card, None, None]:
         """Iterate through search results page by page.
 
@@ -624,7 +740,6 @@ class TCGPlayer(BaseProvider):
             type_line: Type line the card must include.
             limit: Maximum total number of results to return. Defaults to 100.
             page_size: Number of results to request per page. Defaults to 50.
-            **kwargs: Additional search parameters passed to search().
 
         Yields:
             Card objects one at a time.
@@ -640,16 +755,14 @@ class TCGPlayer(BaseProvider):
         yielded = 0
 
         while yielded < limit:
-            kwargs["limit"] = page_size
-            kwargs["page"] = page
-
             try:
                 cards = self.search(
                     name=name,
                     colors=colors,
                     identity=identity,
                     type_line=type_line,
-                    **kwargs,
+                    limit=page_size,
+                    page=page,
                 )
 
                 # Check if we got any results
@@ -664,7 +777,7 @@ class TCGPlayer(BaseProvider):
                 page += 1
 
             except (NetworkError, APIError) as e:
-                logger.error(f"Error during paginated search on page {page}: {e}")
+                logger.error("Error during paginated search on page %s: %s", page, e)
                 raise
 
     def _check_authenticated(self) -> None:
@@ -709,7 +822,6 @@ class TCGPlayer(BaseProvider):
         params: dict[str, Any] | None = None,
         data: dict[str, Any] | None = None,
         json: dict[str, Any] | None = None,
-        **kwargs: Any,
     ) -> requests.Response:
         """Make an authenticated HTTP request to the TCGPlayer API.
 
@@ -719,7 +831,6 @@ class TCGPlayer(BaseProvider):
             params: Query parameters.
             data: Form data.
             json: JSON body.
-            **kwargs: Additional request parameters.
 
         Returns:
             requests.Response object.
@@ -750,9 +861,7 @@ class TCGPlayer(BaseProvider):
             raise ValueError(f"Unsupported HTTP method: {method}")
 
         try:
-            response = http_method(
-                endpoint, params=params, data=data, json=json, **kwargs
-            )
+            response = http_method(endpoint, params=params, data=data, json=json)
 
             # TCGPlayer uses specific error handling
             if response.status_code == 401:
@@ -773,9 +882,17 @@ class TCGPlayer(BaseProvider):
                 # Apply new auth to session
                 self.auth_handler.apply_auth(self.http_client.session)
                 # Retry the request
-                response = http_method(
-                    endpoint, params=params, data=data, json=json, **kwargs
-                )
+                response = http_method(endpoint, params=params, data=data, json=json)
+                # If the retried request still fails auth, surface a
+                # clear "persistent 401" error rather than letting it
+                # fall through to a generic AuthenticationError below.
+                if response.status_code == 401:
+                    raise AuthenticationError(
+                        "Persistent 401 after token refresh",
+                        provider=self.name,
+                        status_code=401,
+                        auth_type="oauth2",
+                    )
 
             # Raise for other errors
             response.raise_for_status()
@@ -792,7 +909,21 @@ class TCGPlayer(BaseProvider):
         colors: list[Color] | None = None,
         identity: list[Color] | None = None,
         type_line: str | None = None,
-        **kwargs: Any,
+        category: str | None = None,
+        game: str | None = None,
+        format: str | None = None,
+        rarity: str | None = None,
+        color: str | None = None,
+        card_type: str | None = None,
+        subtype: str | None = None,
+        power: str | None = None,
+        toughness: str | None = None,
+        cmc: int | None = None,
+        textsearch: str | None = None,
+        keyword: str | None = None,
+        artist: str | None = None,
+        release: str | None = None,
+        set_type: str | None = None,
     ) -> str:
         """Build a TCGPlayer search query string from generic parameters.
 
@@ -801,7 +932,21 @@ class TCGPlayer(BaseProvider):
             colors: Colors the card must include.
             identity: Colors the card must be exactly.
             type_line: Card type line.
-            **kwargs: Additional filter parameters.
+            category: Category filter.
+            game: Game filter.
+            format: Format filter.
+            rarity: Rarity filter.
+            color: Color filter.
+            card_type: Card type filter.
+            subtype: Card subtype filter.
+            power: Power filter.
+            toughness: Toughness filter.
+            cmc: Converted mana cost filter.
+            textsearch: Oracle text search filter.
+            keyword: Keyword filter.
+            artist: Artist filter.
+            release: Release date filter.
+            set_type: Set type filter.
 
         Returns:
             Query string for TCGPlayer search.
@@ -830,14 +975,27 @@ class TCGPlayer(BaseProvider):
             # TCGPlayer uses type filtering
             query_parts.append(f"type:{type_line}")
 
-        # Handle additional filters from kwargs
-        for key, value in kwargs.items():
-            if value is not None and key not in [
-                "name",
-                "colors",
-                "identity",
-                "type_line",
-            ]:
+        # Handle additional filters
+        extra_filters: dict[str, Any] = {
+            "category": category,
+            "game": game,
+            "format": format,
+            "rarity": rarity,
+            "color": color,
+            "type": card_type,
+            "subtype": subtype,
+            "power": power,
+            "toughness": toughness,
+            "cmc": cmc,
+            "textsearch": textsearch,
+            "keyword": keyword,
+            "artist": artist,
+            "release": release,
+            "set_type": set_type,
+        }
+
+        for key, value in extra_filters.items():
+            if value is not None:
                 query_parts.append(f"{key}:{value}")
 
         return ",".join(query_parts)
@@ -859,7 +1017,7 @@ class TCGPlayer(BaseProvider):
                 card = self._parse_card_data(item)
                 cards.append(card)
             except Exception as e:
-                logger.warning(f"Failed to parse card data: {e}")
+                logger.warning("Failed to parse card data: %s", e)
                 continue
 
         return cards
@@ -928,7 +1086,10 @@ class TCGPlayer(BaseProvider):
                 if "price" in ext and "conditionName" in ext:
                     condition = ext.get("conditionName", "").lower().replace(" ", "_")
                     price = ext.get("price", 0)
-                    if isinstance(price, (int, float)):
+                    if (
+                        isinstance(price, (int, float))
+                        and condition in _TCGPLAYER_VALID_CONDITIONS
+                    ):
                         pricing_dict[condition] = float(price)
 
         # Map TCGPlayer category to MTG set types
@@ -1047,7 +1208,7 @@ class TCGPlayer(BaseProvider):
             return card
 
         except Exception as e:
-            logger.error(f"Failed to create Card object: {e}")
+            logger.error("Failed to create Card object: %s", e)
             raise ParsingError(
                 f"Failed to parse card data: {e}",
                 provider=self.name,
@@ -1262,8 +1423,13 @@ class TCGPlayer(BaseProvider):
         for sku in results:
             condition = sku.get("conditionName", "").lower().replace(" ", "_")
             price = sku.get("price", 0)
-            if isinstance(price, (int, float)):
+            if (
+                isinstance(price, (int, float))
+                and condition in _TCGPLAYER_VALID_CONDITIONS
+            ):
                 tcgplayer_pricing_data[condition] = float(price)
+            elif isinstance(price, (int, float)):
+                logger.warning("Unknown TCGPlayer condition %r; skipping", condition)
 
         tcgplayer_pricing = TCGPlayerPricing(**tcgplayer_pricing_data)
 

@@ -66,7 +66,13 @@ class Aggregator:
                 via add_provider() before searching.
         """
         self.providers: list[BaseProvider] = providers or []
-        self.provider_map: dict[str, BaseProvider] = {p.name: p for p in self.providers}
+        self.provider_map: dict[str, BaseProvider] = {}
+        for p in self.providers:
+            if p.name in self.provider_map:
+                raise ValueError(
+                    f"Duplicate provider name '{p.name}' in initial providers list"
+                )
+            self.provider_map[p.name] = p
         self._lock = threading.RLock()
 
     def add_provider(self, provider: BaseProvider) -> None:
@@ -89,7 +95,7 @@ class Aggregator:
                 )
             self.providers.append(provider)
             self.provider_map[provider.name] = provider
-            logger.info(f"Added provider: {provider.name}")
+            logger.info("Added provider: %s", provider.name)
 
     def remove_provider(self, provider_name: str) -> bool:
         """Remove a provider from the aggregator.
@@ -110,7 +116,7 @@ class Aggregator:
             provider = self.provider_map[provider_name]
             self.providers.remove(provider)
             del self.provider_map[provider_name]
-            logger.info(f"Removed provider: {provider_name}")
+            logger.info("Removed provider: %s", provider_name)
         return True
 
     def get_provider(self, provider_name: str) -> BaseProvider:
@@ -143,7 +149,6 @@ class Aggregator:
         page: int = 1,
         order: str | None = None,
         sources: list[str] | None = None,
-        **kwargs: Any,
     ) -> dict[str, dict[str, Any]]:
         """Search for cards across all configured providers.
 
@@ -162,7 +167,6 @@ class Aggregator:
             order: Sort order for results.
             sources: Optional list of provider names to query. If None, all
                 configured providers are queried.
-            **kwargs: Additional provider-specific search parameters.
 
         Returns:
             A dictionary mapping provider names to result dictionaries.
@@ -210,7 +214,6 @@ class Aggregator:
                 limit=limit,
                 page=page,
                 order=order,
-                **kwargs,
             )
 
         return result_dict
@@ -219,8 +222,9 @@ class Aggregator:
         self,
         query: str,
         limit: int = 20,
+        page: int = 1,
+        order: str | None = None,
         sources: list[str] | None = None,
-        **kwargs: Any,
     ) -> dict[str, dict[str, Any]]:
         """Search for cards using provider-specific query syntax across all providers.
 
@@ -231,9 +235,10 @@ class Aggregator:
         Args:
             query: The provider-specific query string.
             limit: Maximum number of results to return per provider.
+            page: Page number for pagination (1-based).
+            order: Sort order for results.
             sources: Optional list of provider names to query. If None, all
                 configured providers are queried.
-            **kwargs: Additional provider-specific parameters.
 
         Returns:
             A dictionary mapping provider names to result dictionaries.
@@ -261,7 +266,8 @@ class Aggregator:
                 provider=provider,
                 query=query,
                 limit=limit,
-                **kwargs,
+                page=page,
+                order=order,
             )
 
         return result_dict
@@ -284,6 +290,9 @@ class Aggregator:
             if sources is None:
                 return list(self.providers)
 
+            unknown = [name for name in sources if name not in self.provider_map]
+            if unknown:
+                logger.warning("Unknown provider sources (ignored): %s", unknown)
             return [
                 self.provider_map[name] for name in sources if name in self.provider_map
             ]
@@ -298,7 +307,6 @@ class Aggregator:
         limit: int = 20,
         page: int = 1,
         order: str | None = None,
-        **kwargs: Any,
     ) -> dict[str, Any]:
         """Query a single provider and return results with timing.
 
@@ -311,7 +319,6 @@ class Aggregator:
             limit: Maximum number of results to return.
             page: Page number for pagination.
             order: Sort order for results.
-            **kwargs: Additional provider-specific parameters.
 
         Returns:
             A dictionary containing the query results and timing information.
@@ -336,7 +343,6 @@ class Aggregator:
                 limit=limit,
                 page=page,
                 order=order,
-                **kwargs,
             )
         except Exception as e:
             error = {
@@ -345,7 +351,10 @@ class Aggregator:
                 "exception": e,
             }
             logger.error(
-                f"Error querying provider {provider.name}: {type(e).__name__}: {e}"
+                "Error querying provider %s: %s: %s",
+                provider.name,
+                type(e).__name__,
+                e,
             )
 
         end_time = time.time()
@@ -366,7 +375,8 @@ class Aggregator:
         provider: BaseProvider,
         query: str,
         limit: int = 20,
-        **kwargs: Any,
+        page: int = 1,
+        order: str | None = None,
     ) -> dict[str, Any]:
         """Query a single provider using query syntax and return results with timing.
 
@@ -374,7 +384,8 @@ class Aggregator:
             provider: The provider to query.
             query: The provider-specific query string.
             limit: Maximum number of results to return.
-            **kwargs: Additional provider-specific parameters.
+            page: Page number for pagination.
+            order: Sort order for results.
 
         Returns:
             A dictionary containing the query results and timing information.
@@ -384,7 +395,9 @@ class Aggregator:
         cards: list[Card] = []
 
         try:
-            cards = provider.search_syntax(query=query, limit=limit, **kwargs)
+            cards = provider.search_syntax(
+                query=query, limit=limit, page=page, order=order
+            )
         except Exception as e:
             error = {
                 "type": type(e).__name__,
@@ -392,8 +405,10 @@ class Aggregator:
                 "exception": e,
             }
             logger.error(
-                f"Error querying provider {provider.name} with syntax: "
-                f"{type(e).__name__}: {e}"
+                "Error querying provider %s with syntax: %s: %s",
+                provider.name,
+                type(e).__name__,
+                e,
             )
 
         end_time = time.time()

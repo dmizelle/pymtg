@@ -20,8 +20,8 @@ class TestVersion:
         """Test that __version__ is a string."""
         assert isinstance(__version__, str)
 
-    def test_version_is_valid_semver(self) -> None:
-        """Test that __version__ follows semantic versioning."""
+    def test_version_is_valid_pep440(self) -> None:
+        """Test that __version__ follows PEP 440."""
         # Should not raise an exception
         _validate_version(__version__)
 
@@ -69,3 +69,22 @@ class TestVersion:
         """
         with pytest.raises(InvalidVersion):
             _validate_version(version)
+
+    @pytest.mark.parametrize(
+        "version",
+        [None, 1, 1.0, ["1.0.0"]],
+    )
+    def test_validate_version_rejects_non_strings(self, version: object) -> None:
+        """Test that non-string inputs raise TypeError, not InvalidVersion.
+
+        ``_validate_version`` has no runtime type guard; it forwards its
+        argument to ``packaging.version.Version``, which raises
+        ``TypeError`` for non-string inputs. This pins that behavior so
+        future readers do not assume ``InvalidVersion`` is the only
+        failure mode.
+
+        Args:
+            version: A non-string value to test.
+        """
+        with pytest.raises(TypeError):
+            _validate_version(version)  # type: ignore[arg-type]
