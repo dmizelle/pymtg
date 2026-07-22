@@ -30,6 +30,7 @@ class JWTAuthHandler(BaseAuthHandler):
     Attributes:
         base_url: The base URL for the authentication endpoint.
         login_endpoint: The endpoint to POST credentials to.
+        refresh_endpoint: The endpoint to POST refresh tokens to.
         access_token: The current JWT access token.
         refresh_token: The current JWT refresh token.
         authenticated: Whether authentication is valid.
@@ -41,6 +42,7 @@ class JWTAuthHandler(BaseAuthHandler):
         self,
         base_url: str,
         login_endpoint: str = "/api/rest-auth/login/",
+        refresh_endpoint: str = "/api/rest-auth/token/refresh/",
         auth_header_name: str = "Authorization",
         auth_header_prefix: str = "JWT",
     ) -> None:
@@ -50,6 +52,8 @@ class JWTAuthHandler(BaseAuthHandler):
             base_url: The base URL for the authentication endpoint.
             login_endpoint: The endpoint to POST credentials to.
                 Defaults to "/api/rest-auth/login/".
+            refresh_endpoint: The endpoint to POST refresh tokens to.
+                Defaults to "/api/rest-auth/token/refresh/".
             auth_header_name: The header name for the JWT token.
                 Defaults to "Authorization".
             auth_header_prefix: The prefix for the JWT token.
@@ -57,6 +61,7 @@ class JWTAuthHandler(BaseAuthHandler):
         """
         self.base_url = base_url.rstrip("/")
         self.login_endpoint = login_endpoint
+        self.refresh_endpoint = refresh_endpoint
         self.auth_header_name = auth_header_name
         self.auth_header_prefix = auth_header_prefix
 
@@ -235,49 +240,140 @@ class JWTAuthHandler(BaseAuthHandler):
     def refresh(
         self, *, username: str | None = None, password: str | None = None
     ) -> None:
-        """Refresh authentication.
+        """Refresh authentication using the stored refresh token.
 
-        Uses the refresh_token to obtain a new access token without requiring
-        username/password. Falls back to re-authentication with provided credentials
-        if refresh_token is unavailable.
+        POSTs the refresh token to the token-refresh endpoint to obtain a
+        new access token. If the server supports token rotation (enabled
+        via ``ROTATE_REFRESH_TOKENS`` in SimpleJWT), a new refresh token is
+        also stored.
 
-        Note:
-            For Archidekt, credentials are cleared from memory after successful
-            authentication for security. This means stored credentials are not
-            available for refresh. Either:
-            - Use refresh_token if the API supports it (not yet implemented for Archidekt)
-            - Provide username and password directly to this method
+        If no refresh token is available, falls back to full
+        re-authentication using the provided username and password.
 
         Args:
-            username: Optional username for re-authentication. Required if no
-                refresh_token is available.
-            password: Optional password for re-authentication. Required if no
-                refresh_token is available.
+            username: Optional username for re-authentication fallback.
+                Required if no refresh token is stored.
+            password: Optional password for re-authentication fallback.
+                Required if no refresh token is stored.
 
         Raises:
-            AuthenticationError: If refresh fails or no valid refresh mechanism available.
+            AuthenticationError: If the refresh request fails, the refresh
+                token is invalid/expired, or no refresh mechanism is
+                available.
+            NetworkError: If a network error occurs during the refresh
+                request.
         """
-        # Try using refresh_token first if available
         if self._refresh_token:
-            # Implement token refresh using the refresh_token
-            # For now, Archidekt doesn't seem to have a dedicated refresh endpoint
-            # so we fall back to re-authentication with provided credentials
-            logger.debug(
-                "Refresh token available but dedicated refresh endpoint not implemented"
-            )
-            # Fall through to re-authentication
+            self._refresh_with_token(self._refresh_token)
+            logger.info("JWT token refreshed successfully")
+            return
 
-        # Re-authenticate with provided credentials
+        # No refresh token — fall back to full re-authentication
         if username and password:
             self.authenticate(username=username, password=password)
-        else:
-            raise AuthenticationError(
-                "Cannot refresh authentication: no refresh token endpoint implemented "
-                "for Archidekt and no credentials provided. "
-                "Please call authenticate() again with username and password.",
-                auth_type="jwt",
-                provider="archidekt",
+            return
+
+        raise AuthenticationError(
+            "Cannot refresh authentication: no refresh token stored and no "
+            "credentials provided. Call authenticate(username=..., "
+            "password=...) first.",
+            auth_type="jwt",
+            provider="archidekt",
+        )
+
+    def _refresh_with_token(self, refresh_token: str) -> None:
+        """Exchange a refresh token for a new access token.
+
+        POSTs to the token-refresh endpoint and updates stored tokens.
+        Handles both default (access-only) and rotation (access+refresh)
+        response formats.
+
+        Args:
+            refresh_token: The JWT refresh token to exchange.
+
+        Raises:
+            AuthenticationError: If the refresh endpoint rejects the token
+                or returns an unexpected response.
+            NetworkError: If a network error occurs.
+        """
+        refresh_url = f"{self.base_url}{self.refresh_endpoint}"
+        logger.debug("Refreshing JWT token at %s", refresh_url)
+
+        session = requests.Session()
+        try:
+            response = session.post(
+                refresh_url,
+                json={"refresh": refresh_token},
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                },
+                timeout=30.0,
             )
+
+            if response.status_code != 200:
+                error_msg = "Token refresh failed"
+                try:
+                    error_data = response.json()
+                    if isinstance(error_data, dict):
+                        detail = error_data.get("detail", error_data.get("error", ""))
+                        if detail:
+                            error_msg += f": {detail}"
+                except (json.JSONDecodeError, ValueError):
+                    if response.text and len(response.text) < 200:
+                        error_msg += f": {response.text.strip()}"
+                # Clear stale tokens on refresh failure
+                self._access_token = None
+                self._refresh_token = None
+                self._authenticated = False
+                raise AuthenticationError(
+                    error_msg,
+                    auth_type="jwt",
+                    provider="archidekt",
+                    status_code=response.status_code,
+                )
+
+            try:
+                token_data = response.json()
+            except (json.JSONDecodeError, ValueError) as e:
+                self._access_token = None
+                self._refresh_token = None
+                self._authenticated = False
+                raise AuthenticationError(
+                    f"Failed to parse refresh response: {e}",
+                    auth_type="jwt",
+                    provider="archidekt",
+                    status_code=response.status_code,
+                ) from e
+
+            # SimpleJWT returns "access" (not "access_token").
+            # With rotation enabled, also returns a new "refresh".
+            new_access = token_data.get("access")
+            new_refresh = token_data.get("refresh")
+
+            if not new_access or not isinstance(new_access, str):
+                raise AuthenticationError(
+                    "Refresh response did not contain a valid access token",
+                    auth_type="jwt",
+                    provider="archidekt",
+                    status_code=response.status_code,
+                    details={"response_keys": list(token_data.keys())},
+                )
+
+            self._access_token = new_access
+            if new_refresh and isinstance(new_refresh, str):
+                self._refresh_token = new_refresh
+            self._authenticated = True
+
+        except requests.exceptions.RequestException as e:
+            logger.error("Network error during JWT refresh: %s", e)
+            raise NetworkError(
+                "Network error during token refresh",
+                original_exception=e,
+                provider="archidekt",
+            ) from e
+        finally:
+            session.close()
 
     def apply_auth(self, session: requests.Session) -> None:
         """Apply authentication to a requests session.

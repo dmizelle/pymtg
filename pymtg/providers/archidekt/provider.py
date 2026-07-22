@@ -333,21 +333,20 @@ class Archidekt(BaseProvider):
     ) -> None:
         """Refresh the provider's authentication.
 
-        Archidekt does not implement a refresh-token endpoint, and credentials
-        are cleared from memory after the initial authentication for security.
-        Therefore, refreshing requires the caller to supply ``username`` and
-        ``password`` again, which are forwarded to the JWT auth handler's
-        refresh method.
+        Uses the stored JWT refresh token to obtain a new access token
+        without requiring username/password. If no refresh token is
+        available, falls back to full re-authentication using the provided
+        credentials.
 
         Args:
-            username: Username for re-authentication. Required because no
-                refresh-token endpoint is implemented for Archidekt.
-            password: Password for re-authentication. Required because no
-                refresh-token endpoint is implemented for Archidekt.
+            username: Username for re-authentication fallback. Required
+                if no refresh token is stored.
+            password: Password for re-authentication fallback. Required
+                if no refresh token is stored.
 
         Raises:
-            ArchidektAuthenticationError: If authentication refresh fails,
-                including when no credentials are provided.
+            ArchidektAuthenticationError: If token refresh fails and no
+                fallback credentials are provided.
         """
         try:
             self.auth_handler.refresh(username=username, password=password)
@@ -355,10 +354,7 @@ class Archidekt(BaseProvider):
             logger.info("Archidekt authentication refreshed successfully")
         except Exception as e:
             raise ArchidektAuthenticationError(
-                "Authentication refresh failed: Archidekt has no refresh-token "
-                "endpoint and credentials are not stored. Call "
-                "refresh_auth(username=..., password=...) or "
-                "authenticate(username=..., password=...) instead.",
+                f"Authentication refresh failed: {e}",
             ) from e
 
     def enable_har_logging(self) -> None:

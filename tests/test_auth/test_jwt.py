@@ -58,6 +58,7 @@ class TestJWTAuthHandlerInitialization:
 
         assert handler.base_url == "https://archidekt.com"
         assert handler.login_endpoint == "/api/rest-auth/login/"
+        assert handler.refresh_endpoint == "/api/rest-auth/token/refresh/"
         assert handler.auth_header_name == "Authorization"
         assert handler.auth_header_prefix == "JWT"
         assert handler.is_authenticated() is False
@@ -69,12 +70,14 @@ class TestJWTAuthHandlerInitialization:
         handler = JWTAuthHandler(
             base_url="https://example.com",
             login_endpoint="/custom/login/",
+            refresh_endpoint="/custom/refresh/",
             auth_header_name="X-Auth",
             auth_header_prefix="Bearer",
         )
 
         assert handler.base_url == "https://example.com"
         assert handler.login_endpoint == "/custom/login/"
+        assert handler.refresh_endpoint == "/custom/refresh/"
         assert handler.auth_header_name == "X-Auth"
         assert handler.auth_header_prefix == "Bearer"
 
@@ -387,24 +390,140 @@ class TestJWTAuthHandlerRefresh:
     """Tests for refresh() method."""
 
     @patch("pymtg.auth.jwt.requests.Session")
-    def test_refresh_no_credentials(self, mock_session_class):
-        """Test refresh fails when no credentials stored."""
+    def test_refresh_no_token_no_credentials(self, mock_session_class):
+        """Test refresh fails when no refresh token and no credentials."""
         handler = JWTAuthHandler("https://archidekt.com")
 
         with pytest.raises(AuthenticationError) as exc_info:
             handler.refresh()
 
-        assert "no credentials provided" in str(exc_info.value)
+        assert "no refresh token stored" in str(exc_info.value)
 
     @patch("pymtg.auth.jwt.requests.Session")
-    def test_refresh_with_credentials(self, mock_session_class):
-        """Test refresh with provided credentials re-authenticates.
+    def test_refresh_with_token_success(self, mock_session_class):
+        """Test refresh succeeds using a stored refresh token."""
+        mock_session = MagicMock()
+        mock_session_class.return_value = mock_session
+        mock_response = _make_mock_response(
+            status_code=200,
+            json_data={"access": "new_access_token"},
+        )
+        mock_session.post.return_value = mock_response
 
-        Credentials are no longer stored on the instance after authentication
-        (cleared for security), so refresh() requires them to be passed
-        explicitly.
+        handler = JWTAuthHandler("https://archidekt.com")
+        handler._access_token = "old_access_token"
+        handler._refresh_token = "old_refresh_token"
+        handler._authenticated = True
+
+        handler.refresh()
+
+        assert handler.is_authenticated() is True
+        assert handler.access_token == "new_access_token"
+        # Refresh token unchanged when no rotation
+        assert handler.refresh_token == "old_refresh_token"
+
+        # Verify the refresh endpoint was called
+        mock_session.post.assert_called_once()
+        call_args = mock_session.post.call_args
+        assert "/rest-auth/token/refresh/" in call_args.args[0]
+        assert call_args.kwargs["json"] == {"refresh": "old_refresh_token"}
+
+    @patch("pymtg.auth.jwt.requests.Session")
+    def test_refresh_with_token_rotation(self, mock_session_class):
+        """Test refresh handles token rotation (new access + refresh)."""
+        mock_session = MagicMock()
+        mock_session_class.return_value = mock_session
+        mock_response = _make_mock_response(
+            status_code=200,
+            json_data={
+                "access": "new_access_token",
+                "refresh": "new_refresh_token",
+            },
+        )
+        mock_session.post.return_value = mock_response
+
+        handler = JWTAuthHandler("https://archidekt.com")
+        handler._access_token = "old_access_token"
+        handler._refresh_token = "old_refresh_token"
+        handler._authenticated = True
+
+        handler.refresh()
+
+        assert handler.is_authenticated() is True
+        assert handler.access_token == "new_access_token"
+        # Refresh token should be updated when rotation is on
+        assert handler.refresh_token == "new_refresh_token"
+
+    @patch("pymtg.auth.jwt.requests.Session")
+    def test_refresh_token_expired(self, mock_session_class):
+        """Test refresh fails when the refresh token is expired (401)."""
+        mock_session = MagicMock()
+        mock_session_class.return_value = mock_session
+        mock_response = _make_mock_response(
+            status_code=401,
+            json_data={"detail": "Token is invalid or expired"},
+            text='{"detail": "Token is invalid or expired"}',
+        )
+        mock_session.post.return_value = mock_response
+
+        handler = JWTAuthHandler("https://archidekt.com")
+        handler._access_token = "old_access_token"
+        handler._refresh_token = "old_refresh_token"
+        handler._authenticated = True
+
+        with pytest.raises(AuthenticationError) as exc_info:
+            handler.refresh()
+
+        assert "Token refresh failed" in str(exc_info.value)
+        assert exc_info.value.status_code == 401
+        # Tokens should be cleared on failure
+        assert handler.is_authenticated() is False
+        assert handler.access_token is None
+        assert handler.refresh_token is None
+
+    @patch("pymtg.auth.jwt.requests.Session")
+    def test_refresh_network_error(self, mock_session_class):
+        """Test refresh with network error raises NetworkError."""
+        mock_session = MagicMock()
+        mock_session_class.return_value = mock_session
+        mock_session.post.side_effect = requests.exceptions.Timeout()
+
+        handler = JWTAuthHandler("https://archidekt.com")
+        handler._refresh_token = "old_refresh_token"
+        handler._authenticated = True
+
+        with pytest.raises(NetworkError) as exc_info:
+            handler.refresh()
+
+        assert "Network error during token refresh" in str(exc_info.value)
+
+    @patch("pymtg.auth.jwt.requests.Session")
+    def test_refresh_response_missing_access(self, mock_session_class):
+        """Test refresh fails when response has no access token."""
+        mock_session = MagicMock()
+        mock_session_class.return_value = mock_session
+        mock_response = _make_mock_response(
+            status_code=200,
+            json_data={"unexpected": "field"},
+        )
+        mock_session.post.return_value = mock_response
+
+        handler = JWTAuthHandler("https://archidekt.com")
+        handler._refresh_token = "old_refresh_token"
+        handler._authenticated = True
+
+        with pytest.raises(AuthenticationError) as exc_info:
+            handler.refresh()
+
+        assert "did not contain a valid access token" in str(exc_info.value)
+
+    @patch("pymtg.auth.jwt.requests.Session")
+    def test_refresh_fallback_to_credentials(self, mock_session_class):
+        """Test refresh falls back to re-auth with credentials.
+
+        When no refresh token is stored, refresh() should use the provided
+        username/password to do a full re-authentication.
         """
-        # First, set up initial authentication
         mock_session = MagicMock()
         mock_session_class.return_value = mock_session
         mock_response = _make_mock_response(
@@ -419,17 +538,17 @@ class TestJWTAuthHandlerRefresh:
 
         handler = JWTAuthHandler("https://archidekt.com")
 
-        # Refresh with explicit credentials (credentials are not stored
-        # on the instance after authentication for security reasons)
+        # No refresh token stored, provide credentials
         handler.refresh(username="test_user", password="test_pass")
 
-        # Verify re-authentication happened
         assert handler.is_authenticated() is True
         assert handler.access_token == "new_access_token"
         assert handler.refresh_token == "new_refresh_token"
 
-        # Verify credentials were cleared after refresh
-        assert handler._username is None
+        # Verify the login endpoint was called (not the refresh endpoint)
+        mock_session.post.assert_called_once()
+        call_args = mock_session.post.call_args
+        assert "/rest-auth/login/" in call_args.args[0]
         assert handler._password is None
 
 
@@ -460,6 +579,7 @@ class TestJWTAuthHandlerSecurity:
         # Verify other data is preserved
         assert state["base_url"] == "https://archidekt.com"
         assert state["login_endpoint"] == "/api/rest-auth/login/"
+        assert state["refresh_endpoint"] == "/api/rest-auth/token/refresh/"
 
     def test_pickle_roundtrip_removes_secrets(self):
         """Test that pickle and unpickle removes secrets."""
