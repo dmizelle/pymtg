@@ -468,6 +468,11 @@ class HTTPClient:
         # encoded traversal (e.g. %2e%2e or ..%2f) is caught by the
         # normpath check below rather than bypassing it.
         decoded = unquote(path)
+        # Treat backslashes as path separators. posixpath.normpath treats
+        # backslashes as regular characters, so a backslash-encoded
+        # traversal (e.g. "..%5c..%5cadmin" or "..\\..\\admin") would
+        # otherwise bypass the traversal check below.
+        decoded = decoded.replace("\\", "/")
         # Normalize the path and reject traversal that escapes the base.
         normalized = posixpath.normpath(decoded)
         if normalized == ".." or normalized.startswith("../"):

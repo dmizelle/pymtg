@@ -411,7 +411,7 @@ class Cardmarket(BaseProvider):
             # Cardmarket uses limit and offset
             if limit:
                 params["limit"] = limit
-            if page > 1:
+            if limit and page > 1:
                 params["offset"] = (page - 1) * limit
 
             # Add additional search parameters to HTTP query
@@ -535,7 +535,7 @@ class Cardmarket(BaseProvider):
         if not query or not isinstance(query, str):
             raise InvalidQueryError("Query must be a non-empty string")
 
-        if limit is not None and (not isinstance(limit, int) or limit < 1):
+        if not isinstance(limit, int) or limit < 1:
             raise InvalidQueryError("limit must be a positive integer (>= 1)")
 
         if not isinstance(page, int) or page < 1:
@@ -557,7 +557,7 @@ class Cardmarket(BaseProvider):
                 params["limit"] = limit
 
             # Add standard pagination
-            if page > 1:
+            if limit and page > 1:
                 params["offset"] = (page - 1) * limit
 
             # Add any additional parameters
@@ -893,6 +893,8 @@ class Cardmarket(BaseProvider):
         # names are normalized to plain strings (recognized Format enum
         # values are stringified via .value, unknown names kept as-is).
         legalities_data = card_data.get("legalities", {})
+        if not isinstance(legalities_data, dict):
+            legalities_data = {}
         legalities: dict[str, str] = {}
         for fmt, status in legalities_data.items():
             try:
@@ -980,6 +982,8 @@ class Cardmarket(BaseProvider):
         Returns:
             List of Color enum values.
         """
+        if not isinstance(color_str, str):
+            return []
         if not color_str:
             return []
 
@@ -1108,6 +1112,8 @@ class Cardmarket(BaseProvider):
         # unset so per-seller prices extracted above are not silently
         # overwritten by trend averages.
         trends = pricing_data.get("trends", {})
+        if not isinstance(trends, dict):
+            trends = {}
         if cardmarket_pricing_data["avg1"] is None and isinstance(
             trends.get("avg1"), (int, float)
         ):
@@ -1205,8 +1211,12 @@ class Cardmarket(BaseProvider):
         # Try to parse JSON response
         try:
             return response.json()
-        except ValueError:
-            return response.text
+        except ValueError as e:
+            raise APIError(
+                f"Failed to parse JSON response from {self.name}",
+                provider=self.name,
+                status_code=response.status_code,
+            ) from e
 
     def _handle_http_error(
         self, response: requests.Response, resource_type: str

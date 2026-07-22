@@ -210,6 +210,8 @@ class TestScryfallSearch(unittest.TestCase):
 
         # Verify the HTTP call was made
         mock_http_client.get.assert_called_once()
+        call_args = mock_http_client.get.call_args
+        self.assertIn("ci:UB", call_args[1]["params"]["q"])
 
         # Verify _parse_card was called with the raw card data
         mock_parse.assert_called_once_with(card_data)
@@ -571,7 +573,7 @@ class TestScryfallAutocomplete(unittest.TestCase):
             "object": "error",
             "code": "not_found",
             "status": 404,
-            "message": "Card not found",
+            "details": "Card not found",
         }
 
         scryfall = Scryfall()
@@ -582,6 +584,7 @@ class TestScryfallAutocomplete(unittest.TestCase):
         self.assertEqual(context.exception.provider, "scryfall")
         self.assertEqual(context.exception.status_code, 404)
         self.assertEqual(context.exception.details["code"], "not_found")
+        self.assertEqual(context.exception.details["message"], "Card not found")
 
     @patch.object(Scryfall, "_handle_response")
     @patch.object(Scryfall, "http_client")
@@ -1066,10 +1069,13 @@ class TestScryfallGetCardUUIDValidation(unittest.TestCase):
             name="Black Lotus",
             source="scryfall",
         )
+        mock_response = MagicMock()
         with (
+            patch.object(Scryfall, "http_client", mock_response),
             patch.object(Scryfall, "_handle_response", return_value=mock_data),
             patch.object(Scryfall, "_parse_card", return_value=mock_card),
         ):
+            mock_response.get.return_value = MagicMock()
             card = scryfall.get_card("38625902-0567-4f24-85b0-a00843553997")
             self.assertIsNotNone(card)
             self.assertEqual(card.id, "38625902-0567-4f24-85b0-a00843553997")

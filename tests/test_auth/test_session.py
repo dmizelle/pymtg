@@ -6,6 +6,7 @@ Specifically, it verifies that the session is properly closed on error
 paths and kept open on success.
 """
 
+import time
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -191,6 +192,36 @@ class TestSessionAuthHandlerAuthenticateErrorPaths:
         assert handler._authenticated is False
 
     @patch("pymtg.auth.session.requests.Session")
+    def test_authenticate_no_session_cookie_raises(self, mock_session_cls):
+        """Test that login returning 200 without a sessionid cookie raises.
+
+        Verifies that a 200 login response lacking a ``sessionid`` cookie
+        is treated as a failed login and raises ``AuthenticationError``,
+        and that the auth_session is closed.
+        """
+        mock_session = MagicMock()
+        mock_session_cls.return_value = mock_session
+
+        mock_csrf_response = MagicMock()
+        mock_csrf_response.status_code = 200
+        mock_csrf_response.cookies.get.return_value = "csrf-token-123"
+        mock_session.get.return_value = mock_csrf_response
+
+        mock_login_response = MagicMock()
+        mock_login_response.status_code = 200
+        mock_session.post.return_value = mock_login_response
+
+        # No sessionid cookie in the jar
+        mock_session.cookies = []
+
+        handler = SessionAuthHandler(base_url="https://example.com")
+        with pytest.raises(AuthenticationError):
+            handler.authenticate(username="user", password="pass")
+
+        mock_session.close.assert_called_once()
+        assert handler._authenticated is False
+
+    @patch("pymtg.auth.session.requests.Session")
     def test_authenticate_network_error_closes_session(self, mock_session_cls):
         """Test that session is closed on network error.
 
@@ -239,6 +270,20 @@ class TestSessionAuthHandlerIsAuthenticated:
         handler._authenticated = True
         handler.session_cookies = {"sessionid": "value"}
         handler._session = None
+        assert handler.is_authenticated() is False
+
+    def test_is_authenticated_false_when_expired(self):
+        """Test that handler is not authenticated when session is expired.
+
+        ``is_authenticated()`` guards on ``_expires_at`` so that a session
+        whose cookies have expired is not reported as authenticated even
+        when the session object and cookies are still present.
+        """
+        handler = SessionAuthHandler(base_url="https://example.com")
+        handler._authenticated = True
+        handler.session_cookies = {"sessionid": "value"}
+        handler._session = MagicMock()
+        handler._expires_at = time.time() - 1  # expired
         assert handler.is_authenticated() is False
 
     def test_is_authenticated_false_without_cookies(self):
@@ -390,6 +435,8 @@ class TestSessionAuthHandlerApplyAuth:
             "sessionid": "session-value",
             "csrftoken": "csrf-value",
         }
+        handler._authenticated = True
+        handler._session = MagicMock()
         session = MagicMock()
         handler.apply_auth(session)
 
@@ -408,11 +455,15 @@ class TestSessionAuthHandlerApplyAuth:
 
         session.cookies.set.assert_not_called()
         session.headers.update.assert_not_called()
+        # Stale CSRF header should be popped when no CSRF token is present
+        session.headers.pop.assert_called_once_with("X-CSRFToken", None)
 
     def test_apply_auth_skips_none_values(self):
         """Test that apply_auth skips cookies with None values."""
         handler = SessionAuthHandler(base_url="https://example.com")
         handler.session_cookies = {"sessionid": None}
+        handler._authenticated = True
+        handler._session = MagicMock()
         session = MagicMock()
         handler.apply_auth(session)
 

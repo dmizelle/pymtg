@@ -4,11 +4,19 @@ This module provides configuration classes used throughout the library for
 managing provider settings, rate limits, and other configuration options.
 """
 
-import os
 from typing import Any
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+# Default Moxfield endpoint proxied through the third-party Parse.bot
+# scraper wrapper. The embedded UUID path segment may be revoked or
+# rotated by parse.bot at any time; override at runtime via the
+# MOXFIELD_BASE_URL environment variable (read lazily by the Moxfield
+# provider at instantiation time, not at module import time).
+DEFAULT_MOXFIELD_URL = (
+    "https://api.parse.bot/scraper/55189296-4a3a-4cd2-a006-802b22cd2b73/"
+)
 
 
 class ProviderConfig(BaseModel):
@@ -21,6 +29,11 @@ class ProviderConfig(BaseModel):
         timeout: Request timeout in seconds.
         user_agent: User agent string to use for requests.
     """
+
+    # Immutable so the module-level singletons in PROVIDER_CONFIGS cannot
+    # be accidentally mutated by a provider instance (which would corrupt
+    # configuration for all future instances of that provider).
+    model_config = ConfigDict(frozen=True)
 
     name: str = Field(..., description="Provider name")
     base_url: str | None = Field(
@@ -76,13 +89,12 @@ PROVIDER_CONFIGS: dict[str, ProviderConfig] = {
         # NOTE: Moxfield has no public HTTP API. Requests are proxied through
         # the third-party Parse.bot scraper wrapper service, whose embedded
         # UUID path segment may be revoked or rotated by parse.bot at any
-        # time. Override via the MOXFIELD_BASE_URL environment variable so a
-        # rotation does not require a code change or release; alternatively
-        # construct a custom ProviderConfig with a different endpoint.
-        base_url=os.environ.get(
-            "MOXFIELD_BASE_URL",
-            "https://api.parse.bot/scraper/55189296-4a3a-4cd2-a006-802b22cd2b73/",
-        ),
+        # time. The MOXFIELD_BASE_URL environment variable is read lazily by
+        # the Moxfield provider at instantiation time (not at module import
+        # time) so overrides take effect for each new provider instance. See
+        # DEFAULT_MOXFIELD_URL above, or construct a custom ProviderConfig
+        # with a different endpoint.
+        base_url=DEFAULT_MOXFIELD_URL,
         rate_limit={"requests_per_minute": 100},
         timeout=30,
         user_agent="pymtg/0.1.0 (+https://github.com/pymtg/pymtg)",

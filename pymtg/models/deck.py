@@ -54,6 +54,13 @@ class Deck(PyMTGBaseModel):
     format: Format | None = None
     commander: list[str] | None = None
     cards: list[DeckCard] | None = None
+    # Legacy fields: these are NOT read by any accessor method. All
+    # cards should be placed in ``cards`` with the appropriate ``board``
+    # attribute (Board.MAIN, Board.SIDEBOARD, etc.). Cards placed only in
+    # ``sideboard``/``maybe_board`` will be invisible to get_main_deck_cards,
+    # get_sideboard_cards, get_card_count, and get_unique_cards. They are
+    # retained only for backward compatibility with providers that still
+    # populate them.
     sideboard: list[DeckCard] | None = None
     maybe_board: list[DeckCard] | None = None
     source: str | None = None
@@ -149,17 +156,12 @@ class Deck(PyMTGBaseModel):
         Returns:
             The total number of copies of the card in the deck.
         """
-        count = 0
-        for getter in (
-            self.get_main_deck_cards,
-            self.get_sideboard_cards,
-            self.get_commander_cards,
-            self.get_maybeboard_cards,
-        ):
-            for card in getter():
-                if card.card.name.lower() == card_name.lower():
-                    count += card.count
-        return count
+        if self.cards is None:
+            return 0
+        target = card_name.lower()
+        return sum(
+            card.count for card in self.cards if card.card.name.lower() == target
+        )
 
     def get_unique_cards(self) -> list[DeckCard]:
         """Get the list of unique cards in the deck.
@@ -206,11 +208,12 @@ class Deck(PyMTGBaseModel):
             return False
 
         # The declared format must be present and a known Format value.
+        # With use_enum_values=True, self.format is always stored as a
+        # plain str, so we coerce it via Format(...) to validate it.
         if self.format is None:
             return False
-        if not isinstance(self.format, Format):
-            try:
-                Format(self.format)
-            except ValueError:
-                return False
+        try:
+            Format(self.format)
+        except ValueError:
+            return False
         return True

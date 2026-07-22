@@ -290,6 +290,16 @@ class TestOAuth2HandlerInterface:
             handler.authenticate()
         assert "Client ID and client secret are required" in str(exc_info.value)
 
+    def test_authenticate_requires_client_secret(self):
+        """Test authenticate() raises when client_id set but secret missing."""
+        handler = OAuth2ClientCredentialsHandler(
+            token_url="https://example.com/token",
+            client_id="cid",
+        )
+        with pytest.raises(AuthenticationError) as exc_info:
+            handler.authenticate()
+        assert "Client ID and client secret are required" in str(exc_info.value)
+
     def test_clear_auth_resets_all_state(self):
         """Test that clear_auth() resets every authentication field."""
         handler = OAuth2ClientCredentialsHandler(

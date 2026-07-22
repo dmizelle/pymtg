@@ -41,6 +41,7 @@ import logging
 import re
 import threading
 import uuid
+from collections import OrderedDict
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any, Iterator
@@ -150,6 +151,10 @@ class Archidekt(BaseProvider):
     GAME_ID_MTGO = 2
     GAME_ID_ARENA = 3
 
+    # Maximum number of deck-relation entries retained in memory. Once
+    # exceeded, the least-recently-inserted entry is evicted.
+    MAX_RELATION_MAP_SIZE = 1000
+
     # Reverse map for parsing
     FORMAT_ID_MAP: dict[int, Format] = {v: k for k, v in FORMAT_MAP.items()}
 
@@ -221,9 +226,12 @@ class Archidekt(BaseProvider):
             }
         )
 
-        # Map to store deck relation IDs for card management
+        # Map to store deck relation IDs for card management.
         # Format: {(deck_id, card_id): deck_relation_id}
-        self._deck_relation_map: dict[tuple[str, str], str] = {}
+        # Bounded to avoid unbounded memory growth in long-running sessions
+        # that load many decks. The least-recently-inserted entries are
+        # evicted once the cap is reached.
+        self._deck_relation_map: OrderedDict[tuple[str, str], str] = OrderedDict()
 
         # Lock for thread safety
         self._lock = threading.Lock()
@@ -422,19 +430,15 @@ class Archidekt(BaseProvider):
                 cookies=cookies,
             )
 
-    def _apply_rate_limiting(self) -> bool:
-        """Apply rate limiting before making a request.
+    def _evict_relation_map(self) -> None:
+        """Evict oldest entries when the relation map exceeds its cap.
 
-        Records the request against the sliding window so the call is
-        counted toward the rate limit, matching the behavior of the
-        ``guard()`` context manager used elsewhere.
-
-        Returns:
-            True if the request should proceed, False if rate limited.
+        Must be called while holding ``self._lock``. Removes
+        least-recently-inserted entries until the map is within the
+        configured ``MAX_RELATION_MAP_SIZE``.
         """
-        # Use the atomic check-and-record to avoid the TOCTOU race that
-        # affects a separate check() followed by record().
-        return self.rate_limiter.check_and_record("archidekt")
+        while len(self._deck_relation_map) > self.MAX_RELATION_MAP_SIZE:
+            self._deck_relation_map.popitem(last=False)
 
     def _sanitize_response_text(self, text: str) -> str:
         """Sanitize response text to remove sensitive data before logging.
@@ -547,7 +551,9 @@ class Archidekt(BaseProvider):
                         try:
                             retry_date = parsedate_to_datetime(retry_header)
                             if retry_date is not None:
-                                now = datetime.now(tz=retry_date.tzinfo)
+                                if retry_date.tzinfo is None:
+                                    retry_date = retry_date.replace(tzinfo=timezone.utc)
+                                now = datetime.now(timezone.utc)
                                 delta = (retry_date - now).total_seconds()
                                 retry_after = max(0, int(delta))
                         except (TypeError, ValueError, OverflowError):
@@ -1280,19 +1286,11 @@ class Archidekt(BaseProvider):
                 )
 
                 # Build deck creation payload based on HAR file analysis
-                # Use the authenticated user's root folder if available, otherwise use None
-                # to let Archidekt use the default folder
-                default_folder_id = None
-                if hasattr(self.auth_handler, "user_id") and self.auth_handler.user_id:
-                    # In Archidekt, the root folder ID is typically the same as user_id
-                    # or can be fetched from the API. For now, use None to let the API decide.
-                    default_folder_id = None
-
                 payload = {
                     "name": name,
                     "deckFormat": deck_format,
                     "game": self.GAME_ID_PAPER,  # Paper magic
-                    "parent_folder": folder_id or default_folder_id,
+                    "parent_folder": folder_id,
                 }
 
                 # Add optional fields
@@ -1507,6 +1505,7 @@ class Archidekt(BaseProvider):
                     self._deck_relation_map[(deck_id, card_id)] = str(
                         actual_relation_id
                     )
+                    self._evict_relation_map()
 
                 return data
 
@@ -1765,8 +1764,8 @@ class Archidekt(BaseProvider):
         rarity = rarity_map.get(rarity_str)
 
         # Extract set information from nested edition object or set field or top-level
-        edition = card_data.get("edition", {})
-        set_data = card_data.get("set", {})
+        edition = card_data.get("edition") or {}
+        set_data = card_data.get("set") or {}
 
         set_name = str(
             edition.get("editionname", "")
@@ -1802,7 +1801,7 @@ class Archidekt(BaseProvider):
         released_at = str(edition.get("editiondate", "") or "")
 
         # Extract prices
-        prices_data = card_data.get("prices", {})
+        prices_data = card_data.get("prices") or {}
         prices = {
             "usd": float(prices_data.get("tcg", 0) or 0),
             "usd_foil": float(
@@ -2074,6 +2073,7 @@ class Archidekt(BaseProvider):
             if card_id_str and relation_id is not None:
                 with self._lock:
                     self._deck_relation_map[(deck_id, card_id_str)] = str(relation_id)
+                    self._evict_relation_map()
 
         # Parse main cards
         for card_entry in deck_data.get("cards", []):

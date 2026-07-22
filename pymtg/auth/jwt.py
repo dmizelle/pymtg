@@ -6,6 +6,7 @@ that use JWT token-based authentication.
 
 import json
 import logging
+import threading
 from typing import Any
 
 import requests
@@ -73,6 +74,9 @@ class JWTAuthHandler(BaseAuthHandler):
         self.auth_header_prefix = auth_header_prefix
         self.provider = provider
 
+        # Thread-safety: guard all mutable auth state.
+        self._lock = threading.RLock()
+
         # Token storage
         self._access_token: str | None = None
         self._refresh_token: str | None = None
@@ -102,145 +106,153 @@ class JWTAuthHandler(BaseAuthHandler):
                 server error, etc.).
             NetworkError: If there is a network error.
         """
-        # Initialize credentials to None to ensure cleanup on any failure
-        self._username = None
-        self._password = None
-        self._access_token = None
-        self._refresh_token = None
-        self._authenticated = False
+        with self._lock:
+            # Initialize credentials to None to ensure cleanup on any failure
+            self._username = None
+            self._password = None
+            self._access_token = None
+            self._refresh_token = None
+            self._authenticated = False
 
-        auth_session = requests.Session()
-        tokens_received = False
-        try:
-            # Prepare login URL and data. Credentials are kept in local scope
-            # only during the network call to minimize the window in which
-            # they are exposed on the instance; they are not stored on self
-            # between requests.
-            login_url = f"{self.base_url}{self.login_endpoint}"
-            login_data = {
-                "username": username,
-                "password": password,
-            }
+            auth_session = requests.Session()
+            tokens_received = False
+            try:
+                # Prepare login URL and data. Credentials are kept in local
+                # scope only during the network call to minimize the window
+                # in which they are exposed on the instance; they are not
+                # stored on self between requests.
+                login_url = f"{self.base_url}{self.login_endpoint}"
+                login_data = {
+                    "username": username,
+                    "password": password,
+                }
 
-            logger.debug("Authenticating with %s", login_url)
+                logger.debug("Authenticating with %s", login_url)
 
-            # POST credentials as JSON
-            response = auth_session.post(
-                login_url,
-                json=login_data,
-                headers={
-                    "Content-Type": "application/json",
-                    "Accept": "application/json",
-                },
-                timeout=30.0,
-            )
-
-            if response.status_code != 200:
-                error_msg = f"Login failed: {response.status_code}"
-                # Only surface structured error fields parsed from the JSON
-                # body. The raw response text is server-controlled and
-                # unvalidated; embedding it directly into the exception
-                # message could leak internal diagnostics or reflected
-                # user input into logs, so it is deliberately excluded.
-                if response.text:
-                    try:
-                        error_data = response.json()
-                        if isinstance(error_data, dict):
-                            detail = error_data.get(
-                                "detail", error_data.get("error", "")
-                            )
-                            if detail:
-                                error_msg += f" - {detail}"
-                    except (json.JSONDecodeError, ValueError):
-                        # Non-JSON body: do not embed the raw text.
-                        pass
-                raise AuthenticationError(
-                    error_msg,
-                    auth_type="jwt",
-                    provider=self.provider,
-                    status_code=response.status_code,
+                # POST credentials as JSON
+                response = auth_session.post(
+                    login_url,
+                    json=login_data,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                    },
+                    timeout=30.0,
                 )
 
-            # Parse response JSON
-            try:
-                auth_data = response.json()
-                if not isinstance(auth_data, dict):
+                if response.status_code != 200:
+                    error_msg = f"Login failed: {response.status_code}"
+                    # Only surface structured error fields parsed from the
+                    # JSON body. The raw response text is server-controlled
+                    # and unvalidated; embedding it directly into the
+                    # exception message could leak internal diagnostics or
+                    # reflected user input into logs, so it is deliberately
+                    # excluded.
+                    if response.text:
+                        try:
+                            error_data = response.json()
+                            if isinstance(error_data, dict):
+                                detail = error_data.get(
+                                    "detail", error_data.get("error", "")
+                                )
+                                if detail:
+                                    error_msg += f" - {detail}"
+                        except (json.JSONDecodeError, ValueError):
+                            # Non-JSON body: do not embed the raw text.
+                            pass
                     raise AuthenticationError(
-                        "Invalid authentication response format",
+                        error_msg,
                         auth_type="jwt",
                         provider=self.provider,
                         status_code=response.status_code,
                     )
-            except (json.JSONDecodeError, ValueError) as e:
-                raise AuthenticationError(
-                    f"Failed to parse authentication response: {e}",
-                    auth_type="jwt",
-                    provider=self.provider,
-                    status_code=response.status_code,
-                ) from e
 
-            # Extract tokens - try both 'token' and 'access_token' fields
-            # Archidekt returns both 'token' and 'access_token' in the response
-            self._access_token = auth_data.get("access_token") or auth_data.get("token")
-            self._refresh_token = auth_data.get("refresh_token")
+                # Parse response JSON
+                try:
+                    auth_data = response.json()
+                    if not isinstance(auth_data, dict):
+                        raise AuthenticationError(
+                            "Invalid authentication response format",
+                            auth_type="jwt",
+                            provider=self.provider,
+                            status_code=response.status_code,
+                        )
+                except (json.JSONDecodeError, ValueError) as e:
+                    raise AuthenticationError(
+                        f"Failed to parse authentication response: {e}",
+                        auth_type="jwt",
+                        provider=self.provider,
+                        status_code=response.status_code,
+                    ) from e
 
-            # Validate access token is a non-empty string
-            if (
-                not self._access_token
-                or not isinstance(self._access_token, str)
-                or not self._access_token.strip()
-            ):
-                raise AuthenticationError(
-                    "No valid access token in authentication response",
-                    auth_type="jwt",
-                    provider=self.provider,
-                    status_code=response.status_code,
-                    details={"response_keys": list(auth_data.keys())},
+                # Extract tokens - try both 'token' and 'access_token' fields
+                # Archidekt returns both 'token' and 'access_token' in resp.
+                self._access_token = auth_data.get("access_token") or auth_data.get(
+                    "token"
                 )
+                self._refresh_token = auth_data.get("refresh_token")
 
-            # Extract and store user_id for API calls that need it
-            user_data = auth_data.get("user", {})
-            if isinstance(user_data, dict):
-                raw_id = user_data.get("id")
-                self._user_id = str(raw_id) if raw_id is not None else None
-            else:
-                self._user_id = None
+                # Validate access token is a non-empty string
+                if (
+                    not self._access_token
+                    or not isinstance(self._access_token, str)
+                    or not self._access_token.strip()
+                ):
+                    raise AuthenticationError(
+                        "No valid access token in authentication response",
+                        auth_type="jwt",
+                        provider=self.provider,
+                        status_code=response.status_code,
+                        details={"response_keys": list(auth_data.keys())},
+                    )
 
-            self._authenticated = True
-            tokens_received = True
+                # Extract and store user_id for API calls that need it
+                user_data = auth_data.get("user", {})
+                if isinstance(user_data, dict):
+                    raw_id = user_data.get("id")
+                    self._user_id = str(raw_id) if raw_id is not None else None
+                else:
+                    self._user_id = None
 
-            # Credentials were only ever held in local scope; ensure the
-            # instance attributes remain cleared after successful auth.
-            self._username = None
-            self._password = None
+                self._authenticated = True
+                tokens_received = True
 
-            logger.info("JWT authentication successful")
-
-        except requests.exceptions.RequestException as e:
-            logger.error("Network error during JWT authentication: %s", e)
-            raise NetworkError(
-                "Network error during authentication",
-                original_exception=e,
-                provider=self.provider,
-            ) from e
-        finally:
-            auth_session.close()
-            if not tokens_received:
-                # Reset authenticated flag and clean up credentials on failure
-                self._authenticated = False
+                # Credentials were only ever held in local scope; ensure
+                # the instance attributes remain cleared after successful
+                # auth.
                 self._username = None
                 self._password = None
-                self._access_token = None
-                self._refresh_token = None
+
+                logger.info("JWT authentication successful")
+
+            except requests.exceptions.RequestException as e:
+                logger.error("Network error during JWT authentication: %s", e)
+                raise NetworkError(
+                    "Network error during authentication",
+                    original_exception=e,
+                    provider=self.provider,
+                ) from e
+            finally:
+                auth_session.close()
+                if not tokens_received:
+                    # Reset authenticated flag and clean up credentials on
+                    # failure.
+                    self._authenticated = False
+                    self._username = None
+                    self._password = None
+                    self._access_token = None
+                    self._refresh_token = None
 
     @property
     def user_id(self) -> str | None:
         """Get the authenticated user's ID.
 
         Returns:
-            The user ID as a string, or None if not authenticated or not available.
+            The user ID as a string, or None if not authenticated or not
+            available.
         """
-        return self._user_id
+        with self._lock:
+            return self._user_id
 
     def is_authenticated(self) -> bool:
         """Check if authentication is valid.
@@ -248,7 +260,8 @@ class JWTAuthHandler(BaseAuthHandler):
         Returns:
             True if access token is present, False otherwise.
         """
-        return self._authenticated and self._access_token is not None
+        with self._lock:
+            return self._authenticated and self._access_token is not None
 
     def refresh(
         self, *, username: str | None = None, password: str | None = None
@@ -276,23 +289,24 @@ class JWTAuthHandler(BaseAuthHandler):
             NetworkError: If a network error occurs during the refresh
                 request.
         """
-        if self._refresh_token:
-            self._refresh_with_token(self._refresh_token)
-            logger.info("JWT token refreshed successfully")
-            return
+        with self._lock:
+            if self._refresh_token:
+                self._refresh_with_token(self._refresh_token)
+                logger.info("JWT token refreshed successfully")
+                return
 
-        # No refresh token — fall back to full re-authentication
-        if username and password:
-            self.authenticate(username=username, password=password)
-            return
+            # No refresh token — fall back to full re-authentication
+            if username and password:
+                self.authenticate(username=username, password=password)
+                return
 
-        raise AuthenticationError(
-            "Cannot refresh authentication: no refresh token stored and no "
-            "credentials provided. Call authenticate(username=..., "
-            "password=...) first.",
-            auth_type="jwt",
-            provider=self.provider,
-        )
+            raise AuthenticationError(
+                "Cannot refresh authentication: no refresh token stored and "
+                "no credentials provided. Call authenticate(username=..., "
+                "password=...) first.",
+                auth_type="jwt",
+                provider=self.provider,
+            )
 
     def _refresh_with_token(self, refresh_token: str) -> None:
         """Exchange a refresh token for a new access token.
@@ -320,103 +334,108 @@ class JWTAuthHandler(BaseAuthHandler):
                 or returns an unexpected response.
             NetworkError: If a network error occurs.
         """
-        refresh_url = f"{self.base_url}{self.refresh_endpoint}"
-        logger.debug("Refreshing JWT token at %s", refresh_url)
+        with self._lock:
+            refresh_url = f"{self.base_url}{self.refresh_endpoint}"
+            logger.debug("Refreshing JWT token at %s", refresh_url)
 
-        session = requests.Session()
-        try:
-            response = session.post(
-                refresh_url,
-                json={"refresh": refresh_token},
-                headers={
-                    "Content-Type": "application/json",
-                    "Accept": "application/json",
-                },
-                timeout=30.0,
-            )
-
-            if response.status_code != 200:
-                error_msg = "Token refresh failed"
-                # Only surface structured error fields parsed from the JSON
-                # body; the raw response text is not embedded to avoid
-                # leaking server-controlled diagnostics into logs.
-                try:
-                    error_data = response.json()
-                    if isinstance(error_data, dict):
-                        detail = error_data.get("detail", error_data.get("error", ""))
-                        if detail:
-                            error_msg += f": {detail}"
-                except (json.JSONDecodeError, ValueError):
-                    # Non-JSON body: do not embed the raw text.
-                    pass
-                # Clear stale tokens on refresh failure
-                self._access_token = None
-                self._refresh_token = None
-                self._user_id = None
-                self._authenticated = False
-                raise AuthenticationError(
-                    error_msg,
-                    auth_type="jwt",
-                    provider=self.provider,
-                    status_code=response.status_code,
-                )
-
+            session = requests.Session()
             try:
-                token_data = response.json()
-            except (json.JSONDecodeError, ValueError) as e:
-                self._access_token = None
-                self._refresh_token = None
-                self._user_id = None
-                self._authenticated = False
-                raise AuthenticationError(
-                    f"Failed to parse refresh response: {e}",
-                    auth_type="jwt",
-                    provider=self.provider,
-                    status_code=response.status_code,
-                ) from e
-
-            # SimpleJWT returns "access" (not "access_token").
-            # With rotation enabled, also returns a new "refresh".
-            new_access = token_data.get("access")
-            new_refresh = token_data.get("refresh")
-
-            if not new_access or not isinstance(new_access, str):
-                # Clear stale tokens consistently with the other failure
-                # paths in this method so the handler is left fully
-                # unauthenticated rather than holding a stale access token.
-                self._access_token = None
-                self._refresh_token = None
-                self._user_id = None
-                self._authenticated = False
-                raise AuthenticationError(
-                    "Refresh response did not contain a valid access token",
-                    auth_type="jwt",
-                    provider=self.provider,
-                    status_code=response.status_code,
-                    details={"response_keys": list(token_data.keys())},
+                response = session.post(
+                    refresh_url,
+                    json={"refresh": refresh_token},
+                    headers={
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                    },
+                    timeout=30.0,
                 )
 
-            self._access_token = new_access
-            if new_refresh and isinstance(new_refresh, str):
-                self._refresh_token = new_refresh
-            self._authenticated = True
+                if response.status_code != 200:
+                    error_msg = "Token refresh failed"
+                    # Only surface structured error fields parsed from the
+                    # JSON body; the raw response text is not embedded to
+                    # avoid leaking server-controlled diagnostics into logs.
+                    try:
+                        error_data = response.json()
+                        if isinstance(error_data, dict):
+                            detail = error_data.get(
+                                "detail", error_data.get("error", "")
+                            )
+                            if detail:
+                                error_msg += f": {detail}"
+                    except (json.JSONDecodeError, ValueError):
+                        # Non-JSON body: do not embed the raw text.
+                        pass
+                    # Clear stale tokens on refresh failure
+                    self._access_token = None
+                    self._refresh_token = None
+                    self._user_id = None
+                    self._authenticated = False
+                    raise AuthenticationError(
+                        error_msg,
+                        auth_type="jwt",
+                        provider=self.provider,
+                        status_code=response.status_code,
+                    )
 
-        except requests.exceptions.RequestException as e:
-            logger.error("Network error during JWT refresh: %s", e)
-            # Clear stale tokens on refresh failure, consistent with the
-            # HTTP-error path, so is_authenticated() no longer reports True
-            # with an expired access token after a network failure.
-            self._access_token = None
-            self._refresh_token = None
-            self._user_id = None
-            self._authenticated = False
-            raise NetworkError(
-                "Network error during token refresh",
-                original_exception=e,
-                provider=self.provider,
-            ) from e
-        finally:
-            session.close()
+                try:
+                    token_data = response.json()
+                except (json.JSONDecodeError, ValueError) as e:
+                    self._access_token = None
+                    self._refresh_token = None
+                    self._user_id = None
+                    self._authenticated = False
+                    raise AuthenticationError(
+                        f"Failed to parse refresh response: {e}",
+                        auth_type="jwt",
+                        provider=self.provider,
+                        status_code=response.status_code,
+                    ) from e
+
+                # SimpleJWT returns "access" (not "access_token").
+                # With rotation enabled, also returns a new "refresh".
+                new_access = token_data.get("access")
+                new_refresh = token_data.get("refresh")
+
+                if not new_access or not isinstance(new_access, str):
+                    # Clear stale tokens consistently with the other failure
+                    # paths in this method so the handler is left fully
+                    # unauthenticated rather than holding a stale access
+                    # token.
+                    self._access_token = None
+                    self._refresh_token = None
+                    self._user_id = None
+                    self._authenticated = False
+                    raise AuthenticationError(
+                        "Refresh response did not contain a valid access " "token",
+                        auth_type="jwt",
+                        provider=self.provider,
+                        status_code=response.status_code,
+                        details={"response_keys": list(token_data.keys())},
+                    )
+
+                self._access_token = new_access
+                if new_refresh and isinstance(new_refresh, str):
+                    self._refresh_token = new_refresh
+                self._authenticated = True
+
+            except requests.exceptions.RequestException as e:
+                logger.error("Network error during JWT refresh: %s", e)
+                # Clear stale tokens on refresh failure, consistent with
+                # the HTTP-error path, so is_authenticated() no longer
+                # reports True with an expired access token after a network
+                # failure.
+                self._access_token = None
+                self._refresh_token = None
+                self._user_id = None
+                self._authenticated = False
+                raise NetworkError(
+                    "Network error during token refresh",
+                    original_exception=e,
+                    provider=self.provider,
+                ) from e
+            finally:
+                session.close()
 
     def apply_auth(self, session: requests.Session) -> None:
         """Apply authentication to a requests session.
@@ -426,30 +445,33 @@ class JWTAuthHandler(BaseAuthHandler):
         Args:
             session: The requests.Session to apply authentication to.
         """
-        if not self._access_token:
-            logger.warning(
-                "apply_auth() called on a JWTAuthHandler with no access "
-                "token; no Authorization header will be set. Call "
-                "authenticate(username=..., password=...) first."
-            )
-            # Remove any previously-applied Authorization header so a reused
-            # session does not carry a stale/invalid token after auth is
-            # cleared or a refresh fails.
-            session.headers.pop(self.auth_header_name, None)
-            return
-        auth_value = f"{self.auth_header_prefix} {self._access_token}"
-        session.headers.update({self.auth_header_name: auth_value})
+        with self._lock:
+            if not self._access_token:
+                logger.warning(
+                    "apply_auth() called on a JWTAuthHandler with no access "
+                    "token; no Authorization header will be set. Call "
+                    "authenticate(username=..., password=...) first."
+                )
+                # Remove any previously-applied Authorization header so a
+                # reused session does not carry a stale/invalid token after
+                # auth is cleared or a refresh fails.
+                session.headers.pop(self.auth_header_name, None)
+                return
+            auth_value = f"{self.auth_header_prefix} {self._access_token}"
+            session.headers.update({self.auth_header_name: auth_value})
 
     def clear_auth(self) -> None:
         """Clear authentication credentials.
 
         Clears all tokens and credentials from memory.
         """
-        self._access_token = None
-        self._refresh_token = None
-        self._username = None
-        self._password = None
-        self._authenticated = False
+        with self._lock:
+            self._access_token = None
+            self._refresh_token = None
+            self._username = None
+            self._password = None
+            self._user_id = None
+            self._authenticated = False
 
     @property
     def access_token(self) -> str | None:
@@ -458,7 +480,8 @@ class JWTAuthHandler(BaseAuthHandler):
         Returns:
             The JWT access token if available, None otherwise.
         """
-        return self._access_token
+        with self._lock:
+            return self._access_token
 
     @property
     def refresh_token(self) -> str | None:
@@ -467,7 +490,8 @@ class JWTAuthHandler(BaseAuthHandler):
         Returns:
             The JWT refresh token if available, None otherwise.
         """
-        return self._refresh_token
+        with self._lock:
+            return self._refresh_token
 
     def get_auth_header(self) -> dict[str, str]:
         """Get the authentication header for manual request construction.
@@ -476,20 +500,21 @@ class JWTAuthHandler(BaseAuthHandler):
             A dictionary with the authorization header if authenticated,
             or an empty dictionary if not authenticated.
         """
-        if self._access_token:
-            return {
-                self.auth_header_name: f"{self.auth_header_prefix} {self._access_token}"
-            }
-        return {}
+        with self._lock:
+            if self._access_token:
+                return {
+                    self.auth_header_name: (
+                        f"{self.auth_header_prefix} {self._access_token}"
+                    )
+                }
+            return {}
 
     def __getstate__(self) -> dict[str, Any]:
         """Custom pickle serialization to exclude sensitive data.
 
-        This ensures that credentials and tokens are not accidentally
-        serialized and stored in insecure locations.
-
         Returns:
-            Dictionary of attributes to pickle, excluding sensitive data.
+            Dictionary of attributes to pickle, excluding sensitive data
+            and the threading lock.
         """
         state = self.__dict__.copy()
         # Exclude sensitive data from pickle. The deserialized instance will
@@ -500,4 +525,15 @@ class JWTAuthHandler(BaseAuthHandler):
         state["_password"] = None
         state["_user_id"] = None
         state["_authenticated"] = False
+        state["_lock"] = None
         return state
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Restore state after deserialization, recreating the lock.
+
+        Args:
+            state: The pickled state dictionary produced by __getstate__.
+        """
+        for key, value in state.items():
+            setattr(self, key, value)
+        self._lock = threading.RLock()

@@ -15,6 +15,43 @@ from pymtg.models.enums import Color, Format, Rarity
 from pymtg.models.pricing import Pricing
 
 
+def _normalize_for_compare(value: Any) -> Any:
+    """Normalize a value for order-insensitive equality comparison.
+
+    Lists are sorted (elements stringified for stable ordering), dicts
+    are converted to sorted item tuples, and other values are returned
+    as-is. This makes comparisons of ``colors``/``color_identity``/
+    ``color_indicator`` lists and ``image_uris`` dicts insensitive to
+    element ordering so semantically-equal values in different orders
+    are not flagged as mismatches.
+
+    Args:
+        value: The value to normalize.
+
+    Returns:
+        A normalized representation suitable for equality comparison.
+    """
+    if isinstance(value, list):
+        return sorted(repr(v) for v in value)
+    if isinstance(value, dict):
+        return sorted((repr(k), repr(v)) for k, v in value.items())
+    return value
+
+
+def _values_equal(a: Any, b: Any) -> bool:
+    """Compare two values ignoring element ordering in collections.
+
+    Args:
+        a: The first value.
+        b: The second value.
+
+    Returns:
+        True if the normalized representations of ``a`` and ``b`` are
+        equal.
+    """
+    return _normalize_for_compare(a) == _normalize_for_compare(b)
+
+
 class CardFace(PyMTGBaseModel):
     """Represents a single face of a Magic: The Gathering card.
 
@@ -313,8 +350,12 @@ class Card(PyMTGBaseModel):
 
         Returns:
             The converted mana cost as a float, or 0.0 if not available.
+            Note that a genuine zero-cost card (``cmc == 0.0``) is
+            indistinguishable from an unset ``cmc`` (``None``); callers
+            that need to tell them apart should read ``self.cmc``
+            directly.
         """
-        return self.cmc or 0.0
+        return 0.0 if self.cmc is None else self.cmc
 
     def _type_tokens(self) -> set[str]:
         """Returns the set of whitespace-delimited tokens in the type line.
@@ -425,7 +466,7 @@ class Card(PyMTGBaseModel):
         for field in self._SHARED_FACE_FIELDS:
             card_value = getattr(self, field, None)
             face_value = getattr(main_face, field, None)
-            if card_value != face_value:
+            if not _values_equal(card_value, face_value):
                 mismatches[field] = (card_value, face_value)
         return mismatches
 
@@ -485,7 +526,7 @@ class Card(PyMTGBaseModel):
         for field in self._SHARED_FACE_FIELDS:
             card_value = getattr(self, field, None)
             face_value = getattr(main_face, field, None)
-            if card_value != face_value:
+            if not _values_equal(card_value, face_value):
                 # Note: validate_assignment is not enabled in model_config,
                 # so setattr bypasses re-validation. The face value was
                 # already validated when the CardFace was constructed. If

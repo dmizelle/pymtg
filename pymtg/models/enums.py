@@ -193,15 +193,20 @@ class Color(StrEnum):
         """
         # WUBRG order for sorting
         color_order = {"W": 0, "U": 1, "B": 2, "R": 3, "G": 4}
-        # Sort by WUBRG order, not alphabetically, and deduplicate so
-        # repeated colors (e.g. [WHITE, WHITE]) collapse rather than
-        # producing invalid combinations like "WW".
-        sorted_colors = sorted(
-            (c for c in colors if c.value),
-            key=lambda c: color_order.get(c.value, 5),
+        # Decompose multi-char Color members (e.g. Color.AZORIUS == "WU")
+        # into individual single-character colors before sorting, so the
+        # WUBRG sort key (which only maps single characters) applies
+        # correctly to each component.
+        single_chars: list[str] = []
+        for c in colors:
+            if c.value:
+                single_chars.extend(list(c.value))
+        sorted_chars = sorted(
+            single_chars,
+            key=lambda ch: color_order.get(ch, 5),
         )
-        deduped_colors = list(dict.fromkeys(sorted_colors))
-        combined = "".join(c.value for c in deduped_colors)
+        deduped_chars = list(dict.fromkeys(sorted_chars))
+        combined = "".join(deduped_chars)
         # Try to find exact match in enum
         for member in cls:
             if member.value == combined:
@@ -227,9 +232,17 @@ class Color(StrEnum):
         Returns:
             True if this color combination contains the specified color.
         """
+        # Normalize to a set of characters for order-independent
+        # containment, so e.g. "RB" in Color.WUBRG is True even though
+        # "BR" is the canonical WUBRG ordering.
+        self_chars = set(self.value)
         if isinstance(color, Color):
-            return bool(color.value) and bool(self.value) and color.value in self.value
-        return bool(color) and bool(self.value) and color in self.value
+            return (
+                bool(color.value)
+                and bool(self.value)
+                and set(color.value).issubset(self_chars)
+            )
+        return bool(color) and bool(self.value) and set(color).issubset(self_chars)
 
     def is_multicolor(self) -> bool:
         """Check if this is a multicolor combination.

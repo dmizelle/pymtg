@@ -413,6 +413,8 @@ class BaseProvider(ABC):
 
     def close(self) -> None:
         """Close the provider's resources."""
+        if not hasattr(self, "_lock"):
+            return
         with self._lock:
             if self.http_client is not None:
                 self.http_client.close()

@@ -15,12 +15,13 @@ Parse.bot provides a scraping API that wraps Moxfield's internal API endpoints.
 """
 
 import logging
+import os
 from typing import Any
 
 import requests
 
 from pymtg.auth.api_key import APIKeyAuthHandler
-from pymtg.config import PROVIDER_CONFIGS, ProviderConfig
+from pymtg.config import DEFAULT_MOXFIELD_URL, PROVIDER_CONFIGS, ProviderConfig
 from pymtg.exceptions import (
     APIError,
     AuthenticationError,
@@ -112,11 +113,16 @@ class Moxfield(BaseProvider):
         """Moxfield-specific initialization."""
         # Ensure the name is set correctly
         self.name = "moxfield"
-        self.config = PROVIDER_CONFIGS.get(
-            "moxfield",
-            ProviderConfig(
-                name="moxfield",
-            ),
+        # Read MOXFIELD_BASE_URL lazily at instantiation time (not at
+        # module import) so runtime overrides take effect for each new
+        # provider instance. Falls back to DEFAULT_MOXFIELD_URL.
+        base_url = os.environ.get("MOXFIELD_BASE_URL", DEFAULT_MOXFIELD_URL)
+        self.config = ProviderConfig(
+            name="moxfield",
+            base_url=base_url,
+            rate_limit=PROVIDER_CONFIGS["moxfield"].rate_limit,
+            timeout=PROVIDER_CONFIGS["moxfield"].timeout,
+            user_agent=PROVIDER_CONFIGS["moxfield"].user_agent,
         )
         self.base_url = self.config.base_url
         self.rate_limit = self.config.rate_limit or {}
@@ -329,6 +335,8 @@ class Moxfield(BaseProvider):
         self,
         query: str,
         limit: int = 20,
+        page: int = 1,
+        order: str | None = None,
         format: str | None = None,
         rarity: str | None = None,
         set: str | None = None,
@@ -354,6 +362,8 @@ class Moxfield(BaseProvider):
         Args:
             query: The Parse.bot/Moxfield query string.
             limit: Maximum number of results to return (default 20).
+            page: Page number for pagination (1-based, default 1).
+            order: Sort order for results.
             format: Format filter.
             rarity: Rarity filter.
             set: Set code filter.
@@ -383,8 +393,11 @@ class Moxfield(BaseProvider):
         if not query or not isinstance(query, str):
             raise InvalidQueryError("Query must be a non-empty string")
 
-        if limit is not None and (not isinstance(limit, int) or limit < 1):
+        if not isinstance(limit, int) or limit < 1:
             raise InvalidQueryError("limit must be a positive integer (>= 1)")
+
+        if not isinstance(page, int) or page < 1:
+            raise InvalidQueryError("page must be a positive integer (>= 1)")
 
         if not self.is_authenticated():
             raise AuthenticationError(
@@ -398,6 +411,15 @@ class Moxfield(BaseProvider):
 
             if limit:
                 params["limit"] = limit
+
+            # Add standard pagination. Parse.bot uses 'limit' and
+            # 'offset' for pagination, where offset = (page - 1) * limit.
+            if limit and page > 1:
+                params["offset"] = (page - 1) * limit
+
+            # Apply sort order if specified.
+            if order:
+                params["order"] = order
 
             # Embed all filter parameters into the `query` string via
             # _build_search_query() rather than forwarding them as
@@ -991,9 +1013,6 @@ class Moxfield(BaseProvider):
 
         # Build pricing - Parse.bot may not provide full pricing info
         pricing = None
-
-        # Get card ID - use Scryfall ID if available, otherwise Moxfield ID
-        card_id = data.get("scryfall_id") or data.get("id", "")
 
         # Handle flavor text - can be string or list
         flavor_text = data.get("flavor_text")

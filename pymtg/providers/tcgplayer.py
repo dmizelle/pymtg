@@ -171,17 +171,6 @@ class TCGPlayer(BaseProvider):
         # Note: Authentication is lazy - it happens on first API call or explicit authenticate()
         # This avoids initialization order issues and allows setting credentials later
 
-    def _initialize_auth(self) -> None:
-        """TCGPlayer-specific authentication initialization.
-
-        Authenticates with OAuth2 if credentials are provided.
-
-        Raises:
-            AuthenticationError: If authentication fails.
-        """
-        if self.client_id and self.client_secret:
-            self.authenticate()
-
     def authenticate(
         self,
         client_id: str | None = None,
@@ -368,29 +357,6 @@ class TCGPlayer(BaseProvider):
             else:
                 params["sort"] = order
 
-        # Add any additional parameters
-        extra_params: dict[str, Any] = {
-            "category": category,
-            "game": game,
-            "format": format,
-            "rarity": rarity,
-            "color": color,
-            "type": card_type,
-            "subtype": subtype,
-            "power": power,
-            "toughness": toughness,
-            "cmc": cmc,
-            "textsearch": textsearch,
-            "keyword": keyword,
-            "artist": artist,
-            "release": release,
-            "set_type": set_type,
-        }
-
-        for key, value in extra_params.items():
-            if value is not None and key not in params:
-                params[key] = value
-
         endpoint = "/v2/catalog/products"
         try:
             response = self._make_request("GET", endpoint, params=params)
@@ -467,8 +433,10 @@ class TCGPlayer(BaseProvider):
         if not query or not isinstance(query, str):
             raise InvalidQueryError("Query must be a non-empty string")
 
-        if limit is not None and (not isinstance(limit, int) or limit < 1):
+        if not isinstance(limit, int) or limit < 1:
             raise InvalidQueryError("limit must be a positive integer (>= 1)")
+        if not isinstance(page, int) or page < 1:
+            raise InvalidQueryError("page must be a positive integer (>= 1)")
 
         self._check_authenticated()
 
@@ -1568,9 +1536,10 @@ class TCGPlayer(BaseProvider):
             Dictionary of attributes to serialize, excluding credentials.
         """
         state = self.__dict__.copy()
-        # Remove the non-picklable auth lock; it is re-created in
+        # Remove the non-picklable locks; they are re-created in
         # __setstate__ after unpickling.
         state.pop("_auth_lock", None)
+        state.pop("_lock", None)
         # Remove sensitive OAuth2 credentials from both the provider
         # and the auth handler to avoid leaking secrets via pickle.
         state.pop("client_id", None)
@@ -1605,9 +1574,11 @@ class TCGPlayer(BaseProvider):
         # the underlying dict (typed as dict[str, Any]) so update() is
         # accepted by the type checker.
         vars(self).update(state)
-        # Re-create the auth lock that was excluded from serialization.
+        # Re-create the non-picklable locks excluded from serialization.
         if not hasattr(self, "_auth_lock"):
             self._auth_lock = threading.RLock()
+        if not hasattr(self, "_lock"):
+            self._lock = threading.Lock()
 
     def __repr__(self) -> str:
         """Return a string representation of the TCGPlayer provider.

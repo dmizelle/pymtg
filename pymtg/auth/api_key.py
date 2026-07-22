@@ -86,8 +86,10 @@ class APIKeyAuthHandler(BaseAuthHandler):
             raise ValueError("Cannot apply API key authentication: session is None")
         with self._lock:
             if not self._api_key:
-                # No API key configured; leave the session unmodified rather
-                # than applying a stale or empty header value.
+                # No API key configured; remove any previously-applied header
+                # so a reused session does not carry a stale/invalid key
+                # after auth is cleared.
+                session.headers.pop(self.header_name, None)
                 return
             if self.header_prefix:
                 header_value = f"{self.header_prefix} {self._api_key}"

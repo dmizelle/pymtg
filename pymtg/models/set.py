@@ -59,7 +59,7 @@ class Set(PyMTGBaseModel):
     scryfall_uri: AnyUrl | None = None
     uri: AnyUrl | None = None
     source: str | None = Field(default=None, min_length=1)
-    mtgo_code: str | None = None
-    arena_code: str | None = None
+    mtgo_code: str | None = Field(default=None, min_length=1)
+    arena_code: str | None = Field(default=None, min_length=1)
     tcgplayer_id: int | None = Field(default=None, ge=0)
     cardmarket_id: int | None = Field(default=None, ge=0)

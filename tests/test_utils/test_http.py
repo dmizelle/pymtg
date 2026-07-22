@@ -86,6 +86,8 @@ def test_http_client_invalid_timeout_boolean() -> None:
     """Test HTTPClient raises ValueError for boolean timeout."""
     with pytest.raises(ValueError, match="timeout must be a positive number"):
         HTTPClient("https://api.example.com", timeout=True)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="timeout must be a positive number"):
+        HTTPClient("https://api.example.com", timeout=False)  # type: ignore[arg-type]
 
 
 def test_http_client_invalid_timeout_non_numeric() -> None:
@@ -154,6 +156,20 @@ def test_build_url_rejects_path_traversal() -> None:
         client._build_url("../admin/secret")
 
 
+def test_build_url_rejects_path_traversal_with_base_path() -> None:
+    """Test _build_url rejects traversal when base_url has a path component.
+
+    The traversal guard must reject endpoints that escape the base path
+    regardless of whether ``base_url`` itself carries a path component
+    (e.g. ``https://api.example.com/v1``).
+    """
+    client = HTTPClient("https://api.example.com/v1")
+    with pytest.raises(ValueError, match="escape the base path"):
+        client._build_url("../admin/secret")
+    with pytest.raises(ValueError, match="escape the base path"):
+        client._build_url("../../etc/passwd")
+
+
 def test_build_url_rejects_encoded_path_traversal() -> None:
     """Test _build_url rejects percent-encoded traversal sequences."""
     client = HTTPClient("https://api.example.com")
@@ -161,6 +177,22 @@ def test_build_url_rejects_encoded_path_traversal() -> None:
         client._build_url("%2e%2e/%2e%2e/etc/passwd")
     with pytest.raises(ValueError, match="escape the base path"):
         client._build_url("..%2f..%2fadmin/secret")
+
+
+def test_build_url_rejects_backslash_path_traversal() -> None:
+    """Test _build_url rejects backslash-encoded traversal sequences.
+
+    Backslash-encoded traversal (e.g. ``..%5c..%5cadmin`` or
+    ``..\\..\\admin``) must be rejected because backslashes can be
+    interpreted as path separators by some servers. ``posixpath.normpath``
+    treats backslashes as regular characters, so the production code
+    normalizes backslashes to forward slashes before checking traversal.
+    """
+    client = HTTPClient("https://api.example.com")
+    with pytest.raises(ValueError, match="escape the base path"):
+        client._build_url("..%5c..%5cadmin/secret")
+    with pytest.raises(ValueError, match="escape the base path"):
+        client._build_url("..\\..\\admin/secret")
 
 
 def test_build_url_with_empty_endpoint() -> None:

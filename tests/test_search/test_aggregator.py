@@ -279,6 +279,7 @@ class TestAggregatorSearch(unittest.TestCase):
             self.assertEqual(call["colors"], [Color.BLUE])
             self.assertEqual(call["identity"], [Color.BLUE])
             self.assertEqual(call["type_line"], "Creature")
+            self.assertEqual(call["limit"], 5)
             self.assertEqual(call["page"], 2)
             self.assertEqual(call["order"], "name")
 
@@ -294,6 +295,19 @@ class TestAggregatorSearch(unittest.TestCase):
             self.assertIn("error", result)
             self.assertIn("timing", result)
             self.assertIsNone(result["error"])
+
+    def test_search_syntax_passthrough(self):
+        """Test that search_syntax forwards query, limit, page, order."""
+        self.aggregator.search_syntax(
+            query="c:U type:creature", limit=5, page=2, order="name"
+        )
+        for provider in [self.provider1, self.provider2]:
+            self.assertEqual(len(provider.search_syntax_calls), 1)
+            call = provider.search_syntax_calls[0]
+            self.assertEqual(call["query"], "c:U type:creature")
+            self.assertEqual(call["limit"], 5)
+            self.assertEqual(call["page"], 2)
+            self.assertEqual(call["order"], "name")
 
     def test_search_syntax_specific_sources(self):
         """Test search_syntax with specific sources."""

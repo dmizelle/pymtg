@@ -225,8 +225,16 @@ class HARLogger:
         """
         self.entries: list[HAREntry] = []
         self._enabled = enabled
-        self.sanitize_headers = sanitize_headers or self.DEFAULT_SANITIZE_HEADERS
-        self.sanitize_fields = sanitize_fields or self.DEFAULT_SANITIZE_FIELDS
+        self.sanitize_headers = (
+            sanitize_headers
+            if sanitize_headers is not None
+            else self.DEFAULT_SANITIZE_HEADERS
+        )
+        self.sanitize_fields = (
+            sanitize_fields
+            if sanitize_fields is not None
+            else self.DEFAULT_SANITIZE_FIELDS
+        )
         self.sanitized_value = sanitized_value
         self.page_id = page_id
         self.preserve_binary = preserve_binary
@@ -287,10 +295,12 @@ class HARLogger:
         Returns:
             The entry ID if logging is enabled and the request was logged,
             or None if logging is disabled.
-        """
-        if not self._enabled:
-            return None
 
+        Note:
+            The returned value is the entry's ``started_date_time``
+            timestamp, not a unique identifier. Two requests logged
+            within the same clock resolution may share this value.
+        """
         with self._lock:
             if not self._enabled:
                 return None
@@ -358,9 +368,6 @@ class HARLogger:
             The HAREntry that was updated with the response, or None if
             no request was logged or logging is disabled.
         """
-        if not self._enabled or not self.entries:
-            return None
-
         with self._lock:
             if not self._enabled or not self.entries:
                 return None
@@ -423,7 +430,10 @@ class HARLogger:
         if isinstance(processed_body, str):
             content_text = processed_body
         elif processed_body:
-            content_text = json.dumps(processed_body)
+            try:
+                content_text = json.dumps(processed_body)
+            except (TypeError, ValueError):
+                content_text = str(processed_body)
         else:
             content_text = ""
 

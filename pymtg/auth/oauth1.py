@@ -268,6 +268,12 @@ class OAuth1Handler(BaseAuthHandler):
             )
             body_params = self._extract_body_params(request)
             for k, vs in body_params.items():
+                if k.startswith("oauth_"):
+                    logger.warning(
+                        "OAuth protocol parameter '%s' present in request "
+                        "body; this may cause signature validation failures",
+                        k,
+                    )
                 all_params.setdefault(k, []).extend(vs)
 
             # Build signature base string
@@ -285,7 +291,7 @@ class OAuth1Handler(BaseAuthHandler):
 
             return request
 
-    def _generate_oauth_params(self) -> dict[str, str | None]:
+    def _generate_oauth_params(self) -> dict[str, str]:
         """Generate OAuth1 parameters for request signing.
 
         Returns:
@@ -312,7 +318,7 @@ class OAuth1Handler(BaseAuthHandler):
         }
 
     def _merge_with_existing_params(
-        self, url: str, oauth_params: dict[str, str | None]
+        self, url: str, oauth_params: dict[str, str]
     ) -> dict[str, list[str]]:
         """Merge OAuth1 params with existing query parameters from URL.
 
@@ -370,7 +376,11 @@ class OAuth1Handler(BaseAuthHandler):
             (multi-valued form fields are expanded into separate entries).
         """
         content_type = request.headers.get("Content-Type", "")
-        if "application/x-www-form-urlencoded" not in content_type:
+        # Extract the base media type (strip parameters like
+        # '; charset=utf-8') so a charset suffix does not cause form bodies
+        # to be silently omitted from the signature base string.
+        media_type = content_type.split(";")[0].strip().lower()
+        if media_type != "application/x-www-form-urlencoded":
             return {}
         body = request.body
         if not body:
@@ -516,10 +526,10 @@ class OAuth1Handler(BaseAuthHandler):
                 hashlib.sha256,
             ).digest()
         elif self.signature_method == "PLAINTEXT":
-            # Per OAuth 1.0a, the PLAINTEXT signature IS the signing key
-            # (percent-encoded consumer_secret&token_secret) verbatim; it
-            # must NOT be base64-encoded.
-            return signing_key
+            # Per RFC 5849 §3.4.2, the PLAINTEXT signature is the signing
+            # key (consumer_secret&token_secret). Return the raw secrets so
+            # that _build_oauth_header percent-encodes them exactly once.
+            return f"{self._consumer_secret}&{self._access_token_secret}"
         else:
             raise ValueError(f"Unsupported signature method: {self.signature_method}")
 

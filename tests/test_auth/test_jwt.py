@@ -149,6 +149,7 @@ class TestJWTAuthHandlerClearAuth:
         handler._refresh_token = "refresh_token_456"
         handler._username = "test_user"
         handler._password = "test_pass"
+        handler._user_id = "123"
         handler._authenticated = True
 
         # Clear authentication
@@ -159,6 +160,7 @@ class TestJWTAuthHandlerClearAuth:
         assert handler._refresh_token is None
         assert handler._username is None
         assert handler._password is None
+        assert handler._user_id is None
         assert handler._authenticated is False
         assert handler.is_authenticated() is False
 
@@ -204,6 +206,8 @@ class TestJWTAuthHandlerApplyAuth:
         mock_logger.warning.assert_called_once()
         # Should not modify headers
         session.headers.update.assert_not_called()
+        # Should remove any stale auth header from a reused session
+        session.headers.pop.assert_called_once_with("Authorization", None)
 
     def test_apply_auth_custom_header_name(self):
         """Test apply_auth uses custom header name."""
@@ -590,6 +594,7 @@ class TestJWTAuthHandlerSecurity:
         assert state["_refresh_token"] is None
         assert state["_username"] is None
         assert state["_password"] is None
+        assert state["_user_id"] is None
         assert state["_authenticated"] is False
 
         # Verify other data is preserved
@@ -603,8 +608,10 @@ class TestJWTAuthHandlerSecurity:
 
         # Set up authenticated state
         handler._access_token = "secret_token"
+        handler._refresh_token = "secret_refresh"
         handler._username = "secret_user"
         handler._password = "secret_pass"
+        handler._user_id = "user-123"
         handler._authenticated = True
 
         # Pickle and unpickle
@@ -613,8 +620,10 @@ class TestJWTAuthHandlerSecurity:
 
         # Verify secrets are not present
         assert unpickled_handler._access_token is None
+        assert unpickled_handler._refresh_token is None
         assert unpickled_handler._username is None
         assert unpickled_handler._password is None
+        assert unpickled_handler._user_id is None
         assert unpickled_handler._authenticated is False
         assert unpickled_handler.is_authenticated() is False
 

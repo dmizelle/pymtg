@@ -298,7 +298,10 @@ def retry_with_config(
                     ):
                         retry_after = e.retry_after
                         if retry_after is not None:
-                            backoff = max(backoff, float(retry_after))
+                            backoff = min(
+                                max(backoff, float(retry_after)),
+                                actual_config.max_backoff,
+                            )
 
                     logger.debug(
                         "%s in %s, retrying in %.2fs (attempt %d/%d)",
@@ -419,7 +422,10 @@ class RetryContext:
         ):
             retry_after = self.last_exception.retry_after
             if retry_after is not None:
-                backoff = max(backoff, float(retry_after))
+                backoff = min(
+                    max(backoff, float(retry_after)),
+                    self.config.max_backoff,
+                )
 
         logger.debug("Waiting %.2fs before next retry", backoff)
         time.sleep(backoff)

@@ -185,6 +185,7 @@ class SessionAuthHandler(BaseAuthHandler):
                 auth_session.close()
                 self._authenticated = False
                 self._expires_at = None
+                self.session_cookies = {}
                 # Preserve stored credentials so refresh() can be retried
                 # after transient failures. Use clear_auth() for explicit
                 # credential cleanup.
@@ -230,6 +231,20 @@ class SessionAuthHandler(BaseAuthHandler):
         Args:
             session: The requests.Session to apply authentication to.
         """
+        if not self.is_authenticated():
+            logger.warning(
+                "apply_auth() called on a SessionAuthHandler that is not "
+                "authenticated; no cookies will be set. Call "
+                "authenticate(username=..., password=...) first."
+            )
+            # Clear any stale cookies this handler may have previously
+            # applied to the target session.
+            if self.session_cookies:
+                for name in list(self.session_cookies.keys()):
+                    if name in session.cookies:
+                        del session.cookies[name]
+            session.headers.pop(self.csrf_header, None)
+            return
         if self.session_cookies:
             # Remove cookies previously applied by this handler so a reused
             # session does not carry stale identities from a prior

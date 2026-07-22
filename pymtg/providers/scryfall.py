@@ -189,58 +189,60 @@ class Scryfall(BaseProvider):
                 f"page must be a positive integer (>= 1), got {page!r}"
             )
 
+        # Build query parameters. Done outside the try block so that
+        # validation errors (InvalidQueryError from _build_search_query)
+        # are not misclassified as network errors.
+        params: dict[str, Any] = {
+            "q": self._build_search_query(
+                name=name,
+                colors=colors,
+                identity=identity,
+                type_line=type_line,
+                set_code=set_code,
+                rarity=rarity,
+                cmc=cmc,
+                power=power,
+                toughness=toughness,
+                format=format,
+                loyalty=loyalty,
+                color=color,
+                card_type=card_type,
+                subtype=subtype,
+                keyword=keyword,
+                mana_value=mana_value,
+                textsearch=textsearch,
+                artist=artist,
+                release=release,
+                is_reserved=is_reserved,
+                is_foil=is_foil,
+                is_nonfoil=is_nonfoil,
+                set_type=set_type,
+            ),
+            "page": page,
+            "limit": min(limit, 175),
+        }
+
+        # Add sorting if specified
+        if order:
+            params["order"] = order
+
+        # Only include_extras, include_multilingual, and
+        # include_variations are valid standalone HTTP query
+        # parameters for the /cards/search endpoint. All other
+        # filters are embedded in the `q` query string by
+        # _build_search_query(); forwarding them as standalone
+        # params would be silently ignored by Scryfall.
+        extra_params: dict[str, Any] = {
+            "include_extras": include_extras,
+            "include_multilingual": include_multilingual,
+            "include_variations": include_variations,
+        }
+
+        for key, value in extra_params.items():
+            if value is not None:
+                params[key] = value
+
         try:
-            # Build query parameters and make the HTTP call.
-            params: dict[str, Any] = {
-                "q": self._build_search_query(
-                    name=name,
-                    colors=colors,
-                    identity=identity,
-                    type_line=type_line,
-                    set_code=set_code,
-                    rarity=rarity,
-                    cmc=cmc,
-                    power=power,
-                    toughness=toughness,
-                    format=format,
-                    loyalty=loyalty,
-                    color=color,
-                    card_type=card_type,
-                    subtype=subtype,
-                    keyword=keyword,
-                    mana_value=mana_value,
-                    textsearch=textsearch,
-                    artist=artist,
-                    release=release,
-                    is_reserved=is_reserved,
-                    is_foil=is_foil,
-                    is_nonfoil=is_nonfoil,
-                    set_type=set_type,
-                ),
-                "page": page,
-                "limit": min(limit, 175),
-            }
-
-            # Add sorting if specified
-            if order:
-                params["order"] = order
-
-            # Only include_extras, include_multilingual, and
-            # include_variations are valid standalone HTTP query
-            # parameters for the /cards/search endpoint. All other
-            # filters are embedded in the `q` query string by
-            # _build_search_query(); forwarding them as standalone
-            # params would be silently ignored by Scryfall.
-            extra_params: dict[str, Any] = {
-                "include_extras": include_extras,
-                "include_multilingual": include_multilingual,
-                "include_variations": include_variations,
-            }
-
-            for key, value in extra_params.items():
-                if value is not None:
-                    params[key] = value
-
             try:
                 response = self.http_client.get("/cards/search", params=params)
                 data = self._handle_response(response, "cards")
@@ -334,9 +336,32 @@ class Scryfall(BaseProvider):
         """
         query_parts = []
 
+        def _quoted(value: str) -> str:
+            """Wrap a value in double quotes, rejecting embedded quotes.
+
+            Scryfall does not define an escape character for double quotes
+            inside quoted strings, so values containing ``"`` would let a
+            caller break out of the quoted context and inject arbitrary
+            query operators.
+
+            Args:
+                value: The user-supplied value to quote.
+
+            Returns:
+                The value wrapped in double quotes.
+
+            Raises:
+                InvalidQueryError: If ``value`` contains a double quote.
+            """
+            if '"' in value:
+                raise InvalidQueryError(
+                    f"Filter value must not contain double quotes: {value!r}"
+                )
+            return f'"{value}"'
+
         if name:
             # Use fuzzy matching for name searches
-            query_parts.append(f'"{name}"')
+            query_parts.append(_quoted(name))
 
         if colors:
             color_letters = "".join(c.value for c in colors)
@@ -347,7 +372,7 @@ class Scryfall(BaseProvider):
             query_parts.append(f"id:{id_letters}")
 
         if type_line:
-            query_parts.append(f'"{type_line}"')
+            query_parts.append(_quoted(type_line))
 
         if set_code:
             query_parts.append(f"set:{set_code}")
@@ -397,11 +422,11 @@ class Scryfall(BaseProvider):
         if color:
             query_parts.append(f"c:{color}")
         if card_type:
-            query_parts.append(f't:"{card_type}"')
+            query_parts.append(f"t:{_quoted(card_type)}")
         if subtype:
-            query_parts.append(f't:"{subtype}"')
+            query_parts.append(f"t:{_quoted(subtype)}")
         if keyword:
-            query_parts.append(f'o:"{keyword}"')
+            query_parts.append(f"o:{_quoted(keyword)}")
         if mana_value is not None:
             if isinstance(mana_value, dict):
                 if "gte" in mana_value:
@@ -411,9 +436,9 @@ class Scryfall(BaseProvider):
             else:
                 query_parts.append(f"mv:{mana_value}")
         if textsearch:
-            query_parts.append(f'o:"{textsearch}"')
+            query_parts.append(f"o:{_quoted(textsearch)}")
         if artist:
-            query_parts.append(f'a:"{artist}"')
+            query_parts.append(f"a:{_quoted(artist)}")
         if release:
             query_parts.append(f"year:{release}")
         if is_reserved:
@@ -423,7 +448,7 @@ class Scryfall(BaseProvider):
         if is_nonfoil:
             query_parts.append("is:nonfoil")
         if set_type:
-            query_parts.append(f"is:{set_type}")
+            query_parts.append(f"st:{set_type}")
 
         return " ".join(query_parts)
 
@@ -434,7 +459,7 @@ class Scryfall(BaseProvider):
         page: int | None = None,
         order: str | None = None,
         unique: str | None = None,
-        dir: str | None = None,
+        sort_dir: str | None = None,
         include_extras: bool | None = None,
         include_multilingual: bool | None = None,
         include_variations: bool | None = None,
@@ -451,7 +476,7 @@ class Scryfall(BaseProvider):
             order: Sort order for results.
             unique: Whether to return only unique card names
                 ("cards", "prints", "art", "versions").
-            dir: Sort direction ("auto", "asc", "desc").
+            sort_dir: Sort direction ("auto", "asc", "desc").
             include_extras: Whether to include extra cards.
             include_multilingual: Whether to include non-English printings.
             include_variations: Whether to include variations.
@@ -477,38 +502,38 @@ class Scryfall(BaseProvider):
             # Find cards printed in 2020
             recent_cards = scryfall.search_syntax("year:2020", limit=20)
         """
+        if not query or not isinstance(query, str):
+            raise InvalidQueryError("Query must be a non-empty string")
+
+        if limit < 1:
+            raise InvalidQueryError("limit must be a positive integer (>= 1)")
+
+        params: dict[str, Any] = {
+            "q": query,
+            "limit": min(limit, 175),
+        }
+
+        # Add optional parameters
+        if page is not None:
+            if not isinstance(page, int) or page < 1:
+                raise InvalidQueryError(
+                    "page must be a positive integer (>= 1), got " f"{page!r}"
+                )
+            params["page"] = page
+        if order is not None:
+            params["order"] = order
+        if unique is not None:
+            params["unique"] = unique
+        if sort_dir is not None:
+            params["dir"] = sort_dir
+        if include_extras is not None:
+            params["include_extras"] = include_extras
+        if include_multilingual is not None:
+            params["include_multilingual"] = include_multilingual
+        if include_variations is not None:
+            params["include_variations"] = include_variations
+
         try:
-            if not query or not isinstance(query, str):
-                raise InvalidQueryError("Query must be a non-empty string")
-
-            if limit < 1:
-                raise InvalidQueryError("limit must be a positive integer (>= 1)")
-
-            params: dict[str, Any] = {
-                "q": query,
-                "limit": min(limit, 175),
-            }
-
-            # Add optional parameters
-            if page is not None:
-                if not isinstance(page, int) or page < 1:
-                    raise InvalidQueryError(
-                        "page must be a positive integer (>= 1), got " f"{page!r}"
-                    )
-                params["page"] = page
-            if order is not None:
-                params["order"] = order
-            if unique is not None:
-                params["unique"] = unique
-            if dir is not None:
-                params["dir"] = dir
-            if include_extras is not None:
-                params["include_extras"] = include_extras
-            if include_multilingual is not None:
-                params["include_multilingual"] = include_multilingual
-            if include_variations is not None:
-                params["include_variations"] = include_variations
-
             try:
                 response = self.http_client.get("/cards/search", params=params)
                 data = self._handle_response(response, "cards")
@@ -715,11 +740,11 @@ class Scryfall(BaseProvider):
             # Check for Scryfall error response
             if isinstance(data, dict) and data.get("object") == "error":
                 raise APIError(
-                    data.get("message", "Unknown Scryfall API error"),
+                    data.get("details", "Unknown Scryfall API error"),
                     provider=self.name,
                     status_code=data.get("status"),
                     details={
-                        "message": data.get("message", ""),
+                        "message": data.get("details", ""),
                         "code": data.get("code"),
                         "status": data.get("status"),
                     },
@@ -766,9 +791,13 @@ class Scryfall(BaseProvider):
             oracle_text = main_face.get("oracle_text")
             power = main_face.get("power")
             toughness = main_face.get("toughness")
-            colors = self._parse_colors(main_face.get("colors"))
+            colors = self._parse_colors(
+                main_face.get("colors") or scryfall_data.get("colors")
+            )
             color_identity = self._parse_colors(scryfall_data.get("color_identity"))
-            color_indicator = self._parse_colors(main_face.get("color_indicator"))
+            color_indicator = self._parse_colors(
+                main_face.get("color_indicator") or scryfall_data.get("color_indicator")
+            )
 
             # Parse all card faces
             parsed_faces = [self._parse_card_face(face) for face in card_faces]

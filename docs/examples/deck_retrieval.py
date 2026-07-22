@@ -77,15 +77,16 @@ def main():
     # =========================================================================
     print("1. Scryfall Provider (no authentication required)...")
     print("   Note: Scryfall is a card database, not a deckbuilding site.")
-    print("   For decks, use Archidekt or Moxfield below.\n")
+    print("   For decks, use Archidekt or Moxfield below.")
+    print("   (This section is informational only; see card_search.py for")
+    print("   runnable Scryfall card search examples.)\n")
 
     # =========================================================================
     # Example 2: Archidekt - Session-based authentication
     # =========================================================================
     print("2. Archidekt Provider (session authentication)...")
-    username, password = get_archidekt_credentials()
-
     try:
+        username, password = get_archidekt_credentials()
         # Initialize with credentials
         print("   Initializing Archidekt provider...")
         archidekt = pymtg.Archidekt(username=username, password=password)
@@ -147,7 +148,7 @@ def main():
             print(f"      Error: {e}")
             print()
 
-    except pymtg.PyMTGError as e:
+    except (pymtg.PyMTGError, ValueError) as e:
         print(f"   Error initializing Archidekt: {e}")
         print()
 
@@ -155,9 +156,8 @@ def main():
     # Example 3: Moxfield - API Key authentication (via Parse.bot)
     # =========================================================================
     print("3. Moxfield Provider (API key authentication via Parse.bot)...")
-    api_key = get_moxfield_api_key()
-
     try:
+        api_key = get_moxfield_api_key()
         # Initialize with API key
         print("   Initializing Moxfield provider with Parse.bot API key...")
         moxfield = pymtg.Moxfield(api_key=api_key)
@@ -209,7 +209,7 @@ def main():
             print(f"      Error: {e}")
             print()
 
-    except pymtg.PyMTGError as e:
+    except (pymtg.PyMTGError, ValueError) as e:
         print(f"   Error initializing Moxfield: {e}")
         print()
 

@@ -122,7 +122,7 @@ class TestArchidektAuthentication(unittest.TestCase):
         archidekt = Archidekt()
         archidekt.authenticate("test_user", "test_pass")
 
-        mock_auth.assert_called_once()
+        mock_auth.assert_called_once_with(username="test_user", password="test_pass")
 
     @patch.object(JWTAuthHandler, "authenticate")
     def test_authenticate_logs_info_on_success(self, mock_auth):
@@ -1396,7 +1396,7 @@ class TestArchidektCardFaceFlavorText(unittest.TestCase):
         card_faces = card.card_faces
         assert card_faces is not None
         flavor = card_faces[0].flavor_text
-        self.assertIn(type(flavor), (str, type(None)))
+        self.assertIsInstance(flavor, (str, type(None)))
 
 
 class TestArchidektCardMetadata(unittest.TestCase):

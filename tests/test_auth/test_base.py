@@ -105,10 +105,7 @@ class TestBaseAuthHandlerInterface:
 
     def test_is_authenticated_returns_bool(self):
         """Test that is_authenticated is annotated to return bool."""
-        try:
-            hints = typing.get_type_hints(BaseAuthHandler.is_authenticated)
-        except NameError:
-            hints = {}
+        hints = typing.get_type_hints(BaseAuthHandler.is_authenticated)
         assert (
             hints.get("return") is bool
         ), "is_authenticated must be annotated to return bool"

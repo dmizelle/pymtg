@@ -7,6 +7,7 @@ TCGPlayer that use OAuth2 client credentials flow.
 import logging
 import threading
 from datetime import datetime, timedelta
+from typing import Any
 
 import requests
 
@@ -57,6 +58,32 @@ class OAuth2ClientCredentialsHandler(BaseAuthHandler):
         self.token_type: str | None = None
         self.expires_at: datetime | None = None
         self._authenticated = False
+
+    def __getstate__(self) -> dict[str, Any]:
+        """Exclude the non-picklable lock from pickle serialization.
+
+        The internal ``_lock`` (a ``threading.RLock``) cannot be pickled.
+        It is excluded here and re-created by ``__setstate__`` after
+        unpickling so the handler remains usable.
+
+        Returns:
+            A copy of the handler's state dict without ``_lock``.
+        """
+        state = self.__dict__.copy()
+        state.pop("_lock", None)
+        return state
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Restore state after unpickling, re-creating the internal lock.
+
+        Args:
+            state: The serialized state dictionary produced by
+                ``__getstate__``.
+        """
+        for key, value in state.items():
+            setattr(self, key, value)
+        if not hasattr(self, "_lock"):
+            self._lock = threading.RLock()
 
     def authenticate(
         self,
@@ -244,6 +271,11 @@ class OAuth2ClientCredentialsHandler(BaseAuthHandler):
             if self.access_token and self.token_type and self.is_authenticated():
                 session.headers.update(
                     {"Authorization": f"{self.token_type} {self.access_token}"}
+                )
+            else:
+                logger.warning(
+                    "apply_auth() called with no valid token; "
+                    "Authorization header not set"
                 )
 
     def clear_auth(self) -> None:

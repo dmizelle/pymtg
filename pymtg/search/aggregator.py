@@ -25,7 +25,8 @@ class Aggregator:
     parameters and returns results organized by provider name.
 
     The aggregator handles:
-    - Querying multiple providers in parallel (or sequentially)
+    - Querying multiple providers sequentially (in a simple for-loop; the
+      total latency is the sum of each provider's response time)
     - Tracking timing for each provider's response
     - Capturing and including errors from failed providers
     - Respecting each provider's rate limits
@@ -178,6 +179,9 @@ class Aggregator:
                     - "end_time": When the query completed
                     - "duration": Query duration in seconds
 
+        Raises:
+            ValueError: If ``limit < 1`` or ``page < 1``.
+
         Example:
             aggregator = Aggregator(providers=[Scryfall()])
             results = aggregator.search(name="Black Lotus", limit=5)
@@ -194,6 +198,14 @@ class Aggregator:
             list (via _get_providers_to_query) for consistent iteration.
         """
         result_dict: dict[str, dict[str, Any]] = {}
+
+        # Validate pagination inputs before contacting any provider so a
+        # bad client value is surfaced directly rather than misattributed
+        # as a provider failure.
+        if limit < 1:
+            raise ValueError(f"limit must be >= 1, got {limit}")
+        if page < 1:
+            raise ValueError(f"page must be >= 1, got {page}")
 
         # Determine which providers to query
         providers_to_query = self._get_providers_to_query(sources)
@@ -243,6 +255,9 @@ class Aggregator:
             A dictionary mapping provider names to result dictionaries.
             Each result dictionary follows the same format as search().
 
+        Raises:
+            ValueError: If ``limit < 1`` or ``page < 1``.
+
         Example:
             aggregator = Aggregator(providers=[Scryfall()])
             results = aggregator.search_syntax("c:U type:creature", limit=10)
@@ -252,6 +267,11 @@ class Aggregator:
             list (via _get_providers_to_query) for consistent iteration.
         """
         result_dict: dict[str, dict[str, Any]] = {}
+
+        if limit < 1:
+            raise ValueError(f"limit must be >= 1, got {limit}")
+        if page < 1:
+            raise ValueError(f"page must be >= 1, got {page}")
 
         providers_to_query = self._get_providers_to_query(sources)
 
@@ -291,9 +311,16 @@ class Aggregator:
             unknown = [name for name in sources if name not in self.provider_map]
             if unknown:
                 logger.warning("Unknown provider sources (ignored): %s", unknown)
-            return [
-                self.provider_map[name] for name in sources if name in self.provider_map
-            ]
+            # Deduplicate sources so a repeated provider name (e.g.
+            # ["scryfall", "scryfall"]) does not query the same provider
+            # multiple times and silently overwrite earlier results.
+            seen: set[str] = set()
+            providers: list[BaseProvider] = []
+            for name in sources:
+                if name in self.provider_map and name not in seen:
+                    seen.add(name)
+                    providers.append(self.provider_map[name])
+            return providers
 
     def _query_provider(
         self,

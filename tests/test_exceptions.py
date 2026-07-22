@@ -675,6 +675,7 @@ class TestExceptionHierarchy:
         query_error = InvalidQueryError("Invalid query")
         api_error = APIError("API error")
         network_error = NetworkError("Network error")
+        parsing_error = ParsingError("Parsing error")
 
         # All should be instances of PyMTGError
         assert isinstance(rate_error, PyMTGError)
@@ -683,6 +684,7 @@ class TestExceptionHierarchy:
         assert isinstance(query_error, PyMTGError)
         assert isinstance(api_error, PyMTGError)
         assert isinstance(network_error, PyMTGError)
+        assert isinstance(parsing_error, PyMTGError)
 
         # All should be instances of Exception
         assert isinstance(rate_error, Exception)
@@ -691,6 +693,7 @@ class TestExceptionHierarchy:
         assert isinstance(query_error, Exception)
         assert isinstance(api_error, Exception)
         assert isinstance(network_error, Exception)
+        assert isinstance(parsing_error, Exception)
 
         # Specific type checks
         assert isinstance(rate_error, RateLimitError)
