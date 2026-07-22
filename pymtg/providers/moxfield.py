@@ -16,6 +16,7 @@ Parse.bot provides a scraping API that wraps Moxfield's internal API endpoints.
 
 import logging
 import os
+import threading
 from typing import Any
 
 import requests
@@ -184,6 +185,61 @@ class Moxfield(BaseProvider):
         # subsequent requests do not continue to send the stale key.
         if self.http_client and self.http_client.session:
             self.http_client.session.headers.pop("X-API-Key", None)
+
+    def __getstate__(self) -> dict[str, Any]:
+        """Custom pickle serialization to exclude sensitive data.
+
+        Returns:
+            Dictionary of attributes to pickle, excluding sensitive data.
+        """
+        state = self.__dict__.copy()
+
+        # Exclude sensitive data
+        state["_api_key"] = None
+
+        # Handle auth_handler pickle - store None as it contains
+        # sensitive tokens
+        state["auth_handler"] = None
+
+        # Exclude non-picklable objects (threading.Lock)
+        state.pop("_lock", None)
+
+        # Scrub sensitive headers from the HTTP client session
+        if state.get("http_client") and state["http_client"].session:
+            state["http_client"].session.headers.pop("X-API-Key", None)
+            state["http_client"].session.headers.pop("Authorization", None)
+
+        return state
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Custom unpickle deserialization.
+
+        The ``auth_handler`` is reinitialized WITHOUT credentials or tokens
+        for security (it was excluded from the pickle state by
+        ``__getstate__``). The unpickled provider is therefore NOT
+        authenticated; callers must call ``authenticate()`` before any
+        authenticated operation. Any stale ``X-API-Key`` or ``Authorization``
+        header on the HTTP client session is also cleared to avoid sending
+        outdated credentials.
+
+        Args:
+            state: Dictionary of attributes from pickle.
+        """
+        self.__dict__.update(state)  # type: ignore[attr-defined]
+        # Recreate non-picklable objects excluded by __getstate__
+        self._lock = threading.Lock()
+        # Reinitialize auth_handler since it was excluded from pickle
+        # state
+        self.auth_handler = APIKeyAuthHandler(
+            header_name="X-API-Key",
+            header_prefix=None,
+        )
+        # The HTTP client session headers are stale after unpickle;
+        # clear any leftover Authorization / API key header so requests
+        # do not send outdated tokens.
+        if hasattr(self, "http_client") and self.http_client:
+            self.http_client.session.headers.pop("X-API-Key", None)
+            self.http_client.session.headers.pop("Authorization", None)
 
     def search(
         self,

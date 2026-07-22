@@ -290,6 +290,65 @@ class Cardmarket(BaseProvider):
             self._apply_auth_to_http_client()
             logger.info("Cardmarket OAuth1 authentication successful")
 
+    def __getstate__(self) -> dict[str, Any]:
+        """Custom pickle serialization to exclude sensitive data.
+
+        Returns:
+            Dictionary of attributes to pickle, excluding sensitive data.
+        """
+        state = self.__dict__.copy()
+
+        # Exclude sensitive OAuth1 credentials
+        state["_consumer_key"] = None
+        state["_consumer_secret"] = None
+        state["_access_token"] = None
+        state["_access_token_secret"] = None
+
+        # Handle auth_handler pickle - store None as it contains
+        # sensitive tokens
+        state["auth_handler"] = None
+
+        # Exclude non-picklable objects (threading.Lock)
+        state.pop("_lock", None)
+
+        # Scrub sensitive headers from the HTTP client session
+        if state.get("http_client") and state["http_client"].session:
+            state["http_client"].session.headers.pop("Authorization", None)
+
+        return state
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Custom unpickle deserialization.
+
+        The ``auth_handler`` is reinitialized WITHOUT credentials or tokens
+        for security (it was excluded from the pickle state by
+        ``__getstate__``). The unpickled provider is therefore NOT
+        authenticated; callers must call ``authenticate()`` before any
+        authenticated operation. Any stale ``Authorization`` header on the
+        HTTP client session is also cleared to avoid sending outdated
+        credentials.
+
+        Args:
+            state: Dictionary of attributes from pickle.
+        """
+        self.__dict__.update(state)  # type: ignore[attr-defined]
+        # Recreate non-picklable objects excluded by __getstate__
+        self._lock = threading.Lock()
+        # Reinitialize auth_handler since it was excluded from pickle
+        # state
+        self.auth_handler = OAuth1Handler(
+            consumer_key=self._consumer_key,
+            consumer_secret=self._consumer_secret,
+            access_token=self._access_token,
+            access_token_secret=self._access_token_secret,
+            signature_method="HMAC-SHA1",
+        )
+        # The HTTP client session headers are stale after unpickle;
+        # clear any leftover Authorization header so requests do not
+        # send outdated tokens.
+        if hasattr(self, "http_client") and self.http_client:
+            self.http_client.session.headers.pop("Authorization", None)
+
     def search(
         self,
         name: str | None = None,
