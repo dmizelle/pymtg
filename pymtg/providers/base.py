@@ -9,6 +9,7 @@ import logging
 import threading
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any, Generator
 
 import requests
@@ -65,13 +66,17 @@ class BaseProvider(ABC):
         self.base_url = self.config.base_url
         self.rate_limit = self.config.rate_limit or {}
 
-        # Initialize HTTP client (only if not already set by test patching)
+        # Initialize HTTP client (only if not already set by test patching).
+        # Only construct the HTTP client when a base URL is configured;
+        # subclasses without a base URL can set up their own client in
+        # _initialize().
         if not hasattr(self, "http_client") or self.http_client is None:
-            self.http_client = HTTPClient(
-                base_url=self.base_url or "",
-                timeout=self.config.timeout,
-                user_agent=self.config.user_agent,
-            )
+            if self.base_url:
+                self.http_client = HTTPClient(
+                    base_url=self.base_url,
+                    timeout=self.config.timeout,
+                    user_agent=self.config.user_agent,
+                )
 
         # Provider-specific initialization
         self._initialize()
@@ -355,10 +360,12 @@ class BaseProvider(ABC):
                 retry_after = int(retry_after_header)
             except ValueError:
                 try:
-                    from email.utils import parsedate_to_datetime
-
                     retry_after_date = parsedate_to_datetime(retry_after_header)
                     if retry_after_date is None:
+                        logger.warning(
+                            "Unparseable Retry-After header: %r",
+                            retry_after_header,
+                        )
                         retry_after = 0
                     else:
                         retry_after_date = retry_after_date.replace(tzinfo=timezone.utc)
@@ -368,6 +375,10 @@ class BaseProvider(ABC):
                             ).total_seconds()
                         )
                 except (ValueError, TypeError):
+                    logger.warning(
+                        "Failed to parse Retry-After header: %r",
+                        retry_after_header,
+                    )
                     retry_after = 0
             raise RateLimitError(
                 "Rate limit exceeded",

@@ -4,6 +4,8 @@ This module provides the Set model for representing Magic: The Gathering
 sets in a normalized format across all providers.
 """
 
+import datetime
+
 from pydantic import AnyUrl, Field
 
 from pymtg.models.base import PyMTGBaseModel
@@ -43,7 +45,7 @@ class Set(PyMTGBaseModel):
     code: str = Field(..., min_length=1)
     name: str = Field(..., min_length=1)
     set_type: SetType | None = None
-    released_at: str | None = None
+    released_at: datetime.date | None = None
     block_code: str | None = None
     block_name: str | None = None
     parent_set_code: str | None = None
@@ -56,7 +58,7 @@ class Set(PyMTGBaseModel):
     search_uri: AnyUrl | None = None
     scryfall_uri: AnyUrl | None = None
     uri: AnyUrl | None = None
-    source: str | None = None
+    source: str | None = Field(default=None, min_length=1)
     mtgo_code: str | None = None
     arena_code: str | None = None
     tcgplayer_id: int | None = Field(default=None, ge=0)

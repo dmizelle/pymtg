@@ -129,11 +129,12 @@ class TestOAuth2AtomicStateUpdate:
         # apply_auth() must not modify the session when no token is set.
         session.headers.update.assert_not_called()
 
-    def test_missing_expires_in_authenticates_without_expiry(self):
-        """Test that a missing expires_in field authenticates successfully.
+    def test_missing_expires_in_defaults_to_one_hour(self):
+        """Test that a missing expires_in defaults to a 1-hour expiry.
 
-        When the token response omits expires_in, expires_at is set to None
-        and the handler is still authenticated.
+        When the token response omits expires_in, expires_at is set to
+        roughly one hour from now (rather than None / never-expiring) so
+        that a server-revoked token is not used indefinitely.
         """
         handler = OAuth2ClientCredentialsHandler(
             token_url="https://example.com/token",
@@ -142,12 +143,17 @@ class TestOAuth2AtomicStateUpdate:
         )
         mock_response = _make_success_response(expires_in=None)
 
+        before = datetime.now()
         with patch("pymtg.auth.oauth2.requests.post", return_value=mock_response):
             handler.authenticate()
+        after = datetime.now()
 
         assert handler.access_token == "test_token"
         assert handler.token_type == "Bearer"
-        assert handler.expires_at is None
+        assert handler.expires_at is not None
+        # Default expiry is ~1 hour from now.
+        assert before + timedelta(seconds=3599) <= handler.expires_at
+        assert handler.expires_at <= after + timedelta(seconds=3601)
         assert handler._authenticated is True
         assert handler.is_authenticated() is True
 
@@ -170,6 +176,10 @@ class TestOAuth2AtomicStateUpdate:
 
         assert handler._authenticated is True
         assert handler.expires_at is not None
+        # Token expired immediately; verify using a time that is strictly
+        # after the recorded expires_at so the assertion does not rely on
+        # the resolution of two consecutive datetime.now() calls.
+        assert handler.expires_at <= datetime.now()
         assert handler.is_authenticated() is False
 
     def test_failed_http_response_does_not_set_state(self):
@@ -218,6 +228,7 @@ class TestOAuth2AtomicStateUpdate:
         assert handler.token_type is None
         assert handler.expires_at is None
         assert handler._authenticated is False
+        assert handler.is_authenticated() is False
 
     def test_reauthenticate_after_failure_succeeds(self):
         """Test that a failed authenticate() can be retried successfully.

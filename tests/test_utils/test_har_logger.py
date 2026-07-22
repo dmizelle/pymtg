@@ -14,7 +14,6 @@ specified in the task list including:
 import json
 import os
 import tempfile
-from unittest.mock import patch
 
 import pytest
 
@@ -150,16 +149,43 @@ class TestHARLoggerRequestLogging:
         assert header_dicts["User-Agent"] == "test"
 
     def test_log_request_with_string_body(self):
-        """Test logging a request with string body."""
+        """Test logging a request with string body.
+
+        JSON-formatted string bodies are parsed and sanitized so that
+        sensitive fields embedded in them are redacted (issue: string
+        bodies bypassing sanitization). Non-JSON strings are stored
+        verbatim.
+        """
         logger = HARLogger(enabled=True)
 
-        body = '{"key": "value"}'
+        # A plain (non-JSON) string is stored verbatim.
+        body = "plain text body"
         logger.log_request("POST", "https://example.com", body=body)
 
         entry = logger.entries[0]
         assert entry.request is not None
         assert entry.request.post_data == body
         assert entry.request.body_size == len(body)
+
+    def test_log_request_with_json_string_body_sanitizes(self):
+        """Test that JSON-formatted string bodies are sanitized.
+
+        Verifies the security fix: a JSON string body containing a
+        sensitive field (e.g. ``password``) is parsed and redacted
+        rather than logged verbatim.
+        """
+        logger = HARLogger(enabled=True)
+
+        body = '{"username": "u", "password": "secret"}'
+        logger.log_request("POST", "https://example.com", body=body)
+
+        entry = logger.entries[0]
+        assert entry.request is not None
+        processed_body = entry.request.post_data
+        # Parsed to a dict with sensitive fields redacted.
+        assert isinstance(processed_body, dict)
+        assert processed_body["username"] == "[REDACTED]"
+        assert processed_body["password"] == "[REDACTED]"
 
     def test_log_request_with_dict_body(self):
         """Test logging a request with dict body."""
@@ -380,8 +406,10 @@ class TestHARLoggerExport:
 
         logger.add_complete_entry("GET", "https://example.com", response_status=200)
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".har", delete=False) as f:
-            filepath = f.name
+        # Obtain a unique temporary path without creating an empty file
+        # that could mask an export() failure to write.
+        fd, filepath = tempfile.mkstemp(suffix=".har")
+        os.close(fd)
 
         try:
             har_json = logger.export(filepath)

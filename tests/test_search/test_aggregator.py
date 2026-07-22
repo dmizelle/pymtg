@@ -25,6 +25,10 @@ class MockProvider(BaseProvider):
             name: Provider name.
             should_fail: If True, search methods will raise exceptions.
         """
+        # Initialize BaseProvider so base-class attributes (config,
+        # http_client, rate_limit, _lock) are set up. The custom name and
+        # base_url are applied afterward.
+        super().__init__()
         self.name = name
         self.base_url = f"https://api.{name}.com"
         self.should_fail = should_fail
@@ -432,11 +436,10 @@ class TestAggregatorThreadSafety(unittest.TestCase):
             for i in range(50):
                 try:
                     aggregator.add_provider(MockProvider(f"provider-{i}"))
-                except ValueError:
-                    # Duplicate provider name is an unexpected race here;
-                    # names are unique, so re-raise to surface real bugs.
-                    raise
                 except Exception as e:
+                    # Record every exception (including ValueError) so a
+                    # re-raised exception does not silently kill the
+                    # thread and bypass the errors check below.
                     errors.append(e)
 
         def get_providers() -> None:

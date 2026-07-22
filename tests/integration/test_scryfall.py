@@ -9,6 +9,7 @@ Tests will be skipped if:
 - SCRYFALL_ENABLE_INTEGRATION_TESTS environment variable is not set to 'true'
 """
 
+import logging
 import os
 import unittest
 
@@ -16,6 +17,8 @@ import requests
 
 from pymtg.exceptions import NotFoundError
 from pymtg.providers.scryfall import Scryfall
+
+logger = logging.getLogger(__name__)
 
 
 class TestScryfallIntegration(unittest.TestCase):
@@ -39,8 +42,9 @@ class TestScryfallIntegration(unittest.TestCase):
         try:
             response = requests.get("https://api.scryfall.com", timeout=5)
             response.close()
-            return True
-        except requests.exceptions.RequestException:
+            return response.ok
+        except requests.exceptions.RequestException as e:
+            logger.debug("Scryfall network probe failed: %s", e)
             return False
 
     def setUp(self):

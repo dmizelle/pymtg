@@ -8,6 +8,7 @@ This module contains comprehensive tests for all pymtg exception classes includi
 - InvalidQueryError
 - APIError
 - NetworkError
+- ParsingError
 
 Tests cover:
 - Exception inheritance hierarchy
@@ -25,6 +26,7 @@ from pymtg.exceptions import (
     InvalidQueryError,
     NetworkError,
     NotFoundError,
+    ParsingError,
     PyMTGError,
     RateLimitError,
 )
@@ -453,6 +455,27 @@ class TestAPIError:
             "(status code: 500) Details: {'code': 'INTERNAL'}"
         )
 
+    def test_api_error_repr(self) -> None:
+        """Test APIError repr representation.
+
+        APIError inherits ``__repr__`` from PyMTGError without override,
+        so the repr should include the APIError class name and all four
+        base attributes (message, provider, status_code, details).
+        """
+        error = APIError(
+            message="Generic API error",
+            provider="test",
+            status_code=500,
+            details={"code": "INTERNAL"},
+        )
+        repr_str = repr(error)
+        assert repr_str == (
+            "APIError(message='Generic API error', "
+            "provider='test', "
+            "status_code=500, "
+            "details={'code': 'INTERNAL'})"
+        )
+
 
 class TestNetworkError:
     """Tests for the NetworkError exception."""
@@ -512,11 +535,11 @@ class TestNetworkError:
             original_exception=original_exc,
         )
         str_repr = str(error)
-        assert "[scryfall] NetworkError: Connection failed" in str_repr
-        assert "(status code: 503)" in str_repr
-        assert "Details: {'timeout': 30}" in str_repr
-        assert "Original:" in str_repr
-        assert "Connection refused" in str_repr
+        assert str_repr == (
+            "[scryfall] NetworkError: Connection failed "
+            "(status code: 503) Details: {'timeout': 30} "
+            "Original: ConnectionError('Connection refused')"
+        )
 
     def test_network_error_repr(self) -> None:
         """Test NetworkError repr representation."""
@@ -525,6 +548,91 @@ class TestNetworkError:
         repr_str = repr(error)
         assert "NetworkError" in repr_str
         assert "original_exception=" in repr_str
+
+
+class TestParsingError:
+    """Tests for the ParsingError exception."""
+
+    def test_parsing_error_inheritance(self) -> None:
+        """Test that ParsingError inherits from PyMTGError."""
+        assert issubclass(ParsingError, PyMTGError)
+
+    def test_parsing_error_creation_basic(self) -> None:
+        """Test ParsingError creation with message only."""
+        error = ParsingError("Failed to parse card")
+        assert error.message == "Failed to parse card"
+        assert error.provider is None
+        assert error.status_code is None
+        assert error.details == {}
+        assert error.raw_data is None
+
+    def test_parsing_error_creation_full(self) -> None:
+        """Test ParsingError creation with all parameters."""
+        raw = {"id": 123, "name": "Bad Card"}
+        error = ParsingError(
+            message="Failed to parse card",
+            provider="scryfall",
+            status_code=500,
+            details={"field": "name"},
+            raw_data=raw,
+        )
+        assert error.message == "Failed to parse card"
+        assert error.provider == "scryfall"
+        assert error.status_code == 500
+        assert error.details == {"field": "name"}
+        assert error.raw_data == raw
+
+    def test_parsing_error_str_without_raw_data(self) -> None:
+        """Test ParsingError string representation without raw data."""
+        error = ParsingError("Failed to parse", provider="scryfall")
+        str_repr = str(error)
+        assert "Raw data:" not in str_repr
+        assert "[scryfall] ParsingError: Failed to parse" in str_repr
+
+    def test_parsing_error_str_with_raw_data(self) -> None:
+        """Test ParsingError string representation includes raw data."""
+        error = ParsingError(
+            "Failed to parse",
+            provider="scryfall",
+            raw_data={"bad": "data"},
+        )
+        str_repr = str(error)
+        assert "Raw data:" in str_repr
+        assert "{'bad': 'data'}" in str_repr
+
+    def test_parsing_error_str_truncates_long_raw_data(self) -> None:
+        """Test that long raw_data is truncated to 200 chars plus ellipsis."""
+        long_raw = "x" * 500
+        error = ParsingError("Failed to parse", raw_data=long_raw)
+        str_repr = str(error)
+        assert "Raw data:" in str_repr
+        assert "..." in str_repr
+        # The repr of the raw data string is truncated to 200 chars.
+        raw_section = str_repr.split("Raw data: ", 1)[1]
+        assert len(raw_section) <= 203  # 200 + "..."
+
+    def test_parsing_error_str_raw_data_none_omitted(self) -> None:
+        """Test that raw_data=None omits the Raw data section."""
+        error = ParsingError("Failed to parse", raw_data=None)
+        assert "Raw data:" not in str(error)
+
+    def test_parsing_error_repr(self) -> None:
+        """Test ParsingError repr representation."""
+        error = ParsingError(
+            message="Failed to parse",
+            provider="scryfall",
+            status_code=500,
+            details={"field": "name"},
+            raw_data={"bad": "data"},
+        )
+        repr_str = repr(error)
+        assert repr_str == (
+            "ParsingError(message='Failed to parse', "
+            "provider='scryfall', "
+            "status_code=500, "
+            "details={'field': 'name'}, "
+            "raw_data={'bad': 'data'})"
+        )
 
 
 class TestExceptionHierarchy:
@@ -539,6 +647,7 @@ class TestExceptionHierarchy:
             InvalidQueryError,
             APIError,
             NetworkError,
+            ParsingError,
         ]
         for exc_class in exceptions:
             assert issubclass(exc_class, PyMTGError)
@@ -553,6 +662,7 @@ class TestExceptionHierarchy:
             InvalidQueryError,
             APIError,
             NetworkError,
+            ParsingError,
         ]
         for exc_class in exceptions:
             assert issubclass(exc_class, Exception)
@@ -714,3 +824,6 @@ class TestExceptionAttributes:
 
         network_error = NetworkError("Test")
         assert network_error.original_exception is None
+
+        parsing_error = ParsingError("Test")
+        assert parsing_error.raw_data is None

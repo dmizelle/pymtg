@@ -715,14 +715,20 @@ class TestTCGPlayerIterSearch(unittest.TestCase):
         is used as the total cap. Also verifies the limit passed to
         search() is page_size, not the total limit.
         """
-        # Each page returns 3 cards
-        page = [self._make_card(str(i)) for i in range(3)]
-        mock_search.side_effect = [page, page, page, []]
+        # Each page returns 3 distinct cards. Using unique IDs per page
+        # ensures a pagination bug (e.g. always requesting page 1) would
+        # surface as duplicate/missing cards rather than passing silently.
+        page1 = [self._make_card(str(i)) for i in range(3)]
+        page2 = [self._make_card(str(i)) for i in range(3, 6)]
+        page3 = [self._make_card(str(i)) for i in range(6, 9)]
+        mock_search.side_effect = [page1, page2, page3, []]
 
         # limit=5 binds to signature param (total cap = 5)
         results = list(self.tcgplayer.iter_search(name="test", limit=5))
 
         self.assertEqual(len(results), 5)
+        # The first 5 cards come from page1 (0,1,2) and page2 (3,4).
+        self.assertEqual([c.id for c in results], ["0", "1", "2", "3", "4"])
         # search() should receive page_size (default 50) as its limit, not 5
         _, kwargs = mock_search.call_args
         self.assertEqual(kwargs["limit"], 50)
@@ -803,6 +809,8 @@ class TestTCGPlayerErrorHandling(unittest.TestCase):
                     self.tcgplayer.search(name="test")
 
         self.assertEqual(cm.exception.provider, "tcgplayer")
+        self.assertEqual(cm.exception.status_code, 401)
+        self.assertIn("Token refresh failed", cm.exception.message)
 
     def test_make_request_401_refresh_failure_preserves_context(self):
         """Test that 401 context is preserved when token refresh fails.

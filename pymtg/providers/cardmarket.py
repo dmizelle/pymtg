@@ -102,6 +102,26 @@ class Cardmarket(BaseProvider):
         "set_type",
     }
 
+    # Constant mapping from Cardmarket rarity names to the Rarity enum.
+    # Defined once at class scope to avoid rebuilding it on every call
+    # to _parse_card.
+    _RARITY_MAP: dict[str, Rarity] = {
+        "Common": Rarity.COMMON,
+        "Uncommon": Rarity.UNCOMMON,
+        "Rare": Rarity.RARE,
+        "Mythic Rare": Rarity.MYTHIC,
+        "Mythic": Rarity.MYTHIC,
+        "Special": Rarity.SPECIAL,
+        "Bonus": Rarity.BONUS,
+        "common": Rarity.COMMON,
+        "uncommon": Rarity.UNCOMMON,
+        "rare": Rarity.RARE,
+        "mythic": Rarity.MYTHIC,
+        "mythic rare": Rarity.MYTHIC,
+        "special": Rarity.SPECIAL,
+        "bonus": Rarity.BONUS,
+    }
+
     def __init__(
         self,
         consumer_key: str | None = None,
@@ -367,6 +387,10 @@ class Cardmarket(BaseProvider):
             if colors:
                 color_codes = "".join(sorted({c.value for c in colors if c.value}))
                 if color_codes:
+                    if color is not None:
+                        raise InvalidQueryError(
+                            "Cannot specify both 'colors' and 'color' parameters"
+                        )
                     params["color"] = color_codes
             if identity:
                 id_codes = "".join(sorted({c.value for c in identity if c.value}))
@@ -416,8 +440,16 @@ class Cardmarket(BaseProvider):
             endpoint = "/ws/v2.0/products/output.json/"
 
             self._check_and_record_request()
-            response = self.http_client.get(endpoint, params=params)
-            data = self._handle_response(response, "cards")
+            try:
+                response = self.http_client.get(endpoint, params=params)
+                data = self._handle_response(response, "cards")
+            except RateLimitError:
+                # A rejected (429) request did not consume server-side
+                # quota, so roll back the locally-recorded increment to
+                # keep the client-side count in sync with the server.
+                with self._lock:
+                    self._request_count -= 1
+                raise
 
             if not data:
                 return []
@@ -551,8 +583,16 @@ class Cardmarket(BaseProvider):
             endpoint = "/ws/v2.0/products/output.json/"
 
             self._check_and_record_request()
-            response = self.http_client.get(endpoint, params=params)
-            data = self._handle_response(response, "cards")
+            try:
+                response = self.http_client.get(endpoint, params=params)
+                data = self._handle_response(response, "cards")
+            except RateLimitError:
+                # A rejected (429) request did not consume server-side
+                # quota, so roll back the locally-recorded increment to
+                # keep the client-side count in sync with the server.
+                with self._lock:
+                    self._request_count -= 1
+                raise
 
             if not data:
                 return []
@@ -634,8 +674,16 @@ class Cardmarket(BaseProvider):
             endpoint = "/ws/v2.0/products/find/output.json/"
 
             self._check_and_record_request()
-            response = self.http_client.get(endpoint, params=find_params)
-            data = self._handle_response(response, "card")
+            try:
+                response = self.http_client.get(endpoint, params=find_params)
+                data = self._handle_response(response, "card")
+            except RateLimitError:
+                # A rejected (429) request did not consume server-side
+                # quota, so roll back the locally-recorded increment to
+                # keep the client-side count in sync with the server.
+                with self._lock:
+                    self._request_count -= 1
+                raise
 
             if not data:
                 raise NotFoundError(
@@ -710,8 +758,16 @@ class Cardmarket(BaseProvider):
             endpoint = f"/ws/v2.0/marketplace/prices/{product_id_int}/output.json/"
 
             self._check_and_record_request()
-            response = self.http_client.get(endpoint)
-            data = self._handle_response(response, "pricing")
+            try:
+                response = self.http_client.get(endpoint)
+                data = self._handle_response(response, "pricing")
+            except RateLimitError:
+                # A rejected (429) request did not consume server-side
+                # quota, so roll back the locally-recorded increment to
+                # keep the client-side count in sync with the server.
+                with self._lock:
+                    self._request_count -= 1
+                raise
 
             if not data:
                 raise NotFoundError(
@@ -764,26 +820,9 @@ class Cardmarket(BaseProvider):
 
         # Extract rarity - Cardmarket uses rarity or rarityName
         rarity_str = card_data.get("rarity", card_data.get("rarityName", ""))
-        # Map Cardmarket rarity names to our enum
-        # Cardmarket may use different formats: "Common", "Uncommon",
-        # "Rare", "Mythic Rare"
-        rarity_map = {
-            "Common": Rarity.COMMON,
-            "Uncommon": Rarity.UNCOMMON,
-            "Rare": Rarity.RARE,
-            "Mythic Rare": Rarity.MYTHIC,
-            "Mythic": Rarity.MYTHIC,
-            "Special": Rarity.SPECIAL,
-            "Bonus": Rarity.BONUS,
-            "common": Rarity.COMMON,
-            "uncommon": Rarity.UNCOMMON,
-            "rare": Rarity.RARE,
-            "mythic": Rarity.MYTHIC,
-            "mythic rare": Rarity.MYTHIC,
-            "special": Rarity.SPECIAL,
-            "bonus": Rarity.BONUS,
-        }
-        rarity = rarity_map.get(rarity_str, Rarity.COMMON)
+        # Map Cardmarket rarity names to our enum. Cardmarket may use
+        # different formats: "Common", "Uncommon", "Rare", "Mythic Rare".
+        rarity = self._RARITY_MAP.get(rarity_str, Rarity.COMMON)
 
         # Extract card type
         type_line = card_data.get("type", "")
@@ -827,22 +866,30 @@ class Cardmarket(BaseProvider):
         # Extract artist
         artist = card_data.get("artist", "")
 
-        # Extract multiverse IDs if available
+        # Extract multiverse IDs if available. The Card model expects a
+        # list of integers, so coerce each ID to int (skipping values
+        # that cannot be converted).
         multiverse_ids = card_data.get("multiverseIds", [])
         if multiverse_ids and isinstance(multiverse_ids, list):
-            multiverse_ids = list(str(mid) for mid in multiverse_ids)
+            multiverse_ids = [
+                int(mid) for mid in multiverse_ids if isinstance(mid, (int, str))
+            ]
         else:
             multiverse_ids = []
 
-        # Extract legalities - Cardmarket may have legalities data
+        # Extract legalities - Cardmarket may have legalities data.
+        # The Card model stores legalities as dict[str, str], so format
+        # names are normalized to plain strings (recognized Format enum
+        # values are stringified via .value, unknown names kept as-is).
         legalities_data = card_data.get("legalities", {})
-        legalities = {}
+        legalities: dict[str, str] = {}
         for fmt, status in legalities_data.items():
             try:
                 format_enum = Format(fmt)
-                legalities[format_enum] = status
+                fmt_key = format_enum.value
             except ValueError:
-                legalities[fmt] = status
+                fmt_key = fmt
+            legalities[fmt_key] = status
 
         # Extract image URL
         image_url = card_data.get("imageUrl", "")
@@ -893,6 +940,9 @@ class Cardmarket(BaseProvider):
                 flavors=flavors,
                 artist=artist if artist else None,
                 image_uris=image_uris,
+                legalities=legalities if legalities else None,
+                card_faces=faces if faces else None,
+                multiverse_ids=multiverse_ids if multiverse_ids else None,
                 cardmarket_id=int(product_id) if product_id else None,
                 source="cardmarket",
             )
@@ -1041,15 +1091,25 @@ class Cardmarket(BaseProvider):
                         cardmarket_pricing_data[field] = float(price)
                     break
 
-        # Also check for price trends
+        # Also check for price trends. Only fill fields that are still
+        # unset so per-seller prices extracted above are not silently
+        # overwritten by trend averages.
         trends = pricing_data.get("trends", {})
-        if "avg1" in trends and isinstance(trends["avg1"], (int, float)):
+        if cardmarket_pricing_data["avg1"] is None and isinstance(
+            trends.get("avg1"), (int, float)
+        ):
             cardmarket_pricing_data["avg1"] = float(trends["avg1"])
-        if "avg7" in trends and isinstance(trends["avg7"], (int, float)):
+        if cardmarket_pricing_data["avg7"] is None and isinstance(
+            trends.get("avg7"), (int, float)
+        ):
             cardmarket_pricing_data["avg7"] = float(trends["avg7"])
-        if "avg30" in trends and isinstance(trends["avg30"], (int, float)):
+        if cardmarket_pricing_data["avg30"] is None and isinstance(
+            trends.get("avg30"), (int, float)
+        ):
             cardmarket_pricing_data["avg30"] = float(trends["avg30"])
-        if "trend" in trends and isinstance(trends["trend"], (int, float)):
+        if cardmarket_pricing_data["trend"] is None and isinstance(
+            trends.get("trend"), (int, float)
+        ):
             cardmarket_pricing_data["trend"] = float(trends["trend"])
 
         cardmarket_pricing = CardmarketPricing(**cardmarket_pricing_data)

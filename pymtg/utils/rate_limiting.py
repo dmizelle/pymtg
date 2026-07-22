@@ -255,9 +255,11 @@ class RateLimiter:
     def check(self, provider: str) -> bool:
         """Check if a request can be made to the specified provider.
 
-        This method checks the current rate limit state for the provider
-        and determines if a new request can be made without exceeding
-        the rate limits.
+        This is a read-only check that does not record a request. It does
+        not create a state entry for the provider. Callers that want to
+        proceed with a request should use :meth:`check_and_record` to
+        perform the check and the recording atomically (avoiding the
+        TOCTOU race between a standalone check and a later record).
 
         Args:
             provider: The provider name.
@@ -270,9 +272,11 @@ class RateLimiter:
             logger.debug("No rate limit config for %s, allowing request", provider)
             return True
 
-        # For a configured provider, accessing states creates an entry on
-        # demand (intentional); unconfigured providers return early above.
-        state = self.states[provider]
+        # Read-only access: do not create a stale state entry for a
+        # configured provider that has no recorded requests yet.
+        state = self.states.get(provider)
+        if state is None:
+            return True
 
         with state.lock:
             current_count, max_requests = self._cleanup_and_get_limits(provider, config)
@@ -291,11 +295,76 @@ class RateLimiter:
 
             return True
 
+    def check_and_record(self, provider: str) -> bool:
+        """Atomically check the rate limit and record a request.
+
+        Performs the check and the timestamp recording under a single
+        lock acquisition so that two concurrent callers cannot both pass
+        the check and exceed the limit (the TOCTOU race that affects a
+        separate ``check()`` followed by ``_record()``).
+
+        Args:
+            provider: The provider name.
+
+        Returns:
+            True if the request was recorded and may proceed, False if
+            rate limited (no timestamp is recorded in that case).
+        """
+        recorded, _ = self._check_and_record_with_ts(provider)
+        return recorded
+
+    def _check_and_record_with_ts(self, provider: str) -> tuple[bool, float | None]:
+        """Atomically check the rate limit and record a request.
+
+        Internal variant of :meth:`check_and_record` that also returns
+        the recorded timestamp (or ``None`` if nothing was recorded) so
+        callers such as :class:`RateLimitGuard` can roll it back.
+
+        Args:
+            provider: The provider name.
+
+        Returns:
+            A tuple of (allowed, timestamp). ``allowed`` is True if the
+            request was recorded and may proceed; ``timestamp`` is the
+            recorded time (or None if rate limited / unconfigured).
+        """
+        config = self.get_config(provider)
+        if config is None:
+            logger.debug("No rate limit config for %s, allowing request", provider)
+            return True, None
+
+        # Accessing states creates an entry on demand here because we are
+        # about to record a timestamp for this provider.
+        state = self.states[provider]
+
+        with state.lock:
+            current_count, max_requests = self._cleanup_and_get_limits(provider, config)
+
+            if max_requests is None:
+                ts = time.time()
+                state.timestamps.append(ts)
+                return True, ts
+
+            if current_count >= max_requests:
+                logger.debug(
+                    "Rate limit exceeded for %s: %d/%d requests",
+                    provider,
+                    current_count,
+                    max_requests,
+                )
+                return False, None
+
+            ts = time.time()
+            state.timestamps.append(ts)
+            return True, ts
+
     def _record(self, provider: str) -> None:
         """Record that a request was made to the specified provider.
 
-        This is a private method called by RateLimitGuard.__exit__() to
-        update the rate limit state after a request completes.
+        This is a private method retained for backward compatibility and
+        for test setup. New callers should prefer
+        :meth:`check_and_record`, which performs the check and record
+        atomically. This method unconditionally appends a timestamp.
 
         Args:
             provider: The provider name.
@@ -306,6 +375,19 @@ class RateLimiter:
         with state.lock:
             state.timestamps.append(now)
             logger.debug("Recorded request for %s", provider)
+
+    def record(self, provider: str) -> None:
+        """Record that a request was made to the specified provider.
+
+        Public entry point for recording a request against the sliding
+        window. This complements ``check()`` for callers that do not use
+        the ``guard()`` context manager (e.g. methods that gate on a
+        boolean return value from ``check()``).
+
+        Args:
+            provider: The provider name.
+        """
+        self._record(provider)
 
     def guard(self, provider: str):
         """Context manager for rate limiting a provider.
@@ -440,14 +522,25 @@ class RateLimiter:
     def reset(self, provider: str | None = None) -> None:
         """Reset rate limit state for a provider or all providers.
 
+        When resetting all providers, the states collection is
+        snapshotted under ``_global_lock`` and each state is then
+        cleared while holding only its own lock. This avoids holding
+        ``_global_lock`` while acquiring state locks, which keeps the
+        lock-ordering contract (``_global_lock`` is never acquired
+        while holding a state lock) consistent and deadlock-free.
+
         Args:
             provider: The provider name to reset. If None, resets all providers.
         """
         if provider is None:
+            # Snapshot the states under _global_lock, then clear each
+            # state without holding _global_lock to avoid nested lock
+            # acquisition (lock-ordering hazard).
             with self._global_lock:
-                for state in self.states.values():
-                    with state.lock:
-                        state.timestamps.clear()
+                states_snapshot = list(self.states.values())
+            for state in states_snapshot:
+                with state.lock:
+                    state.timestamps.clear()
             logger.debug("Reset rate limit state for all providers")
         else:
             # Read-only access: do not create a stale state entry for a
@@ -492,33 +585,70 @@ class RateLimitGuard:
         self.rate_limiter = rate_limiter
         self.provider = provider
         self.waited = False
+        # Timestamp recorded optimistically by check_and_record() in
+        # __enter__; rolled back in __exit__ if the guarded block raised
+        # an exception so failed requests are not counted.
+        self._recorded_timestamp: float | None = None
 
     def __enter__(self) -> bool:
         """Enter the context manager.
+
+        Uses :meth:`RateLimiter.check_and_record` so the check and the
+        timestamp recording happen atomically, eliminating the TOCTOU
+        race between a standalone check and a later record.
 
         Returns:
             True if the request can proceed immediately, False if we
                 had to wait.
         """
-        if not self.rate_limiter.check(self.provider):
+        allowed, ts = self.rate_limiter._check_and_record_with_ts(self.provider)
+        self._recorded_timestamp = ts
+        if not allowed:
+            # Rate limited: nothing was recorded. Wait for the limit to
+            # reset, then record optimistically before yielding so the
+            # slot is reserved for this caller.
             self.rate_limiter.wait(self.provider)
             self.waited = True
+            allowed, ts = self.rate_limiter._check_and_record_with_ts(self.provider)
+            self._recorded_timestamp = ts
             return False
         return True
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         """Exit the context manager.
 
-        Only records the request if no exception occurred, so failed or
-        aborted requests are not counted against the rate limit.
+        If an exception occurred inside the guarded block, roll back the
+        optimistically-recorded timestamp so failed requests are not
+        counted against the rate limit. On success the recorded
+        timestamp is left in place.
 
         Args:
             exc_type: The exception type, or None if no exception occurred.
             exc_val: The exception value, or None if no exception occurred.
             exc_tb: The exception traceback, or None if no exception occurred.
         """
-        if exc_type is None:
-            self.rate_limiter._record(self.provider)
+        if exc_type is not None:
+            self._rollback_record()
+
+    def _rollback_record(self) -> None:
+        """Remove the optimistically-recorded timestamp if present.
+
+        This restores the rate-limit state when the guarded block raised
+        an exception, so failed requests are not counted.
+        """
+        ts = self._recorded_timestamp
+        if ts is None:
+            return
+        state = self.rate_limiter.states.get(self.provider)
+        if state is None:
+            return
+        with state.lock:
+            try:
+                state.timestamps.remove(ts)
+            except ValueError:
+                # Already cleaned up or removed; nothing to do.
+                pass
+        self._recorded_timestamp = None
 
     def __repr__(self) -> str:
         """Return a string representation of the guard.

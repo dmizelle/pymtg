@@ -579,6 +579,7 @@ class TestScryfallAutocomplete(unittest.TestCase):
             scryfall.autocomplete("test")
 
         self.assertIn("Card not found", str(context.exception))
+        self.assertEqual(context.exception.provider, "scryfall")
         self.assertEqual(context.exception.status_code, 404)
         self.assertEqual(context.exception.details["code"], "not_found")
 
@@ -1041,20 +1042,30 @@ class TestScryfallGetCardUUIDValidation(unittest.TestCase):
         self.assertIn("card_id is required", str(ctx.exception).lower())
 
     def test_get_card_valid_uuid_format(self):
-        """Test that get_card accepts valid UUID format."""
+        """Test that get_card accepts valid UUID format.
+
+        Patches ``_handle_response`` and ``_parse_card`` for consistency
+        with the other ``get_card`` unit tests so the assertion focuses on
+        get_card's ID handling rather than the full parse pipeline.
+        """
         scryfall = Scryfall()
 
-        # Mock the HTTP client to avoid actual API call
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "object": "card",
+        mock_data = {
             "id": "38625902-0567-4f24-85b0-a00843553997",
             "name": "Black Lotus",
             "mana_cost": "{0}",
             "type_line": "Artifact",
         }
-        with patch.object(scryfall.http_client, "get", return_value=mock_response):
+        mock_card = Card(
+            id="38625902-0567-4f24-85b0-a00843553997",
+            scryfall_id="38625902-0567-4f24-85b0-a00843553997",
+            name="Black Lotus",
+            source="scryfall",
+        )
+        with (
+            patch.object(Scryfall, "_handle_response", return_value=mock_data),
+            patch.object(Scryfall, "_parse_card", return_value=mock_card),
+        ):
             card = scryfall.get_card("38625902-0567-4f24-85b0-a00843553997")
             self.assertIsNotNone(card)
             self.assertEqual(card.id, "38625902-0567-4f24-85b0-a00843553997")

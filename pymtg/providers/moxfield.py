@@ -263,6 +263,9 @@ class Moxfield(BaseProvider):
                 auth_type="api_key",
             )
 
+        if limit is not None and (not isinstance(limit, int) or limit < 1):
+            raise InvalidQueryError("limit must be a positive integer (>= 1)")
+
         try:
             # Build query parameters
             params: dict[str, Any] = {}
@@ -586,7 +589,14 @@ class Moxfield(BaseProvider):
             NetworkError: If there is a network error.
             APIError: If the API returns an error.
             AuthenticationError: If API key is not provided.
+            InvalidQueryError: If deck_id is not provided.
         """
+        if not deck_id:
+            raise InvalidQueryError(
+                "deck_id is required for Moxfield.get_deck_full()",
+                provider=self.name,
+            )
+
         if not self.is_authenticated():
             raise AuthenticationError(
                 "Moxfield requires a Parse.bot API key",
@@ -804,9 +814,13 @@ class Moxfield(BaseProvider):
             )
             query_parts.append(f"id:{id_str}")
 
-        # Add type line filter
+        # Add type line filter. Sanitize consistently with the
+        # extra_filters loop below: strip colon characters so a crafted
+        # type_line cannot break out of the `t:` token and inject
+        # arbitrary query syntax.
         if type_line:
-            query_parts.append(f"t:{type_line}")
+            sanitized_type_line = str(type_line).replace(":", "")
+            query_parts.append(f"t:{sanitized_type_line}")
 
         # Build a dict of additional filter params (non-None only)
         extra_filters: dict[str, Any] = {
@@ -1083,7 +1097,10 @@ class Moxfield(BaseProvider):
         for field in ("quantity", "count", "qty"):
             value = card_data.get(field)
             if value is not None:
-                return value
+                try:
+                    return int(value)
+                except (ValueError, TypeError):
+                    return 1
         return 1
 
     def _parse_deck(self, data: dict[str, Any]) -> Deck:

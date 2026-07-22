@@ -140,6 +140,9 @@ class Deck(PyMTGBaseModel):
     def get_card_count(self, card_name: str) -> int:
         """Get the number of copies of a specific card in the deck.
 
+        Counts copies across all deck zones: main deck, sideboard,
+        commander zone, and maybeboard. Matching is case-insensitive.
+
         Args:
             card_name: The name of the card to count.
 
@@ -147,15 +150,15 @@ class Deck(PyMTGBaseModel):
             The total number of copies of the card in the deck.
         """
         count = 0
-        for card in self.get_main_deck_cards():
-            if card.card.name.lower() == card_name.lower():
-                count += card.count
-        for card in self.get_sideboard_cards():
-            if card.card.name.lower() == card_name.lower():
-                count += card.count
-        for card in self.get_maybeboard_cards():
-            if card.card.name.lower() == card_name.lower():
-                count += card.count
+        for getter in (
+            self.get_main_deck_cards,
+            self.get_sideboard_cards,
+            self.get_commander_cards,
+            self.get_maybeboard_cards,
+        ):
+            for card in getter():
+                if card.card.name.lower() == card_name.lower():
+                    count += card.count
         return count
 
     def get_unique_cards(self) -> list[DeckCard]:
@@ -184,22 +187,26 @@ class Deck(PyMTGBaseModel):
     def is_valid_for_format(self) -> bool:
         """Check if the deck is valid for its declared format.
 
-        Performs basic validation: checks that the deck has cards and the
-        format is a valid Format enum value. Full format-specific validation
-        (e.g., card legality, deck size limits) would require additional
-        format-specific rules and is not yet implemented.
-
-        With ``use_enum_values=True`` in the model config, ``self.format``
-        is already a validated ``Format`` value after normal Pydantic
-        construction, so no runtime re-check of the enum membership is
-        performed here. Decks built via ``model_construct()`` or another
-        validation-bypassing path may carry an unvalidated format string.
+        Performs basic validation: checks that the deck has cards and
+        that a format is declared and is a valid ``Format`` enum value.
+        Full format-specific validation (e.g., card legality, deck size
+        limits) would require additional format-specific rules and is
+        not yet implemented.
 
         Returns:
-            True if the deck has cards and format is valid, False otherwise.
+            True if the deck has cards and a valid declared format,
+            False otherwise.
         """
         # Basic validation: deck must have at least one card.
         if self.cards is None or len(self.cards) == 0:
             return False
 
+        # The declared format must be present and a known Format value.
+        if self.format is None:
+            return False
+        if not isinstance(self.format, Format):
+            try:
+                Format(self.format)
+            except ValueError:
+                return False
         return True

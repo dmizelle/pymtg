@@ -252,7 +252,11 @@ class Card(PyMTGBaseModel):
         """
         if not self.color_identity:
             return True
-        return all(c == "" for c in self.color_identity)
+
+        def _val(c: Color | str) -> str:
+            return c.value if isinstance(c, Color) else c
+
+        return all(_val(c) == "" for c in self.color_identity)
 
     def is_multicolor(self) -> bool:
         """Check if this card is multicolor.
@@ -288,7 +292,7 @@ class Card(PyMTGBaseModel):
         # Deduplicate while preserving WUBRG order.
         seen: set[str] = set()
         ordered: list[str] = []
-        for ch in sorted(result_chars, key=lambda x: color_order.get(x, 5)):
+        for ch in sorted(result_chars, key=lambda x: color_order.get(x.upper(), 5)):
             if ch not in seen:
                 seen.add(ch)
                 ordered.append(ch)
@@ -386,7 +390,7 @@ class Card(PyMTGBaseModel):
         Returns:
             The first CardFace if card_faces is not None and not empty, else None.
         """
-        if self.card_faces and len(self.card_faces) > 0:
+        if self.card_faces:
             return self.card_faces[0]
         return None
 
@@ -472,9 +476,11 @@ class Card(PyMTGBaseModel):
             card_value = getattr(self, field, None)
             face_value = getattr(main_face, field, None)
             if card_value != face_value:
-                # setattr bypasses pydantic re-validation (validate_assignment
-                # is not enabled in model_config); the face value was already
-                # validated when the CardFace was constructed.
+                # Note: validate_assignment is not enabled in model_config,
+                # so setattr bypasses re-validation. The face value was
+                # already validated when the CardFace was constructed. If
+                # validate_assignment is ever enabled, switch to
+                # self.model_copy(update=...) for atomic, validated updates.
                 setattr(self, field, face_value)
                 changes[field] = (card_value, face_value)
         return changes
@@ -493,5 +499,11 @@ class DeckCard(PyMTGBaseModel):
     """
 
     card: Card
-    count: int = Field(ge=0)
+    count: int = Field(
+        ge=0,
+        description=(
+            "Number of copies of this card in the deck; zero is allowed "
+            "to represent template/slot placeholders."
+        ),
+    )
     board: str | None = None

@@ -59,6 +59,9 @@ class TestVersion:
             "1. 0.0",  # Internal whitespace is not allowed per PEP 440
             "   ",  # Whitespace-only string
             "!!!",  # Only special characters
+            "1..0.0",  # Double dot
+            "1.0.0-",  # Dangling hyphen with no pre-release identifier
+            ".1.0",  # Leading dot
         ],
     )
     def test_validate_version_rejects_invalid_versions(self, version: str) -> None:

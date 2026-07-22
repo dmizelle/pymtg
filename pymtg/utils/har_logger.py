@@ -11,8 +11,9 @@ HAR format specification: http://www.softwareishard.com/blog/har-12-spec/
 import copy
 import json
 import logging
+import threading
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -186,6 +187,20 @@ class HARLogger:
         }
     )
 
+    # Cookie names whose values should be sanitized by default. Matching
+    # is substring-based (case-insensitive) against the lower-cased
+    # cookie name, matching common sensitive cookie naming conventions.
+    SENSITIVE_COOKIE_NAMES: frozenset[str] = frozenset(
+        {
+            "session",
+            "sessionid",
+            "auth",
+            "token",
+            "jwt",
+            "csrf",
+        }
+    )
+
     def __init__(
         self,
         enabled: bool = False,
@@ -215,15 +230,21 @@ class HARLogger:
         self.sanitized_value = sanitized_value
         self.page_id = page_id
         self.preserve_binary = preserve_binary
+        # Reentrant lock guards mutations to ``entries`` and ``_enabled``
+        # so that compound operations (e.g. ``add_complete_entry``) and
+        # concurrent enable/disable calls do not race.
+        self._lock = threading.RLock()
 
     def enable(self) -> None:
         """Enable HAR logging."""
-        self._enabled = True
+        with self._lock:
+            self._enabled = True
         logger.debug("HAR logging enabled")
 
     def disable(self) -> None:
         """Disable HAR logging."""
-        self._enabled = False
+        with self._lock:
+            self._enabled = False
         logger.debug("HAR logging disabled")
 
     @property
@@ -233,11 +254,13 @@ class HARLogger:
         Returns:
             True if logging is enabled, False otherwise.
         """
-        return self._enabled
+        with self._lock:
+            return self._enabled
 
     def clear(self) -> None:
         """Clear all captured entries."""
-        self.entries.clear()
+        with self._lock:
+            self.entries.clear()
         logger.debug("HAR entries cleared")
 
     def log_request(
@@ -268,43 +291,47 @@ class HARLogger:
         if not self._enabled:
             return None
 
-        # Create request entry
-        entry = HAREntry(
-            pageref=self.page_id,
-            started_date_time=datetime.now(timezone.utc).isoformat(),
-            time=0.0,  # Will be updated when response is logged
-        )
+        with self._lock:
+            if not self._enabled:
+                return None
 
-        # Process headers
-        processed_headers = self._process_headers(headers or {})
-
-        # Process body
-        processed_body, body_size = self._process_body(body)
-
-        # Process query string
-        query_string = self._process_query_params(query_params or {})
-
-        # Process cookies
-        processed_cookies = self._process_cookies(cookies or {})
-
-        # Create HAR request
-        entry.request = HARRequest(
-            method=method.upper(),
-            url=url,
-            http_version=http_version,
-            headers=processed_headers,
-            query_string=query_string,
-            cookies=processed_cookies,
-            post_data=processed_body,
-            body_size=body_size,
-            headers_size=sum(
-                len(f"{h['name']}: {h['value']}") for h in processed_headers
+            # Create request entry
+            entry = HAREntry(
+                pageref=self.page_id,
+                started_date_time=datetime.now(timezone.utc).isoformat(),
+                time=0.0,  # Will be updated when response is logged
             )
-            + 2,  # +2 for CRLF
-        )
 
-        self.entries.append(entry)
-        return entry.started_date_time
+            # Process headers
+            processed_headers = self._process_headers(headers or {})
+
+            # Process body
+            processed_body, body_size = self._process_body(body)
+
+            # Process query string
+            query_string = self._process_query_params(query_params or {})
+
+            # Process cookies
+            processed_cookies = self._process_cookies(cookies or {})
+
+            # Create HAR request. ``headers_size`` accounts for one CRLF
+            # terminator per header line, matching the on-wire encoding.
+            entry.request = HARRequest(
+                method=method.upper(),
+                url=url,
+                http_version=http_version,
+                headers=processed_headers,
+                query_string=query_string,
+                cookies=processed_cookies,
+                post_data=processed_body,
+                body_size=body_size,
+                headers_size=sum(
+                    len(f"{h['name']}: {h['value']}\r\n") for h in processed_headers
+                ),
+            )
+
+            self.entries.append(entry)
+            return entry.started_date_time
 
     def log_response(
         self,
@@ -334,23 +361,27 @@ class HARLogger:
         if not self._enabled or not self.entries:
             return None
 
-        # Find the most recent entry without a response
-        # Consider using a request ID or timestamp for more robust matching
-        for entry in reversed(self.entries):
-            if entry.response is None:
-                return self._update_entry_with_response(
-                    entry,
-                    status,
-                    status_text,
-                    headers,
-                    body,
-                    http_version,
-                    cookies,
-                    redirect_url,
-                )
+        with self._lock:
+            if not self._enabled or not self.entries:
+                return None
 
-        # No entry without a response found
-        return None
+            # Find the most recent entry without a response
+            # Consider using a request ID or timestamp for more robust matching
+            for entry in reversed(self.entries):
+                if entry.response is None:
+                    return self._update_entry_with_response(
+                        entry,
+                        status,
+                        status_text,
+                        headers,
+                        body,
+                        http_version,
+                        cookies,
+                        redirect_url,
+                    )
+
+            # No entry without a response found
+            return None
 
     def _update_entry_with_response(
         self,
@@ -363,7 +394,21 @@ class HARLogger:
         cookies: dict[str, str] | None,
         redirect_url: str,
     ) -> HAREntry:
-        """Helper method to update an entry with response data."""
+        """Helper method to update an entry with response data.
+
+        Args:
+            entry: The HAR entry to update with the response.
+            status: HTTP status code.
+            status_text: HTTP status text.
+            headers: Response headers dictionary.
+            body: Response body (string, bytes, or dict).
+            http_version: HTTP version.
+            cookies: Response cookies dictionary.
+            redirect_url: Redirect URL if any.
+
+        Returns:
+            The updated HAR entry.
+        """
         # Process headers
         processed_headers = self._process_headers(headers or {})
 
@@ -373,7 +418,17 @@ class HARLogger:
         # Process cookies
         processed_cookies = self._process_cookies(cookies or {})
 
-        # Create HAR response
+        # Serialize non-string bodies so the HAR ``text`` field always
+        # contains a textual representation of the response content.
+        if isinstance(processed_body, str):
+            content_text = processed_body
+        elif processed_body:
+            content_text = json.dumps(processed_body)
+        else:
+            content_text = ""
+
+        # Create HAR response. ``headers_size`` accounts for one CRLF
+        # terminator per header line, matching the on-wire encoding.
         entry.response = HARResponse(
             status=status,
             status_text=status_text,
@@ -383,24 +438,30 @@ class HARLogger:
             content={
                 "size": body_size,
                 "mimeType": self._get_mime_type(headers or {}),
-                "text": processed_body if isinstance(processed_body, str) else "",
+                "text": content_text,
             },
             redirect_url=redirect_url,
             headers_size=sum(
-                len(f"{h['name']}: {h['value']}") for h in processed_headers
-            )
-            + 2,
+                len(f"{h['name']}: {h['value']}\r\n") for h in processed_headers
+            ),
             body_size=body_size,
         )
 
-        # Update timing with actual elapsed time
-        try:
-            started = datetime.fromisoformat(entry.started_date_time)
-            elapsed_ms = (datetime.now(timezone.utc) - started).total_seconds() * 1000
-            entry.time = max(1, elapsed_ms)  # Ensure at least 1ms
-        except (ValueError, TypeError):
-            # Fallback if date parsing fails
+        # Update timing with actual elapsed time. Guard against an empty
+        # started_date_time (e.g. entries not created via log_request)
+        # before attempting to parse an ISO 8601 timestamp.
+        if not entry.started_date_time:
             entry.time = max(1, entry.time)
+        else:
+            try:
+                started = datetime.fromisoformat(entry.started_date_time)
+                elapsed_ms = (
+                    datetime.now(timezone.utc) - started
+                ).total_seconds() * 1000
+                entry.time = max(1, elapsed_ms)  # Ensure at least 1ms
+            except (ValueError, TypeError):
+                # Fallback if date parsing fails
+                entry.time = max(1, entry.time)
 
         return entry
 
@@ -453,8 +514,20 @@ class HARLogger:
             processed_body = self._sanitize_dict(copy.deepcopy(body))
             body_size = len(json.dumps(processed_body).encode("utf-8"))
         else:  # string
-            processed_body = body
-            body_size = len(body.encode("utf-8"))
+            # Attempt to parse and sanitize JSON-formatted string bodies
+            # so that sensitive fields embedded in JSON strings are not
+            # logged verbatim. Fall back to the raw text if parsing fails.
+            try:
+                parsed = json.loads(body)
+                if isinstance(parsed, (dict, list)):
+                    processed_body = self._sanitize_dict(copy.deepcopy(parsed))
+                    body_size = len(json.dumps(processed_body).encode("utf-8"))
+                else:
+                    processed_body = body
+                    body_size = len(body.encode("utf-8"))
+            except (json.JSONDecodeError, TypeError):
+                processed_body = body
+                body_size = len(body.encode("utf-8"))
 
         return processed_body, body_size
 
@@ -473,7 +546,7 @@ class HARLogger:
         result = []
         for name, value in params.items():
             processed_name = name.lower()
-            if any(sf in processed_name for sf in self.sanitize_fields):
+            if processed_name in self.sanitize_fields:
                 value = self.sanitized_value
             result.append({"name": name, "value": value})
         return result
@@ -489,19 +562,11 @@ class HARLogger:
         """
         result = []
         for name, value in cookies.items():
-            # Sanitize cookie values if the cookie name is sensitive or by default
-            # Common sensitive cookie names
-            sensitive_cookie_names = {
-                "session",
-                "sessionid",
-                "auth",
-                "token",
-                "jwt",
-                "csrf",
-            }
+            # Sanitize cookie values if the cookie name is sensitive or
+            # matches one of the common sensitive cookie names.
             should_sanitize = name.lower() in self.sanitize_headers or any(
                 sensitive_name in name.lower()
-                for sensitive_name in sensitive_cookie_names
+                for sensitive_name in self.SENSITIVE_COOKIE_NAMES
             )
             result.append(
                 {
@@ -549,24 +614,32 @@ class HARLogger:
         # Add to seen set
         _seen.add(obj_id)
 
-        if isinstance(data, dict):
-            result: dict[str, Any] = {}
-            for key, value in data.items():
-                processed_key = key.lower() if isinstance(key, str) else key
+        # Discard the id once the subtree has been processed so that
+        # legitimate shared references (the same container appearing in
+        # multiple sibling branches) are not mistaken for cycles. True
+        # cycles are still detected because the id remains in ``_seen``
+        # for the duration of this subtree's processing.
+        try:
+            if isinstance(data, dict):
+                result: dict[str, Any] = {}
+                for key, value in data.items():
+                    processed_key = key.lower() if isinstance(key, str) else key
 
-                # Check if this field should be sanitized (exact match)
-                if processed_key in self.sanitize_fields:
-                    result[key] = self.sanitized_value
-                else:
-                    result[key] = self._sanitize_dict(value, _seen)
+                    # Check if this field should be sanitized (exact match)
+                    if processed_key in self.sanitize_fields:
+                        result[key] = self.sanitized_value
+                    else:
+                        result[key] = self._sanitize_dict(value, _seen)
 
-            return result
-        elif isinstance(data, list):
-            return [self._sanitize_dict(item, _seen) for item in data]
-        elif isinstance(data, (tuple, set)):
-            return type(data)(self._sanitize_dict(item, _seen) for item in data)
-        else:
-            return data
+                return result
+            elif isinstance(data, list):
+                return [self._sanitize_dict(item, _seen) for item in data]
+            elif isinstance(data, (tuple, set)):
+                return type(data)(self._sanitize_dict(item, _seen) for item in data)
+            else:
+                return data
+        finally:
+            _seen.discard(obj_id)
 
     def _get_mime_type(self, headers: dict[str, str]) -> str:
         """Get the MIME type from headers.
@@ -586,6 +659,10 @@ class HARLogger:
     def export(self, filepath: str | None = None) -> str:
         """Export captured entries to a HAR file.
 
+        Only entries with both a request and a response are included, as
+        required by the HAR 1.2 specification. Entries that have a logged
+        request but no response yet are skipped.
+
         Args:
             filepath: Path to write the HAR file. If None, returns the HAR
                 JSON string without writing to a file.
@@ -594,10 +671,23 @@ class HARLogger:
             The HAR JSON string.
 
         Raises:
-            ValueError: If no entries have been captured.
+            ValueError: If no entries have been captured, or if no
+                complete entries (with both request and response) exist.
         """
         if not self.entries:
             raise ValueError("No HAR entries to export")
+
+        # Filter to complete entries (HAR 1.2 requires both request and
+        # response on every entry).
+        complete_entries = [
+            entry
+            for entry in self.entries
+            if entry.request is not None and entry.response is not None
+        ]
+        if not complete_entries:
+            raise ValueError(
+                "No complete HAR entries (with request and response) to export"
+            )
 
         # Build the HAR structure
         har_data = {
@@ -608,14 +698,13 @@ class HARLogger:
                     "version": "1.0.0",
                 },
                 "pages": [{"id": self.page_id, "title": "pymtg HAR Export"}],
-                "entries": [entry.to_dict() for entry in self.entries],
+                "entries": [entry.to_dict() for entry in complete_entries],
             }
         }
 
-        # Convert to JSON with custom serializer for non-serializable objects
+        # Convert to JSON with custom serializer for non-serializable objects.
+        # ``datetime`` and ``date`` are imported at module level.
         def default_serializer(obj):
-            from datetime import date, datetime
-
             if isinstance(obj, (datetime, date)):
                 return obj.isoformat()
             elif isinstance(obj, bytes):
@@ -664,25 +753,33 @@ class HARLogger:
         if not self._enabled:
             return None
 
-        # Log the request
-        request_id = self.log_request(
-            method=method,
-            url=url,
-            headers=request_headers,
-            body=request_body,
-            http_version=http_version,
-        )
+        # Hold the lock across both the request and response logging so
+        # that a concurrent disable() cannot leave the request logged
+        # without a response (which would yield a None return value
+        # despite the request having succeeded).
+        with self._lock:
+            if not self._enabled:
+                return None
 
-        if request_id is None:
-            return None
+            # Log the request
+            request_id = self.log_request(
+                method=method,
+                url=url,
+                headers=request_headers,
+                body=request_body,
+                http_version=http_version,
+            )
 
-        # Log the response
-        return self.log_response(
-            status=response_status,
-            headers=response_headers,
-            body=response_body,
-            http_version=http_version,
-        )
+            if request_id is None:
+                return None
+
+            # Log the response
+            return self.log_response(
+                status=response_status,
+                headers=response_headers,
+                body=response_body,
+                http_version=http_version,
+            )
 
     def __len__(self) -> int:
         """Return the number of captured entries.
@@ -725,6 +822,9 @@ class HARLogger:
         state.pop("sanitize_fields", None)
         state.pop("sanitized_value", None)
 
+        # Locks are not picklable; they are recreated in __setstate__.
+        state.pop("_lock", None)
+
         return state
 
     def __setstate__(self, state: dict[str, Any]) -> None:
@@ -738,3 +838,5 @@ class HARLogger:
         self.sanitize_headers = self.DEFAULT_SANITIZE_HEADERS
         self.sanitize_fields = self.DEFAULT_SANITIZE_FIELDS
         self.sanitized_value = "[REDACTED]"
+        # Recreate the lock (not restored from pickle state).
+        self._lock = threading.RLock()

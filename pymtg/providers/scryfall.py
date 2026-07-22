@@ -207,16 +207,16 @@ class Scryfall(BaseProvider):
                 type_line="Creature", cmc={"gte": 3, "lte": 5}
             )
         """
+        if limit < 1:
+            raise InvalidQueryError("limit must be a positive integer (>= 1)")
+
+        if page < 1:
+            raise InvalidQueryError(
+                f"page must be a positive integer (>= 1), got {page!r}"
+            )
+
         try:
-            if limit < 1:
-                raise InvalidQueryError("limit must be a positive integer (>= 1)")
-
-            if page < 1:
-                raise InvalidQueryError(
-                    f"page must be a positive integer (>= 1), got {page!r}"
-                )
-
-            # Build query parameters
+            # Build query parameters and make the HTTP call.
             params: dict[str, Any] = {
                 "q": self._build_search_query(
                     name=name,
@@ -285,8 +285,14 @@ class Scryfall(BaseProvider):
                     else:
                         params[key] = value
 
-            response = self.http_client.get("/cards/search", params=params)
-            data = self._handle_response(response, "cards")
+            try:
+                response = self.http_client.get("/cards/search", params=params)
+                data = self._handle_response(response, "cards")
+            except NotFoundError:
+                # Scryfall returns HTTP 404 when no cards match the query.
+                # A search with no matches should return an empty list
+                # rather than raising NotFoundError.
+                return []
 
             # Check for Scryfall API error response format
             if isinstance(data, dict) and data.get("object") == "error":
@@ -370,7 +376,7 @@ class Scryfall(BaseProvider):
                 query_parts.append(f"r:{rarity.value}")
             else:
                 query_parts.append(f"r:{rarity}")
-        if cmc:
+        if cmc is not None:
             if isinstance(cmc, dict):
                 if "gte" in cmc:
                     query_parts.append(f"cmc>={cmc['gte']}")
@@ -378,7 +384,7 @@ class Scryfall(BaseProvider):
                     query_parts.append(f"cmc<={cmc['lte']}")
             else:
                 query_parts.append(f"cmc:{cmc}")
-        if power:
+        if power is not None:
             if isinstance(power, dict):
                 if "gte" in power:
                     query_parts.append(f"pow>={power['gte']}")
@@ -386,7 +392,7 @@ class Scryfall(BaseProvider):
                     query_parts.append(f"pow<={power['lte']}")
             else:
                 query_parts.append(f"pow:{power}")
-        if toughness:
+        if toughness is not None:
             if isinstance(toughness, dict):
                 if "gte" in toughness:
                     query_parts.append(f"tou>={toughness['gte']}")
@@ -484,8 +490,29 @@ class Scryfall(BaseProvider):
             if include_variations is not None:
                 params["include_variations"] = include_variations
 
-            response = self.http_client.get("/cards/search", params=params)
-            data = self._handle_response(response, "cards")
+            try:
+                response = self.http_client.get("/cards/search", params=params)
+                data = self._handle_response(response, "cards")
+            except NotFoundError:
+                # Scryfall returns HTTP 404 when no cards match the query.
+                # A search with no matches should return an empty list
+                # rather than raising NotFoundError.
+                return []
+
+            # Check for Scryfall API error response format (e.g. invalid
+            # query syntax) so real API errors are surfaced rather than
+            # silently degraded to an empty result list.
+            if isinstance(data, dict) and data.get("object") == "error":
+                raise APIError(
+                    f"Scryfall API error: {data.get('code', 'unknown')}",
+                    provider=self.name,
+                    status_code=data.get("status"),
+                    details={
+                        "code": data.get("code"),
+                        "message": data.get("details"),
+                        "warnings": data.get("warnings"),
+                    },
+                )
 
             if not data or "data" not in data:
                 return []
@@ -661,6 +688,7 @@ class Scryfall(BaseProvider):
             if isinstance(data, dict) and data.get("object") == "error":
                 raise APIError(
                     data.get("message", "Unknown Scryfall API error"),
+                    provider=self.name,
                     status_code=data.get("status"),
                     details={
                         "message": data.get("message", ""),

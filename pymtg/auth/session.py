@@ -21,6 +21,13 @@ class SessionAuthHandler(BaseAuthHandler):
     This handler manages session cookie authentication for providers that
     require username/password login and maintain session state via cookies.
 
+    Security note: the plaintext password is retained on the instance for
+    the handler's lifetime so that :meth:`refresh` can re-authenticate
+    without the caller resupplying credentials. Use :meth:`clear_auth` to
+    drop the stored credentials once refresh is no longer needed. The
+    ``_password`` attribute is deliberately excluded from ``__repr__`` and
+    ``__str__`` to avoid accidental disclosure in logs.
+
     Attributes:
         base_url: The base URL for the authentication endpoint.
         login_endpoint: The endpoint to POST credentials to.
@@ -80,7 +87,7 @@ class SessionAuthHandler(BaseAuthHandler):
 
             # First, get the login page to retrieve CSRF token
             login_url = f"{self.base_url}{self.login_endpoint}"
-            logger.debug(f"Getting CSRF token from {login_url}")
+            logger.debug("Getting CSRF token from %s", login_url)
             csrf_response = auth_session.get(login_url)
 
             if csrf_response.status_code != 200:
@@ -91,7 +98,7 @@ class SessionAuthHandler(BaseAuthHandler):
 
             # Extract CSRF token from cookies
             csrf_token = csrf_response.cookies.get(self.csrf_cookie)
-            if not csrf_token:
+            if csrf_token is None:
                 raise AuthenticationError(
                     "CSRF token not found in response cookies",
                     auth_type="session",
@@ -110,7 +117,7 @@ class SessionAuthHandler(BaseAuthHandler):
             }
 
             # POST credentials
-            logger.debug(f"Authenticating with {login_url}")
+            logger.debug("Authenticating with %s", login_url)
             response = auth_session.post(
                 login_url,
                 data=login_data,
@@ -162,7 +169,7 @@ class SessionAuthHandler(BaseAuthHandler):
             logger.info("Session authentication successful")
 
         except requests.exceptions.RequestException as e:
-            logger.error(f"Network error during session authentication: {e}")
+            logger.error("Network error during session authentication: %s", e)
             raise NetworkError(
                 "Network error during authentication",
                 original_exception=e,
@@ -180,10 +187,12 @@ class SessionAuthHandler(BaseAuthHandler):
         """Check if authentication is valid.
 
         Returns:
-            True if session cookies are present and not expired,
-            False otherwise.
+            True if a session is established and its cookies are present
+            and not expired, False otherwise.
         """
         if not self._authenticated or not self.session_cookies:
+            return False
+        if self._session is None:
             return False
         if self._expires_at is not None and time.time() >= self._expires_at:
             return False
@@ -207,10 +216,21 @@ class SessionAuthHandler(BaseAuthHandler):
     def apply_auth(self, session: requests.Session) -> None:
         """Apply authentication to a requests session.
 
+        Clears any previously-applied session cookies on the target session
+        before setting the current ones, so that reusing a session across
+        auth contexts (e.g. after re-authentication) does not leak stale
+        cookies from a prior handler state.
+
         Args:
             session: The requests.Session to apply authentication to.
         """
         if self.session_cookies:
+            # Remove cookies previously applied by this handler so a reused
+            # session does not carry stale identities from a prior
+            # apply_auth() call.
+            for name in list(self.session_cookies.keys()):
+                if name in session.cookies:
+                    del session.cookies[name]
             for name, value in self.session_cookies.items():
                 if value is not None:
                     session.cookies.set(name, value)
@@ -249,3 +269,16 @@ class SessionAuthHandler(BaseAuthHandler):
             The session ID if available, None otherwise.
         """
         return self.session_cookies.get("sessionid")
+
+    def __repr__(self) -> str:
+        """Return a debug representation that excludes sensitive fields.
+
+        Returns:
+            A string identifying the handler without exposing the stored
+            password or cookies.
+        """
+        return (
+            f"SessionAuthHandler(base_url={self.base_url!r}, "
+            f"login_endpoint={self.login_endpoint!r}, "
+            f"authenticated={self._authenticated!r})"
+        )

@@ -63,8 +63,10 @@ class TestRateLimiterConfigManagement(unittest.TestCase):
         config = RateLimitConfig(requests_per_second=5)
         self.limiter.add_config("test_provider", config)
 
-        # Access the provider to create a state entry via defaultdict
-        self.limiter.check("test_provider")
+        # Record a request to create a state entry. Note: check() is
+        # read-only and no longer creates state entries (issue: states
+        # pollution via defaultdict); use _record to populate state.
+        self.limiter._record("test_provider")
         self.assertIn("test_provider", self.limiter.states)
 
         # Remove config should also clean up state
@@ -96,9 +98,11 @@ class TestRateLimiterConfigManagement(unittest.TestCase):
         self.limiter.add_config("provider_a", config1)
         self.limiter.add_config("provider_b", config2)
 
-        # Access both to create state entries
-        self.limiter.check("provider_a")
-        self.limiter.check("provider_b")
+        # Record requests to create state entries. check() is read-only
+        # and no longer creates state entries (issue: states pollution
+        # via defaultdict); use _record to populate state.
+        self.limiter._record("provider_a")
+        self.limiter._record("provider_b")
 
         # Remove only provider_a
         self.limiter.remove_config("provider_a")
@@ -139,8 +143,12 @@ class TestRateLimiterCheckAndRecord(unittest.TestCase):
         """Tests that check returns True when under the rate limit."""
         self.assertTrue(self.limiter.check("test_provider"))
 
-    def test_check_blocks_request_over_limit(self) -> None:
+    @patch("pymtg.utils.rate_limiting.time.time")
+    def test_check_blocks_request_over_limit(self, mock_time) -> None:
         """Tests that check returns False when rate limit is exceeded."""
+        # Pin time so the 1-second requests_per_second window does not
+        # evict the recorded timestamps on slow/overloaded CI runners.
+        mock_time.return_value = 1000.0
         self.limiter._record("test_provider")
         self.limiter._record("test_provider")
         # Now at burst_size limit

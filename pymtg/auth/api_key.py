@@ -119,4 +119,8 @@ class APIKeyAuthHandler(BaseAuthHandler):
         """
         state = self.__dict__.copy()
         state["_api_key"] = None
+        # Keep the deserialized instance in a fully consistent unauthenticated
+        # state: any code reading _authenticated directly must agree with
+        # is_authenticated(), which returns False once _api_key is None.
+        state["_authenticated"] = False
         return state

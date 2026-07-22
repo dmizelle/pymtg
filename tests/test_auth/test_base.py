@@ -105,11 +105,16 @@ class TestBaseAuthHandlerInterface:
 
     def test_is_authenticated_returns_bool(self):
         """Test that is_authenticated is annotated to return bool."""
-        hints = typing.get_type_hints(BaseAuthHandler.is_authenticated)
-        assert hints.get("return") is bool
+        try:
+            hints = typing.get_type_hints(BaseAuthHandler.is_authenticated)
+        except NameError:
+            hints = {}
+        assert (
+            hints.get("return") is bool
+        ), "is_authenticated must be annotated to return bool"
 
     def test_apply_auth_accepts_session(self):
         """Test that apply_auth accepts a requests.Session parameter."""
         sig = inspect.signature(BaseAuthHandler.apply_auth)
-        assert "session" in sig.parameters
+        assert "session" in sig.parameters, "apply_auth must accept a session parameter"
         assert sig.parameters["session"].annotation is requests.Session

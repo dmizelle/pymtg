@@ -50,7 +50,7 @@ class ProviderConfig(BaseModel):
     rate_limit: dict[str, Any] = Field(
         default_factory=dict, description="Rate limit configuration"
     )
-    timeout: int = Field(default=30, description="Request timeout in seconds")
+    timeout: int = Field(default=30, description="Request timeout in seconds", gt=0)
     user_agent: str = Field(default="pymtg/0.1.0", description="User agent string")
 
 
@@ -72,7 +72,15 @@ PROVIDER_CONFIGS: dict[str, ProviderConfig] = {
     ),
     "moxfield": ProviderConfig(
         name="moxfield",
-        base_url="https://api.parse.bot/scraper/55189296-4a3a-4cd2-a006-802b22cd2b73/",
+        # NOTE: Moxfield has no public HTTP API. Requests are proxied through
+        # the third-party Parse.bot scraper wrapper service, whose embedded
+        # UUID path segment may be revoked or rotated by parse.bot at any
+        # time. Override this base_url with your own ProviderConfig if you
+        # need a different endpoint or wish to avoid routing traffic through
+        # a third-party intermediary.
+        base_url=(
+            "https://api.parse.bot/scraper/" "55189296-4a3a-4cd2-a006-802b22cd2b73/"
+        ),
         rate_limit={"requests_per_minute": 100},
         timeout=30,
         user_agent="pymtg/0.1.0 (+https://github.com/pymtg/pymtg)",

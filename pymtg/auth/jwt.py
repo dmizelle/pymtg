@@ -104,17 +104,14 @@ class JWTAuthHandler(BaseAuthHandler):
         auth_session = requests.Session()
         tokens_received = False
         try:
-            # Keep credentials in local scope only during the network call to
-            # minimize the window in which they are exposed on the instance.
-            # They are not stored on self between requests.
-            _req_username = username
-            _req_password = password
-
-            # Prepare login URL and data
+            # Prepare login URL and data. Credentials are kept in local scope
+            # only during the network call to minimize the window in which
+            # they are exposed on the instance; they are not stored on self
+            # between requests.
             login_url = f"{self.base_url}{self.login_endpoint}"
             login_data = {
-                "username": _req_username,
-                "password": _req_password,
+                "username": username,
+                "password": password,
             }
 
             logger.debug("Authenticating with %s", login_url)
@@ -132,15 +129,23 @@ class JWTAuthHandler(BaseAuthHandler):
 
             if response.status_code != 200:
                 error_msg = f"Login failed: {response.status_code}"
+                # Only surface structured error fields parsed from the JSON
+                # body. The raw response text is server-controlled and
+                # unvalidated; embedding it directly into the exception
+                # message could leak internal diagnostics or reflected
+                # user input into logs, so it is deliberately excluded.
                 if response.text:
                     try:
                         error_data = response.json()
                         if isinstance(error_data, dict):
-                            error_msg += f" - {error_data.get('detail', error_data.get('error', 'Unknown error'))}"
+                            detail = error_data.get(
+                                "detail", error_data.get("error", "")
+                            )
+                            if detail:
+                                error_msg += f" - {detail}"
                     except (json.JSONDecodeError, ValueError):
-                        # If response is not JSON, include text if it's short
-                        if len(response.text) < 200:
-                            error_msg += f" - {response.text.strip()}"
+                        # Non-JSON body: do not embed the raw text.
+                        pass
                 raise AuthenticationError(
                     error_msg,
                     auth_type="jwt",
@@ -288,6 +293,17 @@ class JWTAuthHandler(BaseAuthHandler):
         Handles both default (access-only) and rotation (access+refresh)
         response formats.
 
+        On any failure (non-200 status, unparseable body, or missing access
+        token in the response), all stored tokens are cleared and
+        ``_authenticated`` is set to ``False``. Because the JWT handler does
+        not retain username/password after a successful
+        :meth:`authenticate`, a failed token refresh leaves the handler
+        fully unauthenticated with no automatic fallback — the caller must
+        re-authenticate manually via :meth:`authenticate` (or via
+        :meth:`refresh` with explicit ``username``/``password`` arguments,
+        which routes to :meth:`authenticate` once ``_refresh_token`` is
+        ``None``).
+
         Args:
             refresh_token: The JWT refresh token to exchange.
 
@@ -313,6 +329,9 @@ class JWTAuthHandler(BaseAuthHandler):
 
             if response.status_code != 200:
                 error_msg = "Token refresh failed"
+                # Only surface structured error fields parsed from the JSON
+                # body; the raw response text is not embedded to avoid
+                # leaking server-controlled diagnostics into logs.
                 try:
                     error_data = response.json()
                     if isinstance(error_data, dict):
@@ -320,8 +339,8 @@ class JWTAuthHandler(BaseAuthHandler):
                         if detail:
                             error_msg += f": {detail}"
                 except (json.JSONDecodeError, ValueError):
-                    if response.text and len(response.text) < 200:
-                        error_msg += f": {response.text.strip()}"
+                    # Non-JSON body: do not embed the raw text.
+                    pass
                 # Clear stale tokens on refresh failure
                 self._access_token = None
                 self._refresh_token = None
@@ -352,6 +371,12 @@ class JWTAuthHandler(BaseAuthHandler):
             new_refresh = token_data.get("refresh")
 
             if not new_access or not isinstance(new_access, str):
+                # Clear stale tokens consistently with the other failure
+                # paths in this method so the handler is left fully
+                # unauthenticated rather than holding a stale access token.
+                self._access_token = None
+                self._refresh_token = None
+                self._authenticated = False
                 raise AuthenticationError(
                     "Refresh response did not contain a valid access token",
                     auth_type="jwt",
@@ -367,6 +392,12 @@ class JWTAuthHandler(BaseAuthHandler):
 
         except requests.exceptions.RequestException as e:
             logger.error("Network error during JWT refresh: %s", e)
+            # Clear stale tokens on refresh failure, consistent with the
+            # HTTP-error path, so is_authenticated() no longer reports True
+            # with an expired access token after a network failure.
+            self._access_token = None
+            self._refresh_token = None
+            self._authenticated = False
             raise NetworkError(
                 "Network error during token refresh",
                 original_exception=e,
@@ -383,9 +414,18 @@ class JWTAuthHandler(BaseAuthHandler):
         Args:
             session: The requests.Session to apply authentication to.
         """
-        if self._access_token:
-            auth_value = f"{self.auth_header_prefix} {self._access_token}"
-            session.headers.update({self.auth_header_name: auth_value})
+        if not self._access_token:
+            # Warn (rather than silently sending an unauthenticated request)
+            # so misconfigured callers are surfaced instead of receiving a
+            # confusing 401 from the server.
+            logger.warning(
+                "apply_auth() called on a JWTAuthHandler with no access "
+                "token; no Authorization header will be set. Call "
+                "authenticate(username=..., password=...) first."
+            )
+            return
+        auth_value = f"{self.auth_header_prefix} {self._access_token}"
+        session.headers.update({self.auth_header_name: auth_value})
 
     def clear_auth(self) -> None:
         """Clear authentication credentials.
@@ -445,5 +485,6 @@ class JWTAuthHandler(BaseAuthHandler):
         state["_refresh_token"] = None
         state["_username"] = None
         state["_password"] = None
+        state["_user_id"] = None
         state["_authenticated"] = False
         return state

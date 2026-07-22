@@ -18,6 +18,8 @@ from pymtg.exceptions import (
     NotFoundError,
     RateLimitError,
 )
+from pymtg.models.card import Card
+from pymtg.models.enums import Color
 from pymtg.providers.base import BaseProvider
 from pymtg.utils.http import HTTPClient
 
@@ -60,13 +62,13 @@ class MockProvider(BaseProvider):
     def search(
         self,
         name: str | None = None,
-        colors: list | None = None,
-        identity: list | None = None,
+        colors: list[Color] | None = None,
+        identity: list[Color] | None = None,
         type_line: str | None = None,
         limit: int = 20,
         page: int = 1,
         order: str | None = None,
-    ) -> list:
+    ) -> list[Card]:
         """Mock search. Required by BaseProvider abstract interface."""
         return []
 
@@ -76,7 +78,7 @@ class MockProvider(BaseProvider):
         limit: int = 20,
         page: int = 1,
         order: str | None = None,
-    ) -> list:
+    ) -> list[Card]:
         """Mock search_syntax. Required by BaseProvider abstract interface."""
         return []
 
@@ -128,6 +130,8 @@ class TestHandleResponse:
         response = MagicMock()
         response.status_code = 404
         response.headers = {}
+        response.json.return_value = {"error": "not found"}
+        response.text = "not found"
 
         with pytest.raises(NotFoundError) as exc_info:
             provider._handle_response(response)
@@ -141,6 +145,8 @@ class TestHandleResponse:
         response = MagicMock()
         response.status_code = 404
         response.headers = {}
+        response.json.return_value = {"error": "not found"}
+        response.text = "not found"
 
         with pytest.raises(NotFoundError) as exc_info:
             provider._handle_response(response, resource_type="card")
@@ -153,6 +159,8 @@ class TestHandleResponse:
         response = MagicMock()
         response.status_code = 401
         response.headers = {}
+        response.json.return_value = {"detail": "Unauthorized"}
+        response.text = "Unauthorized"
 
         with pytest.raises(AuthenticationError) as exc_info:
             provider._handle_response(response)
@@ -166,6 +174,8 @@ class TestHandleResponse:
         response = MagicMock()
         response.status_code = 403
         response.headers = {}
+        response.json.return_value = {"detail": "Forbidden"}
+        response.text = "Forbidden"
 
         with pytest.raises(AuthenticationError) as exc_info:
             provider._handle_response(response)
@@ -207,9 +217,13 @@ class TestHandleResponse:
         response = MagicMock()
         response.status_code = 429
 
-        # Use a dynamically generated future date to avoid flakiness
+        # Use a dynamically generated future date and format it with
+        # email.utils.format_datetime to guarantee RFC 2822-compliant,
+        # English-locale output regardless of the runtime locale.
+        from email.utils import format_datetime
+
         future_date = datetime.now(timezone.utc) + timedelta(days=1)
-        http_date = future_date.strftime("%a, %d %b %Y %H:%M:%S GMT")
+        http_date = format_datetime(future_date, usegmt=True)
         response.headers = {"Retry-After": http_date}
 
         with pytest.raises(RateLimitError) as exc_info:
@@ -245,6 +259,8 @@ class TestHandleResponse:
         response = MagicMock()
         response.status_code = 400
         response.headers = {}
+        response.json.return_value = {"error": "bad request"}
+        response.text = "bad request"
 
         with pytest.raises(APIError) as exc_info:
             provider._handle_response(response)
@@ -258,6 +274,8 @@ class TestHandleResponse:
         response = MagicMock()
         response.status_code = 500
         response.headers = {}
+        response.json.return_value = {"error": "server error"}
+        response.text = "server error"
 
         with pytest.raises(APIError) as exc_info:
             provider._handle_response(response)

@@ -26,6 +26,54 @@ from pymtg.models.pricing import Pricing
 from pymtg.providers.cardmarket import Cardmarket
 
 
+def _make_mock_search_response(product_name: str = "Test") -> dict:
+    """Build a Cardmarket-style search response payload for tests.
+
+    The payload mirrors the shape returned by the Cardmarket search
+    endpoint. Centralizing it avoids copy-paste drift across the several
+    search-game tests that exercise the same response structure.
+
+    Args:
+        product_name: The product/card name to embed in the response.
+
+    Returns:
+        A dict mimicking a Cardmarket search API response.
+    """
+    return {
+        "results": [
+            {
+                "idProduct": 12345,
+                "productName": product_name,
+                "cardName": product_name,
+                "idLanguage": 1,
+                "idSet": 1,
+                "idGame": 1,
+                "idRarity": 1,
+                "idCardType": 1,
+                "idSubType": 1,
+                "idColor": 1,
+                "idFormat": 1,
+                "idSetType": 1,
+                "idSetFormat": 1,
+                "idCardFace": 1,
+                "idLayout": 1,
+                "idCardLayout": 1,
+                "idCardFaceType": 1,
+                "idCardFaceLayout": 1,
+                "idCardFaceLayoutType": 1,
+                "idCardFaceLayoutSubType": 1,
+                "idCardFaceLayoutSubTypeType": 1,
+                "idCardFaceLayoutSubTypeSubType": 1,
+            }
+        ],
+        "numberOfResults": 1,
+        "currentPage": 1,
+        "currentPageResult": 1,
+        "nPages": 1,
+        "actionsWarning": [],
+    }
+
+
 class TestCardmarketInitialization:
     """Tests for Cardmarket provider initialization."""
 
@@ -283,6 +331,9 @@ class TestCardmarketSearch:
                 cardmarket.search(name="Black Lotus")
 
             assert "Network error" in str(exc_info.value)
+            # The original RequestException should be chained as __cause__
+            # so the underlying traceback is preserved.
+            assert exc_info.value.__cause__ is not None
 
     def test_search_negative_limit_raises(self):
         """Test search with limit <= 0 raises InvalidQueryError.
@@ -324,39 +375,7 @@ class TestCardmarketSearch:
 
     def test_search_game_defaults_to_magic(self):
         """Test search defaults game to Magic when not provided."""
-        mock_response_data = {
-            "results": [
-                {
-                    "idProduct": 12345,
-                    "productName": "Black Lotus",
-                    "cardName": "Black Lotus",
-                    "idLanguage": 1,
-                    "idSet": 1,
-                    "idGame": 1,
-                    "idRarity": 1,
-                    "idCardType": 1,
-                    "idSubType": 1,
-                    "idColor": 1,
-                    "idFormat": 1,
-                    "idSetType": 1,
-                    "idSetFormat": 1,
-                    "idCardFace": 1,
-                    "idLayout": 1,
-                    "idCardLayout": 1,
-                    "idCardFaceType": 1,
-                    "idCardFaceLayout": 1,
-                    "idCardFaceLayoutType": 1,
-                    "idCardFaceLayoutSubType": 1,
-                    "idCardFaceLayoutSubTypeType": 1,
-                    "idCardFaceLayoutSubTypeSubType": 1,
-                }
-            ],
-            "numberOfResults": 1,
-            "currentPage": 1,
-            "currentPageResult": 1,
-            "nPages": 1,
-            "actionsWarning": [],
-        }
+        mock_response_data = _make_mock_search_response("Black Lotus")
         cardmarket = Cardmarket(
             consumer_key="test_consumer_key",
             consumer_secret="test_consumer_secret",
@@ -374,39 +393,7 @@ class TestCardmarketSearch:
 
     def test_search_game_uses_provided_value(self):
         """Test search uses provided game value."""
-        mock_response_data = {
-            "results": [
-                {
-                    "idProduct": 12345,
-                    "productName": "Test",
-                    "cardName": "Test",
-                    "idLanguage": 1,
-                    "idSet": 1,
-                    "idGame": 1,
-                    "idRarity": 1,
-                    "idCardType": 1,
-                    "idSubType": 1,
-                    "idColor": 1,
-                    "idFormat": 1,
-                    "idSetType": 1,
-                    "idSetFormat": 1,
-                    "idCardFace": 1,
-                    "idLayout": 1,
-                    "idCardLayout": 1,
-                    "idCardFaceType": 1,
-                    "idCardFaceLayout": 1,
-                    "idCardFaceLayoutType": 1,
-                    "idCardFaceLayoutSubType": 1,
-                    "idCardFaceLayoutSubTypeType": 1,
-                    "idCardFaceLayoutSubTypeSubType": 1,
-                }
-            ],
-            "numberOfResults": 1,
-            "currentPage": 1,
-            "currentPageResult": 1,
-            "nPages": 1,
-            "actionsWarning": [],
-        }
+        mock_response_data = _make_mock_search_response("Test")
         cardmarket = Cardmarket(
             consumer_key="test_consumer_key",
             consumer_secret="test_consumer_secret",
@@ -424,39 +411,7 @@ class TestCardmarketSearch:
 
     def test_search_game_invalid_defaults_to_magic_with_warning(self, caplog):
         """Test search defaults game to Magic when invalid with warning."""
-        mock_response_data = {
-            "results": [
-                {
-                    "idProduct": 12345,
-                    "productName": "Test",
-                    "cardName": "Test",
-                    "idLanguage": 1,
-                    "idSet": 1,
-                    "idGame": 1,
-                    "idRarity": 1,
-                    "idCardType": 1,
-                    "idSubType": 1,
-                    "idColor": 1,
-                    "idFormat": 1,
-                    "idSetType": 1,
-                    "idSetFormat": 1,
-                    "idCardFace": 1,
-                    "idLayout": 1,
-                    "idCardLayout": 1,
-                    "idCardFaceType": 1,
-                    "idCardFaceLayout": 1,
-                    "idCardFaceLayoutType": 1,
-                    "idCardFaceLayoutSubType": 1,
-                    "idCardFaceLayoutSubTypeType": 1,
-                    "idCardFaceLayoutSubTypeSubType": 1,
-                }
-            ],
-            "numberOfResults": 1,
-            "currentPage": 1,
-            "currentPageResult": 1,
-            "nPages": 1,
-            "actionsWarning": [],
-        }
+        mock_response_data = _make_mock_search_response("Test")
         cardmarket = Cardmarket(
             consumer_key="test_consumer_key",
             consumer_secret="test_consumer_secret",
@@ -478,39 +433,7 @@ class TestCardmarketSearch:
 
     def test_search_game_empty_string_defaults_to_magic(self):
         """Test search defaults game to Magic when empty string."""
-        mock_response_data = {
-            "results": [
-                {
-                    "idProduct": 12345,
-                    "productName": "Test",
-                    "cardName": "Test",
-                    "idLanguage": 1,
-                    "idSet": 1,
-                    "idGame": 1,
-                    "idRarity": 1,
-                    "idCardType": 1,
-                    "idSubType": 1,
-                    "idColor": 1,
-                    "idFormat": 1,
-                    "idSetType": 1,
-                    "idSetFormat": 1,
-                    "idCardFace": 1,
-                    "idLayout": 1,
-                    "idCardLayout": 1,
-                    "idCardFaceType": 1,
-                    "idCardFaceLayout": 1,
-                    "idCardFaceLayoutType": 1,
-                    "idCardFaceLayoutSubType": 1,
-                    "idCardFaceLayoutSubTypeType": 1,
-                    "idCardFaceLayoutSubTypeSubType": 1,
-                }
-            ],
-            "numberOfResults": 1,
-            "currentPage": 1,
-            "currentPageResult": 1,
-            "nPages": 1,
-            "actionsWarning": [],
-        }
+        mock_response_data = _make_mock_search_response("Test")
         cardmarket = Cardmarket(
             consumer_key="test_consumer_key",
             consumer_secret="test_consumer_secret",
@@ -682,6 +605,10 @@ class TestCardmarketPricing:
 
             assert isinstance(pricing, Pricing)
             assert pricing.cardmarket is not None
+            # Verify the mock prices were actually parsed into the correct
+            # condition-mapped fields (Near Mint -> avg1, Excellent -> low_ex).
+            assert pricing.cardmarket.avg1 == 123.45
+            assert pricing.cardmarket.low_ex == 99.99
 
     def test_get_pricing_invalid_product_id(self):
         """Test get_pricing with invalid product ID."""

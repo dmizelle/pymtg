@@ -93,6 +93,27 @@ class Color(StrEnum):
     # Five-color
     WUBRG = "WUBRG"
 
+    @classmethod
+    def _missing_(cls, value: object) -> "Color | None":
+        """Map alternative color codes to canonical Color members.
+
+        Some providers use ``"C"`` to denote colorless, but the canonical
+        ``Color.COLORLESS`` member uses the empty string (``""``). Without
+        this hook, ``Color("C")`` raises ``ValueError``. This method maps
+        the ``"C"`` alias to ``Color.COLORLESS`` so provider code that
+        constructs colors from string codes works uniformly.
+
+        Args:
+            value: The value passed to the ``Color`` constructor.
+
+        Returns:
+            The matching ``Color`` member for recognized aliases, or
+            ``None`` to defer to the default ``ValueError`` behavior.
+        """
+        if isinstance(value, str) and value == "C":
+            return cls.COLORLESS
+        return None
+
     @property
     def full_name(self) -> str:
         """Return the full display name for the color or color combination.
@@ -116,15 +137,23 @@ class Color(StrEnum):
     def from_full_name(cls, name: str) -> "Color":
         """Convert a full color name to Color enum value.
 
+        Accepts both single-color names (e.g., ``"White"``, ``"Blue"``,
+        ``"Colorless"``) and multi-color names as produced by
+        ``full_name`` (e.g., ``"White Blue"`` round-trips to
+        ``Color.AZORIUS``). Multi-color names are split on whitespace and
+        recombined in WUBRG order via ``from_colors``.
+
         Args:
             name: The full color name (e.g., "White", "Blue",
-                "Colorless").
+                "Colorless", "White Blue").
 
         Returns:
             The corresponding Color enum value.
 
         Raises:
-            ValueError: If the name does not match a known color.
+            ValueError: If any token in the name does not match a known
+                single color name, or if the combined colors do not map
+                to a predefined Color member.
         """
         mapping = {
             "White": cls.WHITE,
@@ -134,9 +163,20 @@ class Color(StrEnum):
             "Green": cls.GREEN,
             "Colorless": cls.COLORLESS,
         }
-        if name not in mapping:
-            raise ValueError(f"Unknown color name: {name!r}")
-        return mapping[name]
+        tokens = name.split()
+        if len(tokens) == 1:
+            token = tokens[0]
+            if token not in mapping:
+                raise ValueError(f"Unknown color name: {name!r}")
+            return mapping[token]
+        # Multi-color name: look up each token and combine. Colorless
+        # tokens are dropped because from_colors ignores the empty value.
+        colors = []
+        for token in tokens:
+            if token not in mapping:
+                raise ValueError(f"Unknown color name: {token!r}")
+            colors.append(mapping[token])
+        return cls.from_colors(colors)
 
     @classmethod
     def from_colors(cls, colors: list["Color"]) -> "Color":
@@ -153,12 +193,15 @@ class Color(StrEnum):
         """
         # WUBRG order for sorting
         color_order = {"W": 0, "U": 1, "B": 2, "R": 3, "G": 4}
-        # Sort by WUBRG order, not alphabetically
+        # Sort by WUBRG order, not alphabetically, and deduplicate so
+        # repeated colors (e.g. [WHITE, WHITE]) collapse rather than
+        # producing invalid combinations like "WW".
         sorted_colors = sorted(
             (c for c in colors if c.value),
             key=lambda c: color_order.get(c.value, 5),
         )
-        combined = "".join(c.value for c in sorted_colors)
+        deduped_colors = list(dict.fromkeys(sorted_colors))
+        combined = "".join(c.value for c in deduped_colors)
         # Try to find exact match in enum
         for member in cls:
             if member.value == combined:
@@ -172,6 +215,12 @@ class Color(StrEnum):
     def __contains__(self, color: Union[str, "Color"]) -> bool:  # type: ignore[override]
         """Check if this color combination contains a specific color.
 
+        A colorless identity (the empty string) is never considered to
+        contain or be contained by any color, because the empty string is
+        a substring of every string and would otherwise produce
+        semantically incorrect results (e.g. ``Color.COLORLESS in
+        Color.WHITE``).
+
         Args:
             color: The Color to check for.
 
@@ -179,8 +228,8 @@ class Color(StrEnum):
             True if this color combination contains the specified color.
         """
         if isinstance(color, Color):
-            return color.value in self.value
-        return color in self.value
+            return bool(color.value) and bool(self.value) and color.value in self.value
+        return bool(color) and bool(self.value) and color in self.value
 
     def is_multicolor(self) -> bool:
         """Check if this is a multicolor combination.

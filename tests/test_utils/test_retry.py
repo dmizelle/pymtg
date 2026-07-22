@@ -62,6 +62,16 @@ class TestRetryConfig(unittest.TestCase):
         self.assertIn("max_retries=5", repr_str)
         self.assertIn("backoff_factor=1.0", repr_str)
 
+    def test_negative_max_retries_raises(self) -> None:
+        """Tests that a negative max_retries raises ValueError."""
+        with self.assertRaises(ValueError):
+            RetryConfig(max_retries=-1)
+
+    def test_zero_max_retries_allowed(self) -> None:
+        """Tests that zero max_retries is allowed (no retries)."""
+        config = RetryConfig(max_retries=0)
+        self.assertEqual(config.max_retries, 0)
+
 
 class TestCalculateBackoff(unittest.TestCase):
     """Tests for calculate_backoff function."""
@@ -69,26 +79,27 @@ class TestCalculateBackoff(unittest.TestCase):
     def test_backoff_without_jitter(self) -> None:
         """Tests backoff calculation without jitter."""
         # backoff_factor * (2 ** attempt)
-        self.assertEqual(calculate_backoff(0, 1.0, 10.0, jitter=False), 1.0)
-        self.assertEqual(calculate_backoff(1, 1.0, 10.0, jitter=False), 2.0)
-        self.assertEqual(calculate_backoff(2, 1.0, 10.0, jitter=False), 4.0)
-        self.assertEqual(calculate_backoff(3, 1.0, 10.0, jitter=False), 8.0)
+        self.assertAlmostEqual(calculate_backoff(0, 1.0, 10.0, jitter=False), 1.0)
+        self.assertAlmostEqual(calculate_backoff(1, 1.0, 10.0, jitter=False), 2.0)
+        self.assertAlmostEqual(calculate_backoff(2, 1.0, 10.0, jitter=False), 4.0)
+        self.assertAlmostEqual(calculate_backoff(3, 1.0, 10.0, jitter=False), 8.0)
 
     def test_backoff_respects_max(self) -> None:
         """Tests that backoff is capped at max_backoff."""
-        self.assertEqual(calculate_backoff(10, 1.0, 5.0, jitter=False), 5.0)
+        self.assertAlmostEqual(calculate_backoff(10, 1.0, 5.0, jitter=False), 5.0)
 
     def test_backoff_with_jitter(self) -> None:
         """Tests that jitter produces a value within expected range."""
         with patch("pymtg.utils.retry.random.random", return_value=0.5):
             # jitter_factor = 0.5 + 0.5 = 1.0, so no change
             result = calculate_backoff(0, 1.0, 10.0, jitter=True)
-            self.assertEqual(result, 1.0)
+            self.assertAlmostEqual(result, 1.0)
 
-        with patch("pymtg.utils.retry.random.random", return_value=1.0):
-            # jitter_factor = 0.5 + 1.0 = 1.5
+        with patch("pymtg.utils.retry.random.random", return_value=0.99):
+            # jitter_factor = 0.5 + 0.99 = 1.49 (a value random.random()
+            # can actually produce, since its range is [0.0, 1.0))
             result = calculate_backoff(0, 1.0, 10.0, jitter=True)
-            self.assertEqual(result, 1.5)
+            self.assertAlmostEqual(result, 1.49)
 
 
 class TestRetryOnRateLimit(unittest.TestCase):
@@ -369,10 +380,34 @@ class TestRetryContext(unittest.TestCase):
         self.assertIs(ctx.last_exception, exc)
 
     def test_retry_exceptions_property(self) -> None:
-        """Tests that retry_exceptions property returns config value."""
+        """Tests that retry_exceptions property includes TimeoutError.
+
+        When ``retry_on_timeout`` is True (the default), the
+        ``retry_exceptions`` property includes ``TimeoutError`` so that
+        ``except retry.retry_exceptions`` catches timeouts consistently
+        with the ``retry_with_config`` decorator.
+        """
         config = RetryConfig(retry_exceptions=(ValueError,))
         ctx = RetryContext(config)
+        # retry_on_timeout defaults to True, so TimeoutError is appended.
+        self.assertEqual(ctx.retry_exceptions, (ValueError, TimeoutError))
+
+    def test_retry_exceptions_property_excludes_timeout_when_disabled(
+        self,
+    ) -> None:
+        """Tests TimeoutError is excluded when retry_on_timeout=False."""
+        config = RetryConfig(retry_exceptions=(ValueError,), retry_on_timeout=False)
+        ctx = RetryContext(config)
         self.assertEqual(ctx.retry_exceptions, (ValueError,))
+
+    def test_retry_exceptions_property_timeout_explicit(self) -> None:
+        """Tests explicit TimeoutError is not duplicated."""
+        config = RetryConfig(
+            retry_exceptions=(ValueError, TimeoutError),
+            retry_on_timeout=True,
+        )
+        ctx = RetryContext(config)
+        self.assertEqual(ctx.retry_exceptions, (ValueError, TimeoutError))
 
     def test_wait_with_rate_limit_error(self) -> None:
         """Tests that wait respects Retry-After header."""
@@ -386,6 +421,25 @@ class TestRetryContext(unittest.TestCase):
             ctx.wait()
 
         mock_sleep.assert_called_once_with(5.0)
+
+    def test_wait_no_op_when_no_retries_remain(self) -> None:
+        """Tests wait() is a no-op when no retries remain.
+
+        Verifies the fix: calling wait() after the final
+        record_failure() should not sleep (issue: wait() blocks
+        unnecessarily after exhausting retries).
+        """
+        config = RetryConfig(max_retries=1, backoff_factor=1.0, jitter=False)
+        ctx = RetryContext(config)
+        # Exhaust all attempts (max_attempts = max_retries + 1 = 2).
+        ctx.record_failure(ValueError("fail"))
+        ctx.record_failure(ValueError("fail"))
+        self.assertFalse(ctx.should_continue())
+
+        with patch("pymtg.utils.retry.time.sleep") as mock_sleep:
+            ctx.wait()
+
+        mock_sleep.assert_not_called()
 
     def test_context_manager_protocol(self) -> None:
         """Tests that RetryContext works as a context manager."""

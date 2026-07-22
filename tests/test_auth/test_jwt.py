@@ -190,12 +190,18 @@ class TestJWTAuthHandlerApplyAuth:
         )
 
     def test_apply_auth_no_token(self):
-        """Test apply_auth does nothing when no token."""
+        """Test apply_auth logs a warning and does nothing when no token.
+
+        Rather than silently sending an unauthenticated request, the
+        handler warns and leaves the session unmodified.
+        """
         handler = JWTAuthHandler("https://archidekt.com")
 
         session = MagicMock()
-        handler.apply_auth(session)
+        with patch("pymtg.auth.jwt.logger") as mock_logger:
+            handler.apply_auth(session)
 
+        mock_logger.warning.assert_called_once()
         # Should not modify headers
         session.headers.update.assert_not_called()
 
@@ -496,6 +502,11 @@ class TestJWTAuthHandlerRefresh:
             handler.refresh()
 
         assert "Network error during token refresh" in str(exc_info.value)
+        # Stale tokens should be cleared on refresh failure, consistent
+        # with the HTTP-error path and test_refresh_token_expired.
+        assert handler.is_authenticated() is False
+        assert handler.access_token is None
+        assert handler.refresh_token is None
 
     @patch("pymtg.auth.jwt.requests.Session")
     def test_refresh_response_missing_access(self, mock_session_class):
@@ -516,6 +527,10 @@ class TestJWTAuthHandlerRefresh:
             handler.refresh()
 
         assert "did not contain a valid access token" in str(exc_info.value)
+        # Stale tokens should be cleared on refresh failure.
+        assert handler.is_authenticated() is False
+        assert handler.access_token is None
+        assert handler.refresh_token is None
 
     @patch("pymtg.auth.jwt.requests.Session")
     def test_refresh_fallback_to_credentials(self, mock_session_class):
@@ -549,6 +564,7 @@ class TestJWTAuthHandlerRefresh:
         mock_session.post.assert_called_once()
         call_args = mock_session.post.call_args
         assert "/rest-auth/login/" in call_args.args[0]
+        assert handler._username is None
         assert handler._password is None
 
 

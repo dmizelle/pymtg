@@ -18,7 +18,9 @@ Tests cover:
 
 import json
 import warnings
+from datetime import date
 from typing import ClassVar
+from unittest.mock import patch
 
 import pytest
 from pydantic import AnyUrl, ValidationError
@@ -731,9 +733,7 @@ class TestCard:
             power="2",
             toughness="2",
         )
-        original = Card._warn_face_inconsistency
-        Card._warn_face_inconsistency = True
-        try:
+        with patch.object(Card, "_warn_face_inconsistency", True):
             with pytest.warns(UserWarning) as record:
                 Card(
                     id="test-id",
@@ -742,8 +742,6 @@ class TestCard:
                     toughness="3",
                     card_faces=[face],
                 )
-        finally:
-            Card._warn_face_inconsistency = original
         # Three warnings expected: name, power, toughness.
         assert len(record) >= 3
         messages = [str(w.message) for w in record]
@@ -764,9 +762,7 @@ class TestCard:
         """
         face1 = CardFace(name="Front", power="2", toughness="2")
         face2 = CardFace(name="Back", power="5", toughness="5")
-        original = Card._warn_face_inconsistency
-        Card._warn_face_inconsistency = True
-        try:
+        with patch.object(Card, "_warn_face_inconsistency", True):
             with warnings.catch_warnings():
                 warnings.simplefilter("error", UserWarning)
                 Card(
@@ -776,8 +772,6 @@ class TestCard:
                     toughness="2",
                     card_faces=[face1, face2],
                 )
-        finally:
-            Card._warn_face_inconsistency = original
 
     def test_card_validator_silent_when_consistent(self) -> None:
         """Test that the model_validator is silent when fields match.
@@ -1346,7 +1340,8 @@ class TestDeck:
         )
         assert deck_with_cards.is_valid_for_format() is True
 
-        # Deck with cards and no format should be valid
+        # Deck with cards and no format should be invalid (format is
+        # required by is_valid_for_format's contract).
         deck_no_format = Deck(
             id="deck-id",
             name="Test Deck",
@@ -1354,7 +1349,7 @@ class TestDeck:
                 DeckCard(card=Card(id="1", name="Lightning Bolt"), count=4),
             ],
         )
-        assert deck_no_format.is_valid_for_format() is True
+        assert deck_no_format.is_valid_for_format() is False
 
 
 class TestSet:
@@ -1366,7 +1361,7 @@ class TestSet:
             code="LEA",
             name="Limited Edition Alpha",
             set_type=SetType.CORE,
-            released_at="1993-08-05",
+            released_at=date(1993, 8, 5),
             block_code="LEA",
             block_name="Limited Edition",
             parent_set_code=None,
@@ -1852,13 +1847,16 @@ class TestPyMTGBaseModel:
 
             color: Color
 
-        # Should accept enum value string
+        # With use_enum_values=True, the stored value is the plain
+        # string "W", not the Color enum instance.
         model1 = TestModel(color=Color("W"))
-        assert model1.color == Color.WHITE
+        assert model1.color == "W"
+        assert isinstance(model1.color, str)
+        assert not isinstance(model1.color, Color)
 
-        # Should accept enum instance
         model2 = TestModel(color=Color.BLUE)
-        assert model2.color == Color.BLUE
+        assert model2.color == "U"
+        assert isinstance(model2.color, str)
 
 
 class TestModelSerialization:

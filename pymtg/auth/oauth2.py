@@ -105,7 +105,7 @@ class OAuth2ClientCredentialsHandler(BaseAuthHandler):
                 auth = (self._client_id, self._client_secret)
 
                 # Request token
-                logger.debug(f"Requesting OAuth2 token from {self.token_url}")
+                logger.debug("Requesting OAuth2 token from %s", self.token_url)
                 response = requests.post(
                     self.token_url,
                     data=data,
@@ -139,7 +139,7 @@ class OAuth2ClientCredentialsHandler(BaseAuthHandler):
                         f"Invalid JSON response from token endpoint: {e}",
                         auth_type="oauth2",
                         status_code=response.status_code,
-                    )
+                    ) from e
 
                 # Validate required fields before updating state
                 if not token_data.get("access_token"):
@@ -166,7 +166,12 @@ class OAuth2ClientCredentialsHandler(BaseAuthHandler):
                             status_code=response.status_code,
                         ) from e
                 else:
-                    new_expires_at = None
+                    # When the token endpoint omits expires_in, default to a
+                    # conservative 1-hour expiry rather than treating the token
+                    # as never-expiring. This prevents a token that has been
+                    # revoked server-side from being used indefinitely until an
+                    # API call returns a 401.
+                    new_expires_at = datetime.now() + timedelta(hours=1)
 
                 # Commit all related state fields atomically.
                 self.access_token = new_access_token
@@ -184,7 +189,7 @@ class OAuth2ClientCredentialsHandler(BaseAuthHandler):
                 self._authenticated = False
                 raise
             except requests.exceptions.RequestException as e:
-                logger.error(f"Network error during OAuth2 authentication: {e}")
+                logger.error("Network error during OAuth2 authentication: %s", e)
                 self.access_token = None
                 self.token_type = None
                 self.expires_at = None

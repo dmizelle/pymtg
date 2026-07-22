@@ -6,7 +6,7 @@ header handling, and request building.
 
 import pytest
 
-from pymtg.utils.http import HTTPClient
+from pymtg.utils.http import DEFAULT_USER_AGENT, HTTPClient
 
 
 def test_http_client_creation_valid_base_url() -> None:
@@ -73,7 +73,18 @@ def test_http_client_float_timeout() -> None:
 def test_http_client_default_user_agent() -> None:
     """Test HTTPClient uses default User-Agent."""
     client = HTTPClient("https://api.example.com")
-    assert client.user_agent is not None
+    assert client.user_agent == DEFAULT_USER_AGENT
+
+
+def test_http_client_empty_user_agent_falls_back_to_default() -> None:
+    """Test that an empty user_agent falls back to the default.
+
+    The implementation uses ``user_agent or DEFAULT_USER_AGENT``, so a
+    falsy value (empty string) must fall back to the default rather than
+    leaving the User-Agent unset.
+    """
+    client = HTTPClient("https://api.example.com", user_agent="")
+    assert client.user_agent == DEFAULT_USER_AGENT
 
 
 def test_http_client_custom_user_agent() -> None:
@@ -96,11 +107,20 @@ def test_build_url_with_endpoint_no_leading_slash() -> None:
     assert url == "https://api.example.com/cards"
 
 
-def test_build_url_with_full_url_endpoint() -> None:
-    """Test _build_url with absolute URL endpoint."""
+def test_build_url_rejects_full_url_endpoint() -> None:
+    """Test _build_url rejects absolute URL endpoints to prevent SSRF."""
     client = HTTPClient("https://api.example.com")
-    url = client._build_url("https://other.com/cards")
-    assert url == "https://other.com/cards"
+    with pytest.raises(ValueError, match="absolute URLs are not permitted"):
+        client._build_url("https://other.com/cards")
+
+
+def test_build_url_rejects_path_traversal() -> None:
+    """Test _build_url rejects endpoints that escape the base path."""
+    client = HTTPClient("https://api.example.com")
+    with pytest.raises(ValueError, match="escape the base path"):
+        client._build_url("../../etc/passwd")
+    with pytest.raises(ValueError, match="escape the base path"):
+        client._build_url("../admin/secret")
 
 
 def test_build_url_with_empty_endpoint() -> None:

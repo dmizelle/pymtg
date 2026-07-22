@@ -5,6 +5,7 @@ for making requests to MTG API providers.
 """
 
 import logging
+import posixpath
 from typing import Any, cast
 
 import requests
@@ -90,7 +91,8 @@ class HTTPClient:
                 Defaults to the pymtg default User-Agent.
 
         Raises:
-            ValueError: If base_url is not a valid URL (must start with http:// or https://).
+            ValueError: If base_url is not a valid URL (must start with
+                http:// or https://), or if timeout is not a positive number.
         """
         if not isinstance(base_url, str):
             raise ValueError("base_url must be a string")
@@ -99,6 +101,10 @@ class HTTPClient:
             raise ValueError(
                 "base_url must be a valid URL starting with http:// or https://"
             )
+        if not isinstance(timeout, (int, float)) or isinstance(timeout, bool):
+            raise ValueError("timeout must be a positive number")
+        if timeout <= 0:
+            raise ValueError("timeout must be a positive number")
         self.session = requests.Session()
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
@@ -418,6 +424,12 @@ class HTTPClient:
     def _build_url(self, endpoint: str) -> str:
         """Build a full URL from the base URL and endpoint.
 
+        The endpoint is always joined to ``base_url``; absolute URLs in
+        ``endpoint`` are rejected to prevent SSRF (a caller-controlled
+        ``endpoint`` must not redirect requests to an arbitrary host).
+        Path traversal (``..`` segments that would escape the base path)
+        is also rejected.
+
         Args:
             endpoint: The API endpoint. Must be a non-empty string.
 
@@ -425,19 +437,30 @@ class HTTPClient:
             The full URL.
 
         Raises:
-            ValueError: If endpoint is empty.
+            ValueError: If endpoint is empty, is an absolute URL (which
+                would bypass ``base_url`` and enable SSRF), or contains
+                ``..`` segments that escape the base path.
         """
         if not isinstance(endpoint, str):
             raise ValueError("endpoint must be a string")
         endpoint = endpoint.strip()
         if not endpoint:
             raise ValueError("endpoint must be a non-empty string")
+        # Reject absolute URLs to prevent SSRF: a caller-supplied endpoint
+        # must not override base_url and redirect to an arbitrary host.
         if endpoint.startswith(("http://", "https://")):
-            return endpoint
+            raise ValueError(
+                "absolute URLs are not permitted as endpoints; the "
+                "endpoint is always joined to base_url to prevent SSRF"
+            )
         # base_url already has trailing slashes stripped in __init__;
         # ensure the endpoint has no leading slash to avoid a double slash.
         path = endpoint.lstrip("/")
-        return f"{self.base_url}/{path}"
+        # Normalize the path and reject traversal that escapes the base.
+        normalized = posixpath.normpath(path)
+        if normalized == ".." or normalized.startswith("../"):
+            raise ValueError("endpoint must not escape the base path")
+        return f"{self.base_url}/{normalized}"
 
     def _merge_headers(
         self, additional_headers: dict[str, str] | None

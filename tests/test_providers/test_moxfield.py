@@ -1013,6 +1013,34 @@ class TestMoxfieldIterSearch(unittest.TestCase):
         self.assertEqual(second_call.kwargs["page"], 2)
         self.assertEqual(second_call.kwargs["limit"], 5)
 
+    def test_iter_search_stops_on_partial_page(self):
+        """Test iter_search stops when a page is shorter than page_size.
+
+        Verifies the partial-page stop condition: when a returned page
+        contains fewer cards than ``page_size``, iteration terminates
+        without fetching another page. This complements
+        ``test_iter_search_basic`` (which exercises the empty-page stop
+        condition) so both stop branches are covered.
+        """
+        moxfield = Moxfield(api_key="test-key")
+        # A partial first page (3 cards, page_size=5) should terminate
+        # iteration immediately without a second fetch.
+        partial_page = [
+            Card(id=str(i), name=f"Card {i}", source="moxfield") for i in range(3)
+        ]
+        with patch.object(
+            moxfield,
+            "search",
+            side_effect=[partial_page],
+        ) as mock_search:
+            results = list(moxfield.iter_search(name="Test", limit=10, page_size=5))
+        self.assertEqual(len(results), 3)
+        # Only one fetch was needed because the partial page signals the end.
+        self.assertEqual(mock_search.call_count, 1)
+        first_call = mock_search.call_args_list[0]
+        self.assertEqual(first_call.kwargs["page"], 1)
+        self.assertEqual(first_call.kwargs["limit"], 5)
+
 
 class TestMoxfieldErrorHandling(unittest.TestCase):
     """Test Moxfield error handling."""

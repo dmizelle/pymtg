@@ -8,8 +8,6 @@ specified in the task list including:
 - Exception attributes (provider, status_code, etc.)
 """
 
-import pytest
-
 from pymtg.exceptions import (
     APIError,
     AuthenticationError,

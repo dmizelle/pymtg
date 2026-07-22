@@ -14,7 +14,7 @@ Note:
 
 import logging
 import threading
-from typing import Any, Generator
+from typing import Any, Generator, NoReturn
 
 import requests
 
@@ -144,7 +144,7 @@ class TCGPlayer(BaseProvider):
             raise ValueError("client_secret cannot be empty")
 
         # Initialize thread safety lock
-        self._auth_lock = threading.Lock()
+        self._auth_lock = threading.RLock()
 
         # Store OAuth2 credentials before calling super().__init__()
         # This is needed because _initialize() is called during super().__init__()
@@ -401,8 +401,6 @@ class TCGPlayer(BaseProvider):
 
         except requests.exceptions.HTTPError as e:
             self._handle_http_error(e, endpoint)
-            # _handle_http_error always raises, but pyright doesn't know this
-            raise  # This should never be reached
         except requests.exceptions.RequestException as e:
             logger.error("Network error during search: %s", e)
             raise NetworkError(
@@ -518,8 +516,6 @@ class TCGPlayer(BaseProvider):
 
         except requests.exceptions.HTTPError as e:
             self._handle_http_error(e, endpoint)
-            # _handle_http_error always raises, but pyright doesn't know this
-            raise  # This should never be reached
         except requests.exceptions.RequestException as e:
             logger.error("Network error during syntax search: %s", e)
             raise NetworkError(
@@ -570,8 +566,6 @@ class TCGPlayer(BaseProvider):
 
         except requests.exceptions.HTTPError as e:
             self._handle_http_error(e, endpoint)
-            # _handle_http_error always raises, but pyright doesn't know this
-            raise  # This should never be reached
         except requests.exceptions.RequestException as e:
             logger.error("Network error during get_card: %s", e)
             raise NetworkError(
@@ -667,8 +661,6 @@ class TCGPlayer(BaseProvider):
 
         except requests.exceptions.HTTPError as e:
             self._handle_http_error(e, endpoint)
-            # _handle_http_error always raises, but pyright doesn't know this
-            raise  # This should never be reached
         except requests.exceptions.RequestException as e:
             logger.error("Network error during get_pricing: %s", e)
             raise NetworkError(
@@ -709,8 +701,6 @@ class TCGPlayer(BaseProvider):
 
         except requests.exceptions.HTTPError as e:
             self._handle_http_error(e, endpoint)
-            # _handle_http_error always raises, but pyright doesn't know this
-            raise  # This should never be reached
         except requests.exceptions.RequestException as e:
             logger.error("Network error during autocomplete: %s", e)
             raise NetworkError(
@@ -1051,9 +1041,7 @@ class TCGPlayer(BaseProvider):
         """
         # Extract basic information
         name = data.get("name", "")
-        product_id = (
-            data.get("productId") or data.get("id") or str(data.get("productId", ""))
-        )
+        product_id = data.get("productId") or data.get("id")
 
         # Extract set information
         # TCGPlayer uses categoryName for set code; groupName (when
@@ -1242,8 +1230,9 @@ class TCGPlayer(BaseProvider):
         # a missing field, or a number), bail out.
         if not isinstance(product_type, str):
             logger.debug(
-                f"TCGPlayer productType is {type(product_type).__name__} "
-                f"(value: {product_type!r}), not str; skipping"
+                "TCGPlayer productType is %s (value: %r), not str; skipping",
+                type(product_type).__name__,
+                product_type,
             )
             return None
 
@@ -1273,8 +1262,10 @@ class TCGPlayer(BaseProvider):
         for marker in product_markers:
             if marker in lowered:
                 logger.debug(
-                    f"TCGPlayer productType {product_type!r} contains "
-                    f"product marker {marker!r}; not using as type_line"
+                    "TCGPlayer productType %r contains product marker %r; "
+                    "not using as type_line",
+                    product_type,
+                    marker,
                 )
                 return None
 
@@ -1305,7 +1296,8 @@ class TCGPlayer(BaseProvider):
         # Unknown value: return None rather than risking a wrong
         # type_line. Callers can inspect the raw data if needed.
         logger.debug(
-            f"Unknown TCGPlayer productType {product_type!r}; not using as type_line"
+            "Unknown TCGPlayer productType %r; not using as type_line",
+            product_type,
         )
         return None
 
@@ -1431,6 +1423,12 @@ class TCGPlayer(BaseProvider):
             elif isinstance(price, (int, float)):
                 logger.warning("Unknown TCGPlayer condition %r; skipping", condition)
 
+        if not tcgplayer_pricing_data:
+            raise NotFoundError(
+                "No pricing data available for product",
+                provider=self.name,
+            )
+
         tcgplayer_pricing = TCGPlayerPricing(**tcgplayer_pricing_data)
 
         return Pricing(tcgplayer=tcgplayer_pricing)
@@ -1449,7 +1447,7 @@ class TCGPlayer(BaseProvider):
 
     def _handle_http_error(
         self, error: requests.exceptions.HTTPError, endpoint: str
-    ) -> None:
+    ) -> NoReturn:
         """Handle HTTP errors from the TCGPlayer API.
 
         Args:
@@ -1538,10 +1536,19 @@ class TCGPlayer(BaseProvider):
             Dictionary of attributes to serialize, excluding credentials.
         """
         state = self.__dict__.copy()
-        # Remove sensitive OAuth2 credentials
+        # Remove sensitive OAuth2 credentials from both the provider
+        # and the auth handler to avoid leaking secrets via pickle.
         state.pop("client_id", None)
         state.pop("client_secret", None)
         state.pop("scope", None)
+        auth_handler = state.get("auth_handler")
+        if auth_handler is not None:
+            if hasattr(auth_handler, "_client_id"):
+                auth_handler._client_id = None
+            if hasattr(auth_handler, "_client_secret"):
+                auth_handler._client_secret = None
+            if hasattr(auth_handler, "access_token"):
+                auth_handler.access_token = None
         return state
 
     def __repr__(self) -> str:

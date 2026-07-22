@@ -411,10 +411,17 @@ class Archidekt(BaseProvider):
     def _apply_rate_limiting(self) -> bool:
         """Apply rate limiting before making a request.
 
+        Records the request against the sliding window so the call is
+        counted toward the rate limit, matching the behavior of the
+        ``guard()`` context manager used elsewhere.
+
         Returns:
             True if the request should proceed, False if rate limited.
         """
-        return self.rate_limiter.check("archidekt")
+        should_proceed = self.rate_limiter.check("archidekt")
+        if should_proceed:
+            self.rate_limiter.record("archidekt")
+        return should_proceed
 
     def _sanitize_response_text(self, text: str) -> str:
         """Sanitize response text to remove sensitive data before logging.
@@ -537,8 +544,10 @@ class Archidekt(BaseProvider):
                     },
                 ) from e
             else:
+                response_text = response.text or ""
                 raise APIError(
-                    f"API error: {status_code} - {response.text[:200] if response.text else 'Unknown error'}",
+                    f"API error: {status_code} - "
+                    f"{self._sanitize_response_text(response_text)[:200]}",
                     provider=self.name,
                     status_code=status_code,
                 ) from e
@@ -1374,6 +1383,20 @@ class Archidekt(BaseProvider):
                 provider=self.name,
             )
 
+        # Archidekt uses integer card/deck IDs. A non-numeric ID (e.g. a
+        # UUID-style oracle id) would raise ValueError; validate explicitly
+        # here BEFORE the try/except block so that ArchidektValidationError is
+        # not accidentally caught by the RequestException handler.
+        try:
+            card_id_int = int(card_id)
+            deck_id_int = int(deck_id)
+        except (TypeError, ValueError) as conv_err:
+            raise ArchidektValidationError(
+                f"card_id and deck_id must be numeric, got "
+                f"card_id={card_id!r}, deck_id={deck_id!r}",
+                provider=self.name,
+            ) from conv_err
+
         try:
             # Apply rate limiting
             if not self._apply_rate_limiting():
@@ -1382,19 +1405,6 @@ class Archidekt(BaseProvider):
 
             # Generate unique patch ID
             patch_id = str(uuid.uuid4())
-
-            # Archidekt uses integer card/deck IDs. A non-numeric ID (e.g. a
-            # UUID-style oracle id) would raise ValueError outside the
-            # RequestException handler below; validate explicitly here.
-            try:
-                card_id_int = int(card_id)
-                deck_id_int = int(deck_id)
-            except (TypeError, ValueError) as conv_err:
-                raise ArchidektValidationError(
-                    f"card_id and deck_id must be numeric, got "
-                    f"card_id={card_id!r}, deck_id={deck_id!r}",
-                    provider=self.name,
-                ) from conv_err
 
             # Build the operation payload based on HAR file analysis
             # PATCH /api/decks/{deck_id}/modifyCards/v2/ with operations
@@ -1507,6 +1517,20 @@ class Archidekt(BaseProvider):
                 provider=self.name,
             )
 
+        # Archidekt uses integer card/deck IDs. A non-numeric ID would
+        # raise ValueError; validate explicitly here BEFORE the try/except
+        # block so that ArchidektValidationError is not accidentally caught by
+        # the RequestException handler.
+        try:
+            card_id_int = int(card_id)
+            deck_id_int = int(deck_id)
+        except (TypeError, ValueError) as conv_err:
+            raise ArchidektValidationError(
+                f"card_id and deck_id must be numeric, got "
+                f"card_id={card_id!r}, deck_id={deck_id!r}",
+                provider=self.name,
+            ) from conv_err
+
         try:
             # Apply rate limiting
             if not self._apply_rate_limiting():
@@ -1515,19 +1539,6 @@ class Archidekt(BaseProvider):
 
             # Generate unique patch ID
             patch_id = str(uuid.uuid4())
-
-            # Archidekt uses integer card/deck IDs. A non-numeric ID would
-            # raise ValueError outside the RequestException handler below;
-            # validate explicitly here.
-            try:
-                card_id_int = int(card_id)
-                deck_id_int = int(deck_id)
-            except (TypeError, ValueError) as conv_err:
-                raise ArchidektValidationError(
-                    f"card_id and deck_id must be numeric, got "
-                    f"card_id={card_id!r}, deck_id={deck_id!r}",
-                    provider=self.name,
-                ) from conv_err
 
             # Build the operation payload
             operations = [
@@ -1988,6 +1999,18 @@ class Archidekt(BaseProvider):
             )
             cards.append(deck_card)
 
+            # Populate the deck relation map so remove_card_from_deck can
+            # look up the relation ID for cards loaded from the API without
+            # requiring the caller to pass deck_relation_id explicitly.
+            # Archidekt exposes the relation ID on the card entry as either
+            # "deckRelationId" or "id" (the entry's own ID), and the card's
+            # oracle/numeric ID lives under card_data["id"].
+            card_id_str = str(card_data.get("id", ""))
+            relation_id = card_entry.get("deckRelationId") or card_entry.get("id")
+            if card_id_str and relation_id is not None:
+                with self._lock:
+                    self._deck_relation_map[(deck_id, card_id_str)] = str(relation_id)
+
         # Parse main cards
         for card_entry in deck_data.get("cards", []):
             parse_card_entry(card_entry, board="main")
@@ -2216,12 +2239,13 @@ class Archidekt(BaseProvider):
             - Status: 200
             - Response: JSON object with folder metadata and decks array
         """
+        self._check_authentication()
+
         try:
             if not self._apply_rate_limiting():
                 logger.warning("Rate limited - waiting for next window")
                 self.rate_limiter.wait("archidekt")
 
-            self._check_authentication()
             response = self.http_client.get(f"decks/folders/{folder_id}/")
             data = self._handle_response(response, "folder")
 
@@ -2263,12 +2287,12 @@ class Archidekt(BaseProvider):
             - Status: 200
             - Response: JSON array of tag objects
         """
+        self._check_authentication()
+
         try:
             if not self._apply_rate_limiting():
                 logger.warning("Rate limited - waiting for next window")
                 self.rate_limiter.wait("archidekt")
-
-            self._check_authentication()
 
             params = {}
             if q is not None:
@@ -2317,15 +2341,15 @@ class Archidekt(BaseProvider):
             - Status: 200
             - Response: {"status": "success"}
         """
+        self._check_authentication()
+
+        if not items:
+            raise ArchidektValidationError(
+                "items parameter is required and must not be empty",
+                provider=self.name,
+            )
+
         try:
-            self._check_authentication()
-
-            if not items:
-                raise ArchidektValidationError(
-                    "items parameter is required and must not be empty",
-                    provider=self.name,
-                )
-
             if not self._apply_rate_limiting():
                 logger.warning("Rate limited - waiting for next window")
                 self.rate_limiter.wait("archidekt")
@@ -2391,12 +2415,12 @@ class Archidekt(BaseProvider):
             - Status: 200
             - Response: JSON object with comment details
         """
+        self._check_authentication()
+
         try:
             if not self._apply_rate_limiting():
                 logger.warning("Rate limited - waiting for next window")
                 self.rate_limiter.wait("archidekt")
-
-            self._check_authentication()
 
             params: dict[str, Any] = {"page": page}
             if order_by:

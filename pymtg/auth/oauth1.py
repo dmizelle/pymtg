@@ -308,15 +308,20 @@ class OAuth1Handler(BaseAuthHandler):
 
     def _merge_with_existing_params(
         self, url: str, oauth_params: dict[str, str | None]
-    ) -> dict[str, str]:
+    ) -> dict[str, list[str]]:
         """Merge OAuth1 params with existing query parameters from URL.
+
+        Per RFC 5849 §3.4.1.3.2, each key-value pair is a separate parameter
+        in the signature base string. Multi-valued query parameters (e.g.
+        ``?a=1&a=2``) are therefore preserved as separate entries rather
+        than comma-joined into a single string.
 
         Args:
             url: The request URL.
             oauth_params: OAuth1 parameters to merge.
 
         Returns:
-            Merged parameters dictionary.
+            Mapping of parameter name to a list of its string values.
         """
         parsed_url = urlparse(url)
         query_string = parsed_url.query or ""
@@ -325,39 +330,58 @@ class OAuth1Handler(BaseAuthHandler):
         # as required by the OAuth 1.0a spec for strict providers.
         existing_params = parse_qs(query_string, keep_blank_values=True)
 
-        # Flatten existing params (OAuth1 allows comma-separated values)
-        flat_params: dict[str, str] = {}
+        # Per RFC 5849 §3.4.1.3.2, each key-value pair is a separate
+        # parameter in the signature base string — multi-valued params
+        # must NOT be comma-joined.
+        flat_params: dict[str, list[str]] = {}
         for key, values in existing_params.items():
-            str_key = str(key)
-            if len(values) == 1:
-                flat_params[str_key] = str(values[0])
-            else:
-                flat_params[str_key] = ",".join(str(v) for v in values)
+            flat_params[str(key)] = [str(v) for v in values]
 
-        return {k: str(v) for k, v in {**flat_params, **oauth_params}.items()}
+        # Merge oauth params (each is single-valued).
+        merged: dict[str, list[str]] = {}
+        for k, vs in flat_params.items():
+            merged.setdefault(k, []).extend(vs)
+        for k, v in oauth_params.items():
+            if v is not None:
+                merged.setdefault(k, []).append(str(v))
+        return merged
 
     def _build_signature_base_string(
-        self, method: str, url: str, params: dict[str, str]
+        self, method: str, url: str, params: dict[str, list[str]]
     ) -> str:
         """Build the OAuth1 signature base string.
+
+        Per RFC 5849 §3.4.1.3.2, parameters are sorted by their
+        percent-encoded key, then by their percent-encoded value. Because
+        ``quote()`` is not a monotonic transform of the raw string (for
+        example ``a_b`` sorts after ``a-`` raw but ``a%5Fb`` sorts before
+        ``a-`` once encoded, since ``-`` is in the safe set), the sort must
+        be performed on the encoded values rather than the raw ones.
 
         Args:
             method: HTTP method.
             url: Request URL.
-            params: Parameters to include in signature.
+            params: Parameters to include in signature, mapped from name to
+                a list of string values (multi-valued params are expanded
+                into one entry per value).
 
         Returns:
             The signature base string.
         """
-        # Sort parameters by key
-        sorted_params = sorted(params.items())
-
-        # URL encode parameters
-        encoded_params = []
-        for key, value in sorted_params:
-            encoded_key = quote(str(key), safe="-._~")
-            encoded_value = quote(str(value), safe="-._~")
-            encoded_params.append(f"{encoded_key}={encoded_value}")
+        # Per RFC 5849 §3.4.1.3.2, sort by percent-encoded key then value.
+        encoded_pairs: list[tuple[str, str]] = []
+        for key, value in params.items():
+            if isinstance(value, list):
+                for v in value:
+                    encoded_key = quote(str(key), safe="-._~")
+                    encoded_value = quote(str(v), safe="-._~")
+                    encoded_pairs.append((encoded_key, encoded_value))
+            else:
+                encoded_key = quote(str(key), safe="-._~")
+                encoded_value = quote(str(value), safe="-._~")
+                encoded_pairs.append((encoded_key, encoded_value))
+        encoded_pairs.sort()
+        encoded_params = [f"{k}={v}" for k, v in encoded_pairs]
 
         param_string = "&".join(encoded_params)
 
@@ -475,7 +499,24 @@ class OAuth1Handler(BaseAuthHandler):
         state["_consumer_secret"] = None
         state["_access_token"] = None
         state["_access_token_secret"] = None
+        # RLock is not reliably picklable: its internal C-level lock state
+        # does not survive serialization. Exclude it here and recreate it
+        # in __setstate__.
+        state["_lock"] = None
         return state
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Recreate non-picklable state after deserialization.
+
+        Args:
+            state: The pickled state dictionary produced by
+                :meth:`__getstate__`.
+        """
+        # Restore attributes via setattr (rather than self.__dict__.update)
+        # so the deserialized lock is recreated cleanly below.
+        for key, value in state.items():
+            setattr(self, key, value)
+        self._lock = threading.RLock()
 
     @property
     def consumer_key(self) -> str | None:

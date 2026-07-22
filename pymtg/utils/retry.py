@@ -58,7 +58,12 @@ class RetryConfig:
             retry_exceptions: Tuple of exception types to retry on.
             retry_on_timeout: Whether to retry on timeout errors.
             respect_retry_after: Whether to respect Retry-After header.
+
+        Raises:
+            ValueError: If max_retries is negative.
         """
+        if not isinstance(max_retries, int) or max_retries < 0:
+            raise ValueError("max_retries must be a non-negative integer")
         self.max_retries = max_retries
         self.backoff_factor = backoff_factor
         self.max_backoff = max_backoff
@@ -388,9 +393,15 @@ class RetryContext:
 
         Calculates and sleeps for the appropriate backoff time. Must be
         called after :meth:`record_failure` has incremented ``attempt``;
-        if called before any failure is recorded, this is a no-op.
+        if called before any failure is recorded, or when no retries
+        remain, this is a no-op.
         """
         if self.attempt <= 0:
+            return
+        # Guard against sleeping when no retries remain, so a caller
+        # that invokes wait() after the final record_failure() does not
+        # block for the full backoff only to re-raise on the next loop.
+        if not self.should_continue():
             return
 
         backoff = calculate_backoff(
@@ -415,8 +426,20 @@ class RetryContext:
 
     @property
     def retry_exceptions(self) -> tuple[type[Exception], ...]:
-        """Get the exception types that should be retried."""
-        return self.config.retry_exceptions
+        """Get the exception types that should be retried.
+
+        When ``retry_on_timeout`` is True, ``TimeoutError`` is included
+        in the returned tuple (unless already present) so that
+        ``except retry.retry_exceptions`` catches timeout errors
+        consistently with the :func:`retry_with_config` decorator, which
+        handles ``TimeoutError`` separately. When ``retry_on_timeout``
+        is False, ``TimeoutError`` is only included if the user
+        explicitly listed it in ``RetryConfig.retry_exceptions``.
+        """
+        exceptions = self.config.retry_exceptions
+        if self.config.retry_on_timeout and TimeoutError not in exceptions:
+            return exceptions + (TimeoutError,)
+        return exceptions
 
     def __enter__(self) -> "RetryContext":
         """Enter the context manager.

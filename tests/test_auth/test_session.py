@@ -225,7 +225,21 @@ class TestSessionAuthHandlerIsAuthenticated:
         handler = SessionAuthHandler(base_url="https://example.com")
         handler._authenticated = True
         handler.session_cookies = {"sessionid": "value"}
+        handler._session = MagicMock()
         assert handler.is_authenticated() is True
+
+    def test_is_authenticated_false_without_session(self):
+        """Test that handler is not authenticated when no session is stored.
+
+        ``is_authenticated()`` guards on ``_session is not None`` so that a
+        handler whose session was closed externally (or via ``clear_auth``)
+        is not reported as authenticated.
+        """
+        handler = SessionAuthHandler(base_url="https://example.com")
+        handler._authenticated = True
+        handler.session_cookies = {"sessionid": "value"}
+        handler._session = None
+        assert handler.is_authenticated() is False
 
     def test_is_authenticated_false_without_cookies(self):
         """Test that handler is not authenticated without cookies."""
@@ -303,8 +317,37 @@ class TestSessionAuthHandlerRefresh:
         assert handler._session is mock_session
         # Credentials are retained after successful auth so refresh() can
         # be called again later. Use clear_auth() for explicit cleanup.
+        # NOTE: This confirms plaintext credential retention on the handler
+        # instance; see the security note in SessionAuthHandler's docstring.
         assert handler._username == "user"
         assert handler._password == "pass"
+
+    @patch("pymtg.auth.session.requests.Session")
+    def test_refresh_failure_closes_session(self, mock_session_cls):
+        """Test that a failed refresh closes the session and resets state.
+
+        When refresh() delegates to authenticate() and authentication fails
+        (e.g. CSRF retrieval returns a non-200 status), the in-flight session
+        must be closed and ``_authenticated`` reset so the handler is left in
+        a clean, unauthenticated state.
+        """
+        mock_session = MagicMock()
+        mock_session_cls.return_value = mock_session
+
+        mock_csrf_response = MagicMock()
+        mock_csrf_response.status_code = 500
+        mock_session.get.return_value = mock_csrf_response
+
+        handler = SessionAuthHandler(base_url="https://example.com")
+        handler._username = "user"
+        handler._password = "pass"
+
+        with pytest.raises(AuthenticationError):
+            handler.refresh()
+
+        mock_session.close.assert_called_once()
+        assert handler._authenticated is False
+        assert handler._session is None
 
 
 class TestSessionAuthHandlerProperties:
@@ -347,6 +390,10 @@ class TestSessionAuthHandlerApplyAuth:
         handler.apply_auth(session)
 
         assert session.cookies.set.call_count == 2
+        # Verify each cookie name maps to its correct value to catch swap
+        # bugs that the call_count check alone would miss.
+        session.cookies.set.assert_any_call("sessionid", "session-value")
+        session.cookies.set.assert_any_call("csrftoken", "csrf-value")
         session.headers.update.assert_called_once_with({"X-CSRFToken": "csrf-value"})
 
     def test_apply_auth_without_cookies(self):

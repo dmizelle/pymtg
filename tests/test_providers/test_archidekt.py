@@ -1135,7 +1135,7 @@ class TestArchidektParseDeck(unittest.TestCase):
                 "cards": [{"quantity": 1, "card": {"id": "card1"}, "board": "main"}],
             }
 
-            with self.assertLogs(level="WARNING") as log:
+            with self.assertLogs("pymtg.providers.archidekt", level="WARNING") as log:
                 deck = archidekt._parse_deck(data)
 
             # Verify the deck was created with COMMANDER format
@@ -1201,21 +1201,23 @@ class TestArchidektBuildSearchQuery(unittest.TestCase):
         query = archidekt._build_search_query(name="Card Name")
         self.assertEqual(query.get("nameSearch"), "Card Name")
 
-    def test_build_query_name_sanitization(self):
-        """Test that name parameter is properly sanitized to prevent query injection."""
+    def test_build_query_name_passthrough(self):
+        """Test that the name parameter is passed through verbatim to nameSearch.
+
+        The provider intentionally does not sanitize the ``name`` parameter;
+        query-injection prevention relies on the HTTP client's parameter
+        encoding rather than on escaping performed here. This test documents
+        that passthrough behavior so the contract is explicit.
+        """
         archidekt = Archidekt()
 
-        # Test backslash escaping
+        # Backslash is passed through unchanged.
         query = archidekt._build_search_query(name="Card\\Name")
         self.assertEqual(query.get("nameSearch"), "Card\\Name")
 
-        # Test double quote escaping
+        # Double quote is passed through unchanged.
         query = archidekt._build_search_query(name='Card"Name')
         self.assertEqual(query.get("nameSearch"), 'Card"Name')
-
-        # Test combined escaping
-        query = archidekt._build_search_query(name='Card\\"Name')
-        self.assertEqual(query.get("nameSearch"), 'Card\\"Name')
 
 
 class TestArchidektNormalizeFlavorText(unittest.TestCase):

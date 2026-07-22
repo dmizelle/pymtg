@@ -10,7 +10,12 @@ to handle edge cases like empty strings or whitespace. Numeric and
 dict values use their default string representation.
 """
 
+import re
 from typing import Any
+
+# Matches an incomplete trailing unicode escape (e.g. a dangling "\u00"
+# without the following 4 hex digits) produced by truncating repr() output.
+_INCOMPLETE_UNICODE_ESCAPE = re.compile(r"\\u[0-9a-fA-F]{0,3}$")
 
 
 class PyMTGError(Exception):
@@ -23,7 +28,7 @@ class PyMTGError(Exception):
         provider: The name of the provider where the error occurred, or None.
         message: A human-readable description of the error.
         status_code: The HTTP status code if applicable, or None.
-        details: Additional details about the error, or None.
+        details: Additional details about the error (defaults to an empty dict).
     """
 
     def __init__(
@@ -45,7 +50,7 @@ class PyMTGError(Exception):
         self.provider = provider
         self.message = message
         self.status_code = status_code
-        self.details = details or {}
+        self.details = dict(details) if details else {}
 
     def __str__(self) -> str:
         """Return a string representation of the error.
@@ -426,7 +431,12 @@ class ParsingError(PyMTGError):
         if self.raw_data is not None:
             raw_data_str = repr(self.raw_data)
             if len(raw_data_str) > 200:
-                raw_data_str = raw_data_str[:200] + "..."
+                truncated = raw_data_str[:200]
+                # Strip any partial trailing \uXXXX escape so the
+                # truncated representation does not contain a dangling
+                # unicode escape sequence.
+                truncated = _INCOMPLETE_UNICODE_ESCAPE.sub("", truncated)
+                raw_data_str = truncated + "..."
             base += f" Raw data: {raw_data_str}"
         return base
 

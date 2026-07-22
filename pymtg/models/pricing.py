@@ -27,24 +27,36 @@ class _ProviderPricingBase(PyMTGBaseModel):
     validated against the subclass's model fields so typos or drift
     are caught early rather than silently returning wrong results.
 
-    ``CURRENCIES`` is not validated against model fields because its
-    semantics differ per subclass: for ``ScryfallPricing`` each
-    currency code is also a field name, but for single-currency
-    providers (TCGPlayer, Cardmarket) the currency code describes all
-    fields rather than naming one.
+    Subclasses whose ``CURRENCIES`` entries are also model field names
+    (e.g. ``ScryfallPricing``, where ``usd``/``eur``/``tix`` are both
+    currency codes and field names) set
+    ``_CURRENCIES_ARE_MODEL_FIELDS = True`` so those entries are
+    validated against ``model_fields`` at class creation time. For
+    single-currency providers (TCGPlayer, Cardmarket) the currency code
+    describes all fields rather than naming one, so they leave the flag
+    ``False`` and ``CURRENCIES`` is not validated against model fields.
 
     Attributes:
         CURRENCIES: Currency codes supported by the provider.
         _PRICE_FIELDS: Fields checked by ``has_prices()``. Each entry
             must be the name of a model field on the subclass.
+        _CURRENCIES_ARE_MODEL_FIELDS: When True, each entry in
+            ``CURRENCIES`` must also be a model field name on the
+            subclass. Opt-in; defaults to False.
     """
 
     CURRENCIES: ClassVar[tuple[str, ...]] = ()
     _PRICE_FIELDS: ClassVar[tuple[str, ...]] = ()
+    # When True, ``__pydantic_init_subclass__`` validates that every entry
+    # in ``CURRENCIES`` is also a model field name. This is used by
+    # providers (e.g. ScryfallPricing) whose currency codes double as
+    # field names; single-currency providers whose code does not name a
+    # field leave this False.
+    _CURRENCIES_ARE_MODEL_FIELDS: ClassVar[bool] = False
 
     @classmethod
     def __pydantic_init_subclass__(cls, **kwargs: object) -> None:
-        """Validates _PRICE_FIELDS against model fields.
+        """Validates _PRICE_FIELDS (and optionally CURRENCIES) fields.
 
         Ensures every entry in ``_PRICE_FIELDS`` corresponds to an
         actual model field on the subclass, raising ``TypeError`` if
@@ -52,18 +64,29 @@ class _ProviderPricingBase(PyMTGBaseModel):
         class definition time rather than silently returning wrong
         results at runtime.
 
-        Note: ``CURRENCIES`` is not validated against model fields
-        because its semantics differ per subclass. For
-        ``ScryfallPricing`` each currency code is also a field name,
-        but for single-currency providers (TCGPlayer, Cardmarket) the
-        currency code describes all fields rather than naming one.
+        When the subclass sets ``_CURRENCIES_ARE_MODEL_FIELDS = True``,
+        each entry in ``CURRENCIES`` is also validated to be a model
+        field name. This is opt-in because for single-currency
+        providers (TCGPlayer, Cardmarket) the currency code describes
+        all fields rather than naming one. ScryfallPricing opts in
+        because its currency codes (usd, eur, tix, ...) are also field
+        names consumed via ``getattr`` in
+        ``get_normal_print_currencies()``.
+
+        Because this hook lives on ``_ProviderPricingBase``, it fires
+        for each subclass *including direct subclasses such as
+        ScryfallPricing itself*, so typos in
+        ``ScryfallPricing.CURRENCIES`` are caught at class definition
+        time rather than only for further subclasses.
 
         Args:
             **kwargs: Forwarded by Pydantic.
 
         Raises:
             TypeError: If any entry in ``_PRICE_FIELDS`` is not a
-                model field on the subclass.
+                model field on the subclass, or if
+                ``_CURRENCIES_ARE_MODEL_FIELDS`` is True and any entry
+                in ``CURRENCIES`` is not a model field.
         """
         super().__pydantic_init_subclass__(**kwargs)  # type: ignore[misc]
         field_names = set(cls.model_fields)
@@ -89,6 +112,14 @@ class _ProviderPricingBase(PyMTGBaseModel):
                     f"has type {annotation!r}; expected float | None "
                     f"for price fields."
                 )
+        if cls._CURRENCIES_ARE_MODEL_FIELDS:
+            for currency in cls.CURRENCIES:
+                if currency not in field_names:
+                    raise TypeError(
+                        f"{cls.__name__}.CURRENCIES references "
+                        f"unknown field {currency!r}; must be one of "
+                        f"{sorted(field_names)}"
+                    )
 
     def has_prices(self) -> bool:
         """Returns whether any price field is set.
@@ -143,6 +174,15 @@ class ScryfallPricing(_ProviderPricingBase):
         "cny",
     )
 
+    # ScryfallPricing's currency codes are also model field names
+    # consumed via getattr in get_normal_print_currencies(), so opt in
+    # to the CURRENCIES-are-model-fields validation performed by
+    # _ProviderPricingBase.__pydantic_init_subclass__. Because that
+    # hook lives on the parent, it fires for ScryfallPricing itself
+    # (not just hypothetical subclasses), catching typos in
+    # CURRENCIES at class definition time.
+    _CURRENCIES_ARE_MODEL_FIELDS: ClassVar[bool] = True
+
     # Price fields checked by has_prices(). Validated against model
     # fields at class creation time by _ProviderPricingBase, so typos
     # or drift raise TypeError immediately.
@@ -177,33 +217,6 @@ class ScryfallPricing(_ProviderPricingBase):
     jpy_foil: float | None = None
     cny: float | None = None
     cny_foil: float | None = None
-
-    @classmethod
-    def __pydantic_init_subclass__(cls, **kwargs: object) -> None:
-        """Validates CURRENCIES entries are actual model fields.
-
-        For ScryfallPricing, each currency code in ``CURRENCIES`` is
-        also a model field name (e.g., ``usd``, ``eur``, ``tix``), so
-        typos would cause ``get_normal_print_currencies()`` to silently
-        return ``None``. This hook catches such typos at class
-        definition time.
-
-        Args:
-            **kwargs: Forwarded by Pydantic.
-
-        Raises:
-            TypeError: If any entry in ``CURRENCIES`` is not a model
-                field on the subclass.
-        """
-        super().__pydantic_init_subclass__(**kwargs)
-        field_names = set(cls.model_fields)
-        for currency in cls.CURRENCIES:
-            if currency not in field_names:
-                raise TypeError(
-                    f"{cls.__name__}.CURRENCIES references "
-                    f"unknown field {currency!r}; must be one of "
-                    f"{sorted(field_names)}"
-                )
 
     def get_normal_print_currencies(self) -> dict[str, float | None]:
         """Returns the currency codes and normal-print prices tracked.
