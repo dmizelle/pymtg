@@ -100,7 +100,7 @@ class TestBaseAuthHandlerInterface:
             )
         ]
         assert (
-            len(required) <= 1
+            len(required) == 1
         ), "authenticate must not require parameters beyond self"
 
     def test_is_authenticated_returns_bool(self):

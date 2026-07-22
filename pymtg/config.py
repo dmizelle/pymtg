@@ -4,6 +4,7 @@ This module provides configuration classes used throughout the library for
 managing provider settings, rate limits, and other configuration options.
 """
 
+import os
 from typing import Any
 from urllib.parse import urlparse
 
@@ -75,11 +76,12 @@ PROVIDER_CONFIGS: dict[str, ProviderConfig] = {
         # NOTE: Moxfield has no public HTTP API. Requests are proxied through
         # the third-party Parse.bot scraper wrapper service, whose embedded
         # UUID path segment may be revoked or rotated by parse.bot at any
-        # time. Override this base_url with your own ProviderConfig if you
-        # need a different endpoint or wish to avoid routing traffic through
-        # a third-party intermediary.
-        base_url=(
-            "https://api.parse.bot/scraper/" "55189296-4a3a-4cd2-a006-802b22cd2b73/"
+        # time. Override via the MOXFIELD_BASE_URL environment variable so a
+        # rotation does not require a code change or release; alternatively
+        # construct a custom ProviderConfig with a different endpoint.
+        base_url=os.environ.get(
+            "MOXFIELD_BASE_URL",
+            "https://api.parse.bot/scraper/55189296-4a3a-4cd2-a006-802b22cd2b73/",
         ),
         rate_limit={"requests_per_minute": 100},
         timeout=30,

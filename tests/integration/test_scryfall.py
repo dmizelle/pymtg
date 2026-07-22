@@ -40,9 +40,8 @@ class TestScryfallIntegration(unittest.TestCase):
             True if network is available, False otherwise.
         """
         try:
-            response = requests.get("https://api.scryfall.com", timeout=5)
-            response.close()
-            return response.ok
+            with requests.get("https://api.scryfall.com", timeout=5) as response:
+                return response.ok
         except requests.exceptions.RequestException as e:
             logger.debug("Scryfall network probe failed: %s", e)
             return False

@@ -64,7 +64,7 @@ class BaseProvider(ABC):
             ),
         )
         self.base_url = self.config.base_url
-        self.rate_limit = self.config.rate_limit or {}
+        self.rate_limit = dict(self.config.rate_limit) if self.config.rate_limit else {}
 
         # Initialize HTTP client (only if not already set by test patching).
         # Only construct the HTTP client when a base URL is configured;
@@ -404,8 +404,12 @@ class BaseProvider(ABC):
 
         try:
             return response.json()
-        except ValueError:
-            return response.text
+        except ValueError as e:
+            raise APIError(
+                f"Failed to parse JSON response from {self.name}",
+                provider=self.name,
+                status_code=response.status_code,
+            ) from e
 
     def close(self) -> None:
         """Close the provider's resources."""

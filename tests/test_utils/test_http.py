@@ -70,6 +70,30 @@ def test_http_client_float_timeout() -> None:
     assert client.timeout == 2.5
 
 
+def test_http_client_invalid_timeout_zero() -> None:
+    """Test HTTPClient raises ValueError for zero timeout."""
+    with pytest.raises(ValueError, match="timeout must be a positive number"):
+        HTTPClient("https://api.example.com", timeout=0)
+
+
+def test_http_client_invalid_timeout_negative() -> None:
+    """Test HTTPClient raises ValueError for negative timeout."""
+    with pytest.raises(ValueError, match="timeout must be a positive number"):
+        HTTPClient("https://api.example.com", timeout=-1)
+
+
+def test_http_client_invalid_timeout_boolean() -> None:
+    """Test HTTPClient raises ValueError for boolean timeout."""
+    with pytest.raises(ValueError, match="timeout must be a positive number"):
+        HTTPClient("https://api.example.com", timeout=True)  # type: ignore[arg-type]
+
+
+def test_http_client_invalid_timeout_non_numeric() -> None:
+    """Test HTTPClient raises ValueError for non-numeric timeout."""
+    with pytest.raises(ValueError, match="timeout must be a positive number"):
+        HTTPClient("https://api.example.com", timeout="abc")  # type: ignore[arg-type]
+
+
 def test_http_client_default_user_agent() -> None:
     """Test HTTPClient uses default User-Agent."""
     client = HTTPClient("https://api.example.com")
@@ -114,6 +138,13 @@ def test_build_url_rejects_full_url_endpoint() -> None:
         client._build_url("https://other.com/cards")
 
 
+def test_build_url_rejects_protocol_relative_url() -> None:
+    """Test _build_url rejects protocol-relative URLs to prevent SSRF."""
+    client = HTTPClient("https://api.example.com")
+    with pytest.raises(ValueError, match="protocol-relative URLs are not permitted"):
+        client._build_url("//evil.com/cards")
+
+
 def test_build_url_rejects_path_traversal() -> None:
     """Test _build_url rejects endpoints that escape the base path."""
     client = HTTPClient("https://api.example.com")
@@ -121,6 +152,15 @@ def test_build_url_rejects_path_traversal() -> None:
         client._build_url("../../etc/passwd")
     with pytest.raises(ValueError, match="escape the base path"):
         client._build_url("../admin/secret")
+
+
+def test_build_url_rejects_encoded_path_traversal() -> None:
+    """Test _build_url rejects percent-encoded traversal sequences."""
+    client = HTTPClient("https://api.example.com")
+    with pytest.raises(ValueError, match="escape the base path"):
+        client._build_url("%2e%2e/%2e%2e/etc/passwd")
+    with pytest.raises(ValueError, match="escape the base path"):
+        client._build_url("..%2f..%2fadmin/secret")
 
 
 def test_build_url_with_empty_endpoint() -> None:

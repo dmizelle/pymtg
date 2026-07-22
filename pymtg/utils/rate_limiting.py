@@ -5,6 +5,7 @@ when making requests to MTG API providers. Each provider has different
 rate limits that must be respected to avoid being blocked.
 """
 
+import itertools
 import logging
 import math
 import threading
@@ -51,11 +52,15 @@ class RateLimitState:
     including timestamps of recent requests.
 
     Attributes:
-        timestamps: List of timestamps for recent requests.
+        timestamps: List of (timestamp, token) tuples for recent requests.
+            The token is a unique integer identifying each recorded
+            request, used to roll back a specific entry without removing
+            a different caller's entry that happens to share the same
+            timestamp value.
         lock: Thread lock for thread-safe access.
     """
 
-    timestamps: list[float] = field(default_factory=list)
+    timestamps: list[tuple[float, int]] = field(default_factory=list)
     lock: threading.Lock = field(default_factory=threading.Lock)
 
 
@@ -115,6 +120,12 @@ class RateLimiter:
         self.configs: dict[str, RateLimitConfig] = configs or {}
         self.states: dict[str, RateLimitState] = defaultdict(lambda: RateLimitState())
         self._global_lock = threading.Lock()
+        # Monotonic counter issuing unique tokens for each recorded
+        # request. ``itertools.count.__next__`` is atomic under CPython,
+        # so no lock is required to mint tokens. The token identifies a
+        # specific recorded entry so rollback removes the correct one
+        # even when two callers share an identical ``time.time()`` value.
+        self._token_counter = itertools.count()
 
     def add_config(
         self,
@@ -215,8 +226,11 @@ class RateLimiter:
         now = time.time()
         window = self._resolve_window(config)
 
-        # Remove old timestamps outside the window
-        state.timestamps = [t for t in state.timestamps if now - t < window]
+        # Remove old timestamps outside the window. Each entry is a
+        # (timestamp, token) tuple; filter on the timestamp component.
+        state.timestamps = [
+            entry for entry in state.timestamps if now - entry[0] < window
+        ]
 
         current_count = len(state.timestamps)
         max_requests = self._compute_max_requests(config)
@@ -313,20 +327,22 @@ class RateLimiter:
         recorded, _ = self._check_and_record_with_ts(provider)
         return recorded
 
-    def _check_and_record_with_ts(self, provider: str) -> tuple[bool, float | None]:
+    def _check_and_record_with_ts(self, provider: str) -> tuple[bool, int | None]:
         """Atomically check the rate limit and record a request.
 
         Internal variant of :meth:`check_and_record` that also returns
-        the recorded timestamp (or ``None`` if nothing was recorded) so
-        callers such as :class:`RateLimitGuard` can roll it back.
+        a token identifying the recorded entry (or ``None`` if nothing
+        was recorded) so callers such as :class:`RateLimitGuard` can
+        roll it back unambiguously.
 
         Args:
             provider: The provider name.
 
         Returns:
-            A tuple of (allowed, timestamp). ``allowed`` is True if the
-            request was recorded and may proceed; ``timestamp`` is the
-            recorded time (or None if rate limited / unconfigured).
+            A tuple of (allowed, token). ``allowed`` is True if the
+            request was recorded and may proceed; ``token`` is a unique
+            integer identifying the recorded entry (or None if rate
+            limited / unconfigured).
         """
         config = self.get_config(provider)
         if config is None:
@@ -342,8 +358,9 @@ class RateLimiter:
 
             if max_requests is None:
                 ts = time.time()
-                state.timestamps.append(ts)
-                return True, ts
+                token = next(self._token_counter)
+                state.timestamps.append((ts, token))
+                return True, token
 
             if current_count >= max_requests:
                 logger.debug(
@@ -355,8 +372,9 @@ class RateLimiter:
                 return False, None
 
             ts = time.time()
-            state.timestamps.append(ts)
-            return True, ts
+            token = next(self._token_counter)
+            state.timestamps.append((ts, token))
+            return True, token
 
     def _record(self, provider: str) -> None:
         """Record that a request was made to the specified provider.
@@ -369,11 +387,21 @@ class RateLimiter:
         Args:
             provider: The provider name.
         """
+        # Guard against creating orphaned state entries for providers
+        # that have no RateLimitConfig. Without this, the defaultdict
+        # access below would allocate a RateLimitState that is never
+        # trimmed by _cleanup_and_get_limits (which uses .get() and
+        # returns early when state is None), leaking memory.
+        config = self.get_config(provider)
+        if config is None:
+            logger.debug("No rate limit config for %s, skipping record", provider)
+            return
         state = self.states[provider]
         now = time.time()
+        token = next(self._token_counter)
 
         with state.lock:
-            state.timestamps.append(now)
+            state.timestamps.append((now, token))
             logger.debug("Recorded request for %s", provider)
 
     def record(self, provider: str) -> None:
@@ -440,7 +468,7 @@ class RateLimiter:
 
                 window = self._resolve_window(config)
                 now = time.time()
-                oldest = min(state.timestamps)
+                oldest = min(entry[0] for entry in state.timestamps)
                 elapsed = now - oldest
 
                 if elapsed < window:
@@ -536,6 +564,16 @@ class RateLimiter:
             # Snapshot the states under _global_lock, then clear each
             # state without holding _global_lock to avoid nested lock
             # acquisition (lock-ordering hazard).
+            #
+            # Note: a concurrent caller that records a request for a
+            # *new* provider (one not in the snapshot) via
+            # ``self.states[provider]`` (a defaultdict) can insert a
+            # fresh state entry after the snapshot is taken but before
+            # this method returns; that entry will not be cleared here.
+            # A fully atomic full reset would require acquiring
+            # ``_global_lock`` for the whole operation and routing all
+            # other state creation through it, which is out of scope to
+            # avoid reintroducing the lock-ordering hazard above.
             with self._global_lock:
                 states_snapshot = list(self.states.values())
             for state in states_snapshot:
@@ -585,10 +623,13 @@ class RateLimitGuard:
         self.rate_limiter = rate_limiter
         self.provider = provider
         self.waited = False
-        # Timestamp recorded optimistically by check_and_record() in
-        # __enter__; rolled back in __exit__ if the guarded block raised
-        # an exception so failed requests are not counted.
-        self._recorded_timestamp: float | None = None
+        # Unique token identifying the entry recorded optimistically by
+        # check_and_record() in __enter__; rolled back in __exit__ if the
+        # guarded block raised an exception so failed requests are not
+        # counted. Using a token (rather than the raw timestamp) ensures
+        # rollback removes exactly this caller's entry even when two
+        # callers share an identical time.time() value.
+        self._recorded_token: int | None = None
 
     def __enter__(self) -> bool:
         """Enter the context manager.
@@ -597,22 +638,31 @@ class RateLimitGuard:
         timestamp recording happen atomically, eliminating the TOCTOU
         race between a standalone check and a later record.
 
+        When the initial check finds the limit reached, this method
+        waits and retries the atomic check-and-record until it succeeds
+        in reserving a slot. Without the retry, a second caller could
+        grab the slot freed by ``wait()`` before us, leaving this caller
+        to proceed with no recorded timestamp (silently exceeding the
+        limit). The retry guarantees a slot is reserved before yielding.
+
         Returns:
             True if the request can proceed immediately, False if we
                 had to wait.
         """
-        allowed, ts = self.rate_limiter._check_and_record_with_ts(self.provider)
-        self._recorded_timestamp = ts
-        if not allowed:
-            # Rate limited: nothing was recorded. Wait for the limit to
-            # reset, then record optimistically before yielding so the
-            # slot is reserved for this caller.
+        allowed, token = self.rate_limiter._check_and_record_with_ts(self.provider)
+        self._recorded_token = token
+        if allowed:
+            return True
+        # Rate limited: nothing was recorded. Wait for the limit to
+        # reset, then retry the atomic record until we reserve a slot.
+        # The retry is required because another caller may grab the slot
+        # freed by wait() between wait() returning and our record.
+        self.waited = True
+        while not allowed:
             self.rate_limiter.wait(self.provider)
-            self.waited = True
-            allowed, ts = self.rate_limiter._check_and_record_with_ts(self.provider)
-            self._recorded_timestamp = ts
-            return False
-        return True
+            allowed, token = self.rate_limiter._check_and_record_with_ts(self.provider)
+        self._recorded_token = token
+        return False
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         """Exit the context manager.
@@ -631,24 +681,26 @@ class RateLimitGuard:
             self._rollback_record()
 
     def _rollback_record(self) -> None:
-        """Remove the optimistically-recorded timestamp if present.
+        """Remove the optimistically-recorded entry if present.
 
         This restores the rate-limit state when the guarded block raised
-        an exception, so failed requests are not counted.
+        an exception, so failed requests are not counted. Removal is
+        performed by matching the unique token (not the raw timestamp),
+        so a concurrent caller whose entry shares the same timestamp
+        value is never affected.
         """
-        ts = self._recorded_timestamp
-        if ts is None:
+        token = self._recorded_token
+        if token is None:
             return
         state = self.rate_limiter.states.get(self.provider)
         if state is None:
             return
         with state.lock:
-            try:
-                state.timestamps.remove(ts)
-            except ValueError:
-                # Already cleaned up or removed; nothing to do.
-                pass
-        self._recorded_timestamp = None
+            for i, entry in enumerate(state.timestamps):
+                if entry[1] == token:
+                    del state.timestamps[i]
+                    break
+        self._recorded_token = None
 
     def __repr__(self) -> str:
         """Return a string representation of the guard.

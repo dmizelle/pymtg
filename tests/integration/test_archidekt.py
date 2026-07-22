@@ -161,13 +161,15 @@ class TestArchidektIntegration(unittest.TestCase):
         deck_name = f"pymtg-integration-test-{self._generate_random_string(8)}"
         new_deck = self.archidekt.create_deck(name=deck_name)
 
+        # Track deck for cleanup immediately, before any assertions that
+        # might fail and propagate before the deck is registered.
+        if new_deck is not None and new_deck.id is not None:
+            self.created_decks.append(new_deck.id)
+
         self.assertIsNotNone(new_deck)
         self.assertIsInstance(new_deck, Deck)
         self.assertEqual(new_deck.name, deck_name)
         self.assertIsNotNone(new_deck.id)
-
-        # Track deck for cleanup
-        self.created_decks.append(new_deck.id)
 
     def test_rate_limit_status(self):
         """Tests that rate limit status is returned correctly."""
@@ -264,6 +266,11 @@ class TestArchidektIntegration(unittest.TestCase):
         self.assertIsNotNone(new_deck.id)
         deck_id = new_deck.id
 
+        # Track deck for cleanup BEFORE deleting, so tearDown covers the
+        # failure path (delete may raise, leaving the deck orphaned
+        # otherwise).
+        self.created_decks.append(deck_id)
+
         # Delete the deck from the folder
         result = self.archidekt.delete_folder_items(
             items=[{"id": int(deck_id), "type": "deck"}]
@@ -271,9 +278,9 @@ class TestArchidektIntegration(unittest.TestCase):
 
         # Verify the deletion was successful
         self.assertIsInstance(result, dict)
-        # The deck was already deleted by delete_folder_items above, so it is
-        # intentionally not tracked in self.created_decks; otherwise tearDown
-        # would attempt a spurious double-delete.
+        # tearDown will also attempt deletion; a double-delete is
+        # harmless because delete_folder_items tolerates already-deleted
+        # items and tearDown catches any residual exceptions.
 
     def test_get_comment(self):
         """Tests that get_comment returns comment data.

@@ -323,29 +323,33 @@ class TestSessionAuthHandlerRefresh:
         assert handler._password == "pass"
 
     @patch("pymtg.auth.session.requests.Session")
-    def test_refresh_failure_closes_session(self, mock_session_cls):
-        """Test that a failed refresh closes the session and resets state.
+    def test_refresh_failure_closes_old_session(self, mock_session_cls):
+        """Test that a failed refresh closes any previously-stored session.
 
-        When refresh() delegates to authenticate() and authentication fails
-        (e.g. CSRF retrieval returns a non-200 status), the in-flight session
-        must be closed and ``_authenticated`` reset so the handler is left in
-        a clean, unauthenticated state.
+        When refresh() is called on an already-authenticated handler and
+        re-authentication fails, both the in-flight session and any
+        previously-stored session must be closed to avoid resource leaks.
         """
-        mock_session = MagicMock()
-        mock_session_cls.return_value = mock_session
+        old_session = MagicMock()
+
+        new_session = MagicMock()
+        mock_session_cls.return_value = new_session
 
         mock_csrf_response = MagicMock()
         mock_csrf_response.status_code = 500
-        mock_session.get.return_value = mock_csrf_response
+        new_session.get.return_value = mock_csrf_response
 
         handler = SessionAuthHandler(base_url="https://example.com")
+        handler._session = old_session
+        handler._authenticated = True
         handler._username = "user"
         handler._password = "pass"
 
         with pytest.raises(AuthenticationError):
             handler.refresh()
 
-        mock_session.close.assert_called_once()
+        new_session.close.assert_called_once()
+        old_session.close.assert_called_once()
         assert handler._authenticated is False
         assert handler._session is None
 

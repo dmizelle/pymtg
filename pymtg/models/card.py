@@ -264,7 +264,17 @@ class Card(PyMTGBaseModel):
         Returns:
             True if the card has multiple colors in its identity.
         """
-        return self.color_identity is not None and len(self.color_identity) > 1
+        if self.color_identity is None:
+            return False
+        # Decompose multi-char color values (e.g. Color.AZORIUS == "WU")
+        # into individual colors, consistent with get_color_identity_string.
+        distinct_colors: set[str] = set()
+        for c in self.color_identity:
+            val = c.value if isinstance(c, Color) else c
+            if not val:
+                continue
+            distinct_colors.update(list(val))
+        return len(distinct_colors) > 1
 
     def get_color_identity_string(self) -> str:
         """Get the color identity as a string.

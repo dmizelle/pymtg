@@ -385,12 +385,12 @@ class Cardmarket(BaseProvider):
             # parameter. Cardmarket expects concatenated color codes
             # (e.g. "WUB"). COLORLESS (empty value) is ignored.
             if colors:
+                if color is not None:
+                    raise InvalidQueryError(
+                        "Cannot specify both 'colors' and 'color' parameters"
+                    )
                 color_codes = "".join(sorted({c.value for c in colors if c.value}))
                 if color_codes:
-                    if color is not None:
-                        raise InvalidQueryError(
-                            "Cannot specify both 'colors' and 'color' parameters"
-                        )
                     params["color"] = color_codes
             if identity:
                 id_codes = "".join(sorted({c.value for c in identity if c.value}))
@@ -448,7 +448,8 @@ class Cardmarket(BaseProvider):
                 # quota, so roll back the locally-recorded increment to
                 # keep the client-side count in sync with the server.
                 with self._lock:
-                    self._request_count -= 1
+                    if self._request_count > 0:
+                        self._request_count -= 1
                 raise
 
             if not data:
@@ -537,6 +538,9 @@ class Cardmarket(BaseProvider):
         if limit is not None and (not isinstance(limit, int) or limit < 1):
             raise InvalidQueryError("limit must be a positive integer (>= 1)")
 
+        if not isinstance(page, int) or page < 1:
+            raise InvalidQueryError("page must be a positive integer (>= 1)")
+
         try:
             # Validate authentication
             if not self.is_authenticated():
@@ -591,7 +595,8 @@ class Cardmarket(BaseProvider):
                 # quota, so roll back the locally-recorded increment to
                 # keep the client-side count in sync with the server.
                 with self._lock:
-                    self._request_count -= 1
+                    if self._request_count > 0:
+                        self._request_count -= 1
                 raise
 
             if not data:
@@ -682,7 +687,8 @@ class Cardmarket(BaseProvider):
                 # quota, so roll back the locally-recorded increment to
                 # keep the client-side count in sync with the server.
                 with self._lock:
-                    self._request_count -= 1
+                    if self._request_count > 0:
+                        self._request_count -= 1
                 raise
 
             if not data:
@@ -766,7 +772,8 @@ class Cardmarket(BaseProvider):
                 # quota, so roll back the locally-recorded increment to
                 # keep the client-side count in sync with the server.
                 with self._lock:
-                    self._request_count -= 1
+                    if self._request_count > 0:
+                        self._request_count -= 1
                 raise
 
             if not data:
@@ -871,9 +878,13 @@ class Cardmarket(BaseProvider):
         # that cannot be converted).
         multiverse_ids = card_data.get("multiverseIds", [])
         if multiverse_ids and isinstance(multiverse_ids, list):
-            multiverse_ids = [
-                int(mid) for mid in multiverse_ids if isinstance(mid, (int, str))
-            ]
+            parsed_ids: list[int] = []
+            for mid in multiverse_ids:
+                try:
+                    parsed_ids.append(int(mid))
+                except (ValueError, TypeError):
+                    continue
+            multiverse_ids = parsed_ids
         else:
             multiverse_ids = []
 
@@ -1030,9 +1041,11 @@ class Cardmarket(BaseProvider):
         # entries overwrite earlier ones (last wins), mirroring the
         # previous behavior.
         results = pricing_data.get("results", [])
-        if results:
+        if isinstance(results, list) and results:
             # Aggregate prices by condition
             for result in results:
+                if not isinstance(result, dict):
+                    continue
                 condition = result.get("condition", "").lower().replace(" ", "_")
                 condition_name = (
                     result.get("conditionName", "").lower().replace(" ", "_")

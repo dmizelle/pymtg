@@ -963,6 +963,7 @@ class TestTCGPlayerResponseParsing(unittest.TestCase):
             "productType": "Creature - Angel",
             "color": "W",
             "colorIdentity": "W",
+            "manaCost": "{3}{W}{W}",
             "convertedManaCost": "5",
             "number": "1",
             "power": "4",
@@ -979,7 +980,7 @@ class TestTCGPlayerResponseParsing(unittest.TestCase):
         self.assertEqual(card.set_code, "LEA")
         self.assertEqual(card.rarity, Rarity.RARE)
         self.assertEqual(card.type_line, "Creature - Angel")
-        self.assertEqual(card.mana_cost, "5")
+        self.assertEqual(card.mana_cost, "{3}{W}{W}")
         self.assertEqual(card.cmc, 5.0)
         self.assertEqual(card.power, "4")
         self.assertEqual(card.toughness, "4")
@@ -1378,10 +1379,11 @@ class TestTCGPlayerParsingError(unittest.TestCase):
 
     def test_parse_card_data_raises_parsing_error_on_failure(self):
         """Test that _parse_card_data raises ParsingError on card creation failure."""
-        # Create data that will cause Card creation to fail
-        # by providing None for required fields
+        # Create data that will cause Card creation to fail: a
+        # non-numeric productId makes int(product_id) raise, which is
+        # wrapped as a ParsingError.
         data = {
-            "productId": None,
+            "productId": "not-numeric",
             "name": None,
             "categoryName": "LEA",
             "type": "Creature",
@@ -1396,7 +1398,7 @@ class TestTCGPlayerParsingError(unittest.TestCase):
     def test_parsing_error_includes_raw_data(self):
         """Test that ParsingError includes raw data for debugging."""
         data = {
-            "productId": None,
+            "productId": "not-numeric",
             "name": None,
             "categoryName": "LEA",
             "type": "Creature",

@@ -182,12 +182,16 @@ class TestRateLimiterFractionalLimits(unittest.TestCase):
     per issue #133.
     """
 
-    def test_fractional_requests_per_second_rounds_up(self) -> None:
+    @patch("pymtg.utils.rate_limiting.time.time")
+    def test_fractional_requests_per_second_rounds_up(self, mock_time) -> None:
         """Tests that 1.5 req/s with 1s window allows 2 requests.
 
         Without ceil, int(1.5 * 1) = 1, which would under-limit. With
         ceil, math.ceil(1.5 * 1) = 2, the correct upper bound.
         """
+        # Pin time so the 1-second window does not evict recorded
+        # timestamps on slow/overloaded CI runners.
+        mock_time.return_value = 1000.0
         limiter = RateLimiter(
             {
                 "frac": RateLimitConfig(
@@ -225,12 +229,16 @@ class TestRateLimiterFractionalLimits(unittest.TestCase):
         limiter._record("frac")
         self.assertFalse(limiter.check("frac"))
 
-    def test_sub_one_per_second_allows_one_request(self) -> None:
+    @patch("pymtg.utils.rate_limiting.time.time")
+    def test_sub_one_per_second_allows_one_request(self, mock_time) -> None:
         """Tests that 0.5 req/s with 1s window allows 1 request.
 
         Without ceil, int(0.5 * 1) = 0, blocking all requests. With
         ceil, math.ceil(0.5 * 1) = 1, allowing a single request.
         """
+        # Pin time so the 1-second window does not evict recorded
+        # timestamps on slow/overloaded CI runners.
+        mock_time.return_value = 1000.0
         limiter = RateLimiter(
             {
                 "sub": RateLimitConfig(
@@ -243,11 +251,15 @@ class TestRateLimiterFractionalLimits(unittest.TestCase):
         limiter._record("sub")
         self.assertFalse(limiter.check("sub"))
 
-    def test_integer_rate_limit_unchanged_by_ceil(self) -> None:
+    @patch("pymtg.utils.rate_limiting.time.time")
+    def test_integer_rate_limit_unchanged_by_ceil(self, mock_time) -> None:
         """Tests that integer rate limits are unaffected by ceil.
 
         math.ceil(5 * 1) = 5, same as int(5 * 1) = 5.
         """
+        # Pin time so the 1-second window does not evict recorded
+        # timestamps on slow/overloaded CI runners.
+        mock_time.return_value = 1000.0
         limiter = RateLimiter(
             {
                 "int": RateLimitConfig(
@@ -262,13 +274,17 @@ class TestRateLimiterFractionalLimits(unittest.TestCase):
             limiter._record("int")
         self.assertFalse(limiter.check("int"))
 
-    def test_burst_size_caps_rounded_up_max_requests(self) -> None:
+    @patch("pymtg.utils.rate_limiting.time.time")
+    def test_burst_size_caps_rounded_up_max_requests(self, mock_time) -> None:
         """Tests that burst_size caps the rounded-up max_requests.
 
         With requests_per_second=1.5 (ceil=2) but burst_size=1, the
         effective limit should be 1, not 2. The min(max_requests,
         burst_size) logic must still apply after ceil.
         """
+        # Pin time so the 1-second window does not evict recorded
+        # timestamps on slow/overloaded CI runners.
+        mock_time.return_value = 1000.0
         limiter = RateLimiter(
             {
                 "frac": RateLimitConfig(
@@ -282,12 +298,16 @@ class TestRateLimiterFractionalLimits(unittest.TestCase):
         # Second request blocked by burst_size cap, not ceil result
         self.assertFalse(limiter.check("frac"))
 
-    def test_fractional_rate_with_custom_window(self) -> None:
+    @patch("pymtg.utils.rate_limiting.time.time")
+    def test_fractional_rate_with_custom_window(self, mock_time) -> None:
         """Tests ceil with a non-standard window_seconds.
 
         With requests_per_second=1.5 and window_seconds=2,
         max_requests = ceil(1.5 * 2) = 3.
         """
+        # Pin time so the 2-second window does not evict recorded
+        # timestamps on slow/overloaded CI runners.
+        mock_time.return_value = 1000.0
         limiter = RateLimiter(
             {
                 "frac": RateLimitConfig(
@@ -353,14 +373,26 @@ class TestRateLimitGuard(unittest.TestCase):
         and return False to indicate the caller had to wait. The real
         ``wait()`` blocks on ``time.sleep`` for ~window_seconds, which is
         slow and flaky; it is mocked here to avoid wall-clock waiting.
+
+        ``__enter__`` retries the atomic check-and-record until it
+        reserves a slot, so the mocked ``wait()`` must free a slot
+        (simulating time passing) for the retry to terminate.
         """
+
+        def _free_slot(provider: str) -> None:
+            """Simulate time passing by evicting one recorded entry."""
+            state = self.limiter.states.get(provider)
+            if state and state.timestamps:
+                del state.timestamps[0]
+
         # Fill the burst capacity
         self.limiter._record("test_provider")
         self.limiter._record("test_provider")
         guard = self.limiter.guard("test_provider")
         # Mock wait() to avoid real wall-clock waiting and the flakiness
-        # of the strict ``< window`` cleanup boundary.
-        with patch.object(self.limiter, "wait") as mock_wait:
+        # of the strict ``< window`` cleanup boundary; the side effect
+        # frees a slot so __enter__'s retry loop can reserve one.
+        with patch.object(self.limiter, "wait", side_effect=_free_slot) as mock_wait:
             result = guard.__enter__()
             self.assertFalse(result)
             self.assertTrue(guard.waited)

@@ -123,7 +123,7 @@ class TestRetryOnRateLimit(unittest.TestCase):
         """Tests that RateLimitError triggers retry."""
         call_count = 0
 
-        @retry_on_rate_limit(max_retries=3, backoff_factor=0.0, jitter=False)
+        @retry_on_rate_limit(max_retries=3, backoff_factor=1.0, jitter=False)
         def flaky_func() -> str:
             nonlocal call_count
             call_count += 1
@@ -131,9 +131,14 @@ class TestRetryOnRateLimit(unittest.TestCase):
                 raise RateLimitError("Rate limited")
             return "success"
 
-        result = flaky_func()
+        with patch("pymtg.utils.retry.time.sleep") as mock_sleep:
+            result = flaky_func()
+
         self.assertEqual(result, "success")
         self.assertEqual(call_count, 3)
+        # attempt 0: 1.0 * 2^0 = 1.0, attempt 1: 1.0 * 2^1 = 2.0
+        self.assertEqual(mock_sleep.call_args_list[0].args[0], 1.0)
+        self.assertEqual(mock_sleep.call_args_list[1].args[0], 2.0)
 
     def test_retry_on_timeout(self) -> None:
         """Tests that TimeoutError triggers retry when retry_on_timeout=True."""
@@ -251,13 +256,15 @@ class TestRetryOnRateLimit(unittest.TestCase):
             value_error_func()
         self.assertEqual(call_count, 1)
 
-    def test_respect_retry_after_header(self) -> None:
-        """Tests that Retry-After header is respected."""
+    def test_respect_retry_after_header_uses_max_of_backoff_and_retry_after(
+        self,
+    ) -> None:
+        """Tests that sleep uses max(exponential_backoff, retry_after)."""
         call_count = 0
 
         @retry_on_rate_limit(
             max_retries=3,
-            backoff_factor=0.0,
+            backoff_factor=10.0,
             jitter=False,
             respect_retry_after=True,
         )
@@ -269,11 +276,33 @@ class TestRetryOnRateLimit(unittest.TestCase):
             return "success"
 
         with patch("pymtg.utils.retry.time.sleep") as mock_sleep:
-            result = rate_limited_func()
+            rate_limited_func()
 
-        self.assertEqual(result, "success")
-        self.assertEqual(call_count, 2)
-        mock_sleep.assert_called_once_with(5.0)
+        # backoff = 10.0 * 2^0 = 10.0, retry_after = 5 -> max(10.0, 5.0)
+        mock_sleep.assert_called_once_with(10.0)
+
+    def test_retry_after_ignored_when_respect_disabled(self) -> None:
+        """Tests that retry_after is ignored when respect_retry_after=False."""
+        call_count = 0
+
+        @retry_on_rate_limit(
+            max_retries=3,
+            backoff_factor=2.0,
+            jitter=False,
+            respect_retry_after=False,
+        )
+        def rate_limited_func() -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count < 2:
+                raise RateLimitError("Rate limited", retry_after=100)
+            return "success"
+
+        with patch("pymtg.utils.retry.time.sleep") as mock_sleep:
+            rate_limited_func()
+
+        # Should use exponential backoff (2.0), not retry_after (100)
+        mock_sleep.assert_called_once_with(2.0)
 
 
 class TestRetryWithConfig(unittest.TestCase):

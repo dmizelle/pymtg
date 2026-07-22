@@ -970,10 +970,14 @@ class TestScryfallQueryBuilding(unittest.TestCase):
         self.assertEqual(query, '"Black Lotus"')
 
     def test_build_search_query_with_colors(self):
-        """Test query building with colors."""
+        """Test query building with colors.
+
+        A single color uses the color-identity operator (``ci:``) so the
+        behavior is consistent regardless of how many colors are supplied.
+        """
         scryfall = Scryfall()
         query = scryfall._build_search_query(colors=[Color.BLUE])
-        self.assertEqual(query, "c:U")
+        self.assertEqual(query, "ci:U")
 
     def test_build_search_query_with_multiple_colors(self):
         """Test query building with multiple colors."""
@@ -1000,7 +1004,7 @@ class TestScryfallQueryBuilding(unittest.TestCase):
             name="Bolt", colors=[Color.RED], type_line="Instant"
         )
         self.assertIn('"Bolt"', query)
-        self.assertIn("c:R", query)
+        self.assertIn("ci:R", query)
         self.assertIn('"Instant"', query)
 
     def test_build_search_query_with_set_code(self):

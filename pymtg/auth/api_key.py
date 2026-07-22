@@ -123,4 +123,17 @@ class APIKeyAuthHandler(BaseAuthHandler):
         # state: any code reading _authenticated directly must agree with
         # is_authenticated(), which returns False once _api_key is None.
         state["_authenticated"] = False
+        # threading.Lock is not picklable; exclude it here and recreate it
+        # in __setstate__.
+        state["_lock"] = None
         return state
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Restore state after deserialization, recreating the lock.
+
+        Args:
+            state: The pickled state dictionary produced by __getstate__.
+        """
+        for key, value in state.items():
+            setattr(self, key, value)
+        self._lock = threading.Lock()

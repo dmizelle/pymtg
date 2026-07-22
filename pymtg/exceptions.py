@@ -13,9 +13,13 @@ dict values use their default string representation.
 import re
 from typing import Any
 
-# Matches an incomplete trailing unicode escape (e.g. a dangling "\u00"
-# without the following 4 hex digits) produced by truncating repr() output.
-_INCOMPLETE_UNICODE_ESCAPE = re.compile(r"\\u[0-9a-fA-F]{0,3}$")
+# Matches an incomplete trailing unicode or byte escape (e.g. a dangling
+# "\u00" without the following 4 hex digits, "\U0001" without the following
+# 8 hex digits, or "\x4" without the following 2 hex digits) produced by
+# truncating repr() output.
+_INCOMPLETE_UNICODE_ESCAPE = re.compile(
+    r"(\\U[0-9a-fA-F]{0,7}|\\u[0-9a-fA-F]{0,3}|\\x[0-9a-fA-F]{0,1})$"
+)
 
 
 class PyMTGError(Exception):

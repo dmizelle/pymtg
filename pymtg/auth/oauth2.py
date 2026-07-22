@@ -209,8 +209,11 @@ class OAuth2ClientCredentialsHandler(BaseAuthHandler):
             if not self._authenticated or not self.access_token:
                 return False
 
-            # Check if token is expired
-            if self.expires_at and datetime.now() >= self.expires_at:
+            # Check if token is expired (with a safety buffer to avoid
+            # 401s from clock skew or in-flight requests).
+            if self.expires_at and datetime.now() >= self.expires_at - timedelta(
+                seconds=60
+            ):
                 return False
 
             return True
@@ -238,7 +241,7 @@ class OAuth2ClientCredentialsHandler(BaseAuthHandler):
             session: The requests.Session to apply authentication to.
         """
         with self._lock:
-            if self.access_token and self.token_type:
+            if self.access_token and self.token_type and self.is_authenticated():
                 session.headers.update(
                     {"Authorization": f"{self.token_type} {self.access_token}"}
                 )

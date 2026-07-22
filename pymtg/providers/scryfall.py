@@ -68,32 +68,6 @@ class Scryfall(BaseProvider):
         blue_creatures = scryfall.search_syntax("c:U type:creature", limit=10)
     """
 
-    # Valid Scryfall search parameters for the /cards/search endpoint
-    VALID_SEARCH_PARAMS: set[str] = {
-        "set",
-        "rarity",
-        "cmc",
-        "power",
-        "toughness",
-        "loyalty",
-        "format",
-        "is_reserved",
-        "is_foil",
-        "is_nonfoil",
-        "include_extras",
-        "include_multilingual",
-        "include_variations",
-        "set_type",
-        "color",
-        "type",
-        "subtype",
-        "keyword",
-        "mana_value",
-        "textsearch",
-        "artist",
-        "release",
-    }
-
     def __init__(self) -> None:
         """Initialize the Scryfall provider."""
         super().__init__()
@@ -229,6 +203,19 @@ class Scryfall(BaseProvider):
                     power=power,
                     toughness=toughness,
                     format=format,
+                    loyalty=loyalty,
+                    color=color,
+                    card_type=card_type,
+                    subtype=subtype,
+                    keyword=keyword,
+                    mana_value=mana_value,
+                    textsearch=textsearch,
+                    artist=artist,
+                    release=release,
+                    is_reserved=is_reserved,
+                    is_foil=is_foil,
+                    is_nonfoil=is_nonfoil,
+                    set_type=set_type,
                 ),
                 "page": page,
                 "limit": min(limit, 175),
@@ -238,52 +225,21 @@ class Scryfall(BaseProvider):
             if order:
                 params["order"] = order
 
-            # Add additional search parameters to HTTP query. Keys that
-            # _build_search_query already translated into the `q`
-            # query string must NOT also be forwarded as standalone
-            # query parameters, or Scryfall would receive duplicate /
-            # conflicting filters.
-            _query_handled_keys = {
-                "set_code",
-                "rarity",
-                "cmc",
-                "power",
-                "toughness",
-                "format",
-            }
+            # Only include_extras, include_multilingual, and
+            # include_variations are valid standalone HTTP query
+            # parameters for the /cards/search endpoint. All other
+            # filters are embedded in the `q` query string by
+            # _build_search_query(); forwarding them as standalone
+            # params would be silently ignored by Scryfall.
             extra_params: dict[str, Any] = {
-                "rarity": rarity,
-                "cmc": cmc,
-                "power": power,
-                "toughness": toughness,
-                "loyalty": loyalty,
-                "format": format,
-                "is_reserved": is_reserved,
-                "is_foil": is_foil,
-                "is_nonfoil": is_nonfoil,
                 "include_extras": include_extras,
                 "include_multilingual": include_multilingual,
                 "include_variations": include_variations,
-                "set_type": set_type,
-                "color": color,
-                "type": card_type,
-                "subtype": subtype,
-                "keyword": keyword,
-                "mana_value": mana_value,
-                "textsearch": textsearch,
-                "artist": artist,
-                "release": release,
             }
 
             for key, value in extra_params.items():
-                if key in _query_handled_keys:
-                    continue
                 if value is not None:
-                    if isinstance(value, dict):
-                        for subkey, subvalue in value.items():
-                            params[f"{key}_{subkey}"] = subvalue
-                    else:
-                        params[key] = value
+                    params[key] = value
 
             try:
                 response = self.http_client.get("/cards/search", params=params)
@@ -330,6 +286,19 @@ class Scryfall(BaseProvider):
         power: str | dict[str, int] | None = None,
         toughness: str | dict[str, int] | None = None,
         format: Format | str | None = None,
+        loyalty: str | int | dict[str, int] | None = None,
+        color: str | None = None,
+        card_type: str | None = None,
+        subtype: str | None = None,
+        keyword: str | None = None,
+        mana_value: int | dict[str, int] | None = None,
+        textsearch: str | None = None,
+        artist: str | None = None,
+        release: str | None = None,
+        is_reserved: bool | None = None,
+        is_foil: bool | None = None,
+        is_nonfoil: bool | None = None,
+        set_type: str | None = None,
     ) -> str:
         """Build a Scryfall query string from search parameters.
 
@@ -345,6 +314,20 @@ class Scryfall(BaseProvider):
             power: Power to filter by (str or dict).
             toughness: Toughness to filter by (str or dict).
             format: Format legality to filter by.
+            loyalty: Loyalty to filter by (str, int, or dict).
+            color: Color to filter by (e.g. "U").
+            card_type: Card type to filter by (e.g. "Creature").
+            subtype: Card subtype to filter by (e.g. "Goblin").
+            keyword: Keyword ability to filter by (matched against oracle
+                text via the ``o:`` operator).
+            mana_value: Mana value to filter by (int or dict).
+            textsearch: Oracle text to search for.
+            artist: Artist to filter by.
+            release: Release date/year to filter by.
+            is_reserved: Whether the card is on the Reserved List.
+            is_foil: Whether the card is foil.
+            is_nonfoil: Whether the card is non-foil.
+            set_type: Set type to filter by.
 
         Returns:
             A Scryfall query string.
@@ -357,10 +340,7 @@ class Scryfall(BaseProvider):
 
         if colors:
             color_letters = "".join(c.value for c in colors)
-            if len(colors) == 1:
-                query_parts.append(f"c:{color_letters}")
-            else:
-                query_parts.append(f"ci:{color_letters}")
+            query_parts.append(f"ci:{color_letters}")
 
         if identity:
             id_letters = "".join(c.value for c in identity)
@@ -405,6 +385,45 @@ class Scryfall(BaseProvider):
                 query_parts.append(f"f:{format.value}")
             else:
                 query_parts.append(f"f:{format}")
+
+        if loyalty is not None:
+            if isinstance(loyalty, dict):
+                if "gte" in loyalty:
+                    query_parts.append(f"loy>={loyalty['gte']}")
+                if "lte" in loyalty:
+                    query_parts.append(f"loy<={loyalty['lte']}")
+            else:
+                query_parts.append(f"loy:{loyalty}")
+        if color:
+            query_parts.append(f"c:{color}")
+        if card_type:
+            query_parts.append(f't:"{card_type}"')
+        if subtype:
+            query_parts.append(f't:"{subtype}"')
+        if keyword:
+            query_parts.append(f'o:"{keyword}"')
+        if mana_value is not None:
+            if isinstance(mana_value, dict):
+                if "gte" in mana_value:
+                    query_parts.append(f"mv>={mana_value['gte']}")
+                if "lte" in mana_value:
+                    query_parts.append(f"mv<={mana_value['lte']}")
+            else:
+                query_parts.append(f"mv:{mana_value}")
+        if textsearch:
+            query_parts.append(f'o:"{textsearch}"')
+        if artist:
+            query_parts.append(f'a:"{artist}"')
+        if release:
+            query_parts.append(f"year:{release}")
+        if is_reserved:
+            query_parts.append("is:reserved")
+        if is_foil:
+            query_parts.append("is:foil")
+        if is_nonfoil:
+            query_parts.append("is:nonfoil")
+        if set_type:
+            query_parts.append(f"is:{set_type}")
 
         return " ".join(query_parts)
 
@@ -626,10 +645,16 @@ class Scryfall(BaseProvider):
             if language:
                 params["lang"] = language
 
-            response = self.http_client.get(
-                "/cards/named", params=params, allow_redirects=True
-            )
-            data = self._handle_response(response, "card")
+            try:
+                response = self.http_client.get(
+                    "/cards/named", params=params, allow_redirects=True
+                )
+                data = self._handle_response(response, "card")
+            except NotFoundError:
+                # The /cards/named endpoint returns HTTP 404 when no card
+                # matches the supplied name. Treat this as an empty result
+                # list for consistency with search() and search_syntax().
+                return []
 
             if not data:
                 return []
@@ -675,6 +700,9 @@ class Scryfall(BaseProvider):
         try:
             if not query or not isinstance(query, str):
                 raise InvalidQueryError("Query must be a non-empty string")
+
+            if not isinstance(limit, int) or limit < 1:
+                raise InvalidQueryError("limit must be a positive integer (>= 1)")
 
             params = {"q": query, "limit": min(limit, 20)}
 
@@ -982,12 +1010,19 @@ class Scryfall(BaseProvider):
                 return None
 
             if isinstance(currency_data, dict):
-                # Handle nested format: {"normal": "0.42", "foil": "1.23"}
+                # Nested format: {"normal": "0.42", "foil": "1.23"}
                 price_value = currency_data.get(price_type)
                 return parse_currency_value(price_value)
             else:
-                # Handle flat format: currency_data is the price directly
-                return parse_currency_value(currency_data)
+                # Flat format: only the "normal" price lives under the
+                # bare currency key itself. Foil and etched prices live
+                # under separate composite keys (e.g. "usd_foil",
+                # "usd_etched"), so consult those rather than returning
+                # the normal price for every price_type.
+                if price_type == "normal":
+                    return parse_currency_value(currency_data)
+                composite_key = f"{currency_key}_{price_type}"
+                return parse_currency_value(pricing_data.get(composite_key))
 
         return Pricing(
             scryfall=ScryfallPricing(

@@ -75,7 +75,7 @@ class TestVersion:
 
     @pytest.mark.parametrize(
         "version",
-        [None, 1, 1.0, ["1.0.0"]],
+        [None, ["1.0.0"]],
     )
     def test_validate_version_rejects_non_strings(self, version: object) -> None:
         """Test that non-string inputs raise TypeError, not InvalidVersion.
@@ -85,6 +85,12 @@ class TestVersion:
         ``TypeError`` for non-string inputs. This pins that behavior so
         future readers do not assume ``InvalidVersion`` is the only
         failure mode.
+
+        Only types that are guaranteed to raise ``TypeError`` across all
+        ``packaging`` versions are included here. Numeric values like
+        ``1`` and ``1.0`` are intentionally omitted because some versions
+        of ``packaging`` coerce them to strings, which would make this
+        test brittle.
 
         Args:
             version: A non-string value to test.

@@ -12,6 +12,7 @@ Note:
     This implementation uses the OAuth2 client credentials flow.
 """
 
+import copy
 import logging
 import threading
 from typing import Any, Generator, NoReturn
@@ -209,16 +210,10 @@ class TCGPlayer(BaseProvider):
             if scope:
                 self.scope = scope
 
-            # Update auth handler credentials
-            self.auth_handler._client_id = (
-                self.client_id or self.auth_handler._client_id
-            )
-            self.auth_handler._client_secret = (
-                self.client_secret or self.auth_handler._client_secret
-            )
-            self.auth_handler._scope = self.scope or self.auth_handler._scope
-
-            # Authenticate using the handler
+            # Authenticate using the handler. The handler is responsible
+            # for updating its own internal credentials from the kwargs
+            # passed here; do not mutate its private attributes directly
+            # to avoid redundant/inconsistent double-application.
             self.auth_handler.authenticate(
                 client_id=self.client_id,
                 client_secret=self.client_secret,
@@ -315,6 +310,11 @@ class TCGPlayer(BaseProvider):
             RateLimitError: If rate limit is exceeded.
         """
         self._check_authenticated()
+
+        if not isinstance(limit, int) or limit < 1:
+            raise InvalidQueryError("limit must be a positive integer (>= 1)")
+        if not isinstance(page, int) or page < 1:
+            raise InvalidQueryError("page must be a positive integer (>= 1)")
 
         # Build search parameters
         params: dict[str, Any] = {
@@ -696,7 +696,14 @@ class TCGPlayer(BaseProvider):
 
             data = response.json()
             results = data.get("results", [])
-            suggestions = [r.get("name", "") for r in results if r.get("name")]
+            # TCGPlayer catalog API returns product names under the
+            # "productName" key, not "name". Fall back to "name" for
+            # any response shapes that still use the legacy key.
+            suggestions = [
+                r.get("productName", "") or r.get("name", "")
+                for r in results
+                if r.get("productName") or r.get("name")
+            ]
             return suggestions
 
         except requests.exceptions.HTTPError as e:
@@ -787,15 +794,18 @@ class TCGPlayer(BaseProvider):
                     if not self.is_authenticated():
                         try:
                             self.authenticate()
-                        except (AuthenticationError, NetworkError):
-                            # If auto-authentication fails, raise AuthenticationError
+                        except (AuthenticationError, NetworkError) as e:
+                            # If auto-authentication fails, raise
+                            # AuthenticationError, chaining the original
+                            # exception to preserve the cause/traceback.
                             raise AuthenticationError(
                                 "Authentication required for TCGPlayer API. "
-                                "Please provide valid client_id and client_secret. "
-                                "Apply for access at https://docs.tcgplayer.com",
+                                "Please provide valid client_id and "
+                                "client_secret. Apply for access at "
+                                "https://docs.tcgplayer.com",
                                 auth_type="oauth2",
                                 provider=self.name,
-                            )
+                            ) from e
             else:
                 raise AuthenticationError(
                     "Authentication required for TCGPlayer API. "
@@ -1039,8 +1049,10 @@ class TCGPlayer(BaseProvider):
             TCGPlayer data needs to be mapped to the normalized Card model.
             This method handles the mapping from TCGPlayer-specific fields.
         """
-        # Extract basic information
-        name = data.get("name", "")
+        # Extract basic information. The TCGPlayer catalog API returns
+        # product names under the "productName" key; fall back to "name"
+        # for response shapes that use the legacy key.
+        name = data.get("name", "") or data.get("productName", "")
         product_id = data.get("productId") or data.get("id")
 
         # Extract set information
@@ -1107,26 +1119,29 @@ class TCGPlayer(BaseProvider):
         if color_identity_str:
             color_identity = self._parse_tcgplayer_color_string(color_identity_str)
 
-        # Extract mana cost
-        mana_cost_str = data.get("convertedManaCost")
+        # Extract mana cost. TCGPlayer exposes two distinct fields:
+        # "manaCost" (the mana symbol string, e.g. "{2}{W}") and
+        # "convertedManaCost" (the numeric CMC). Use each field only for
+        # its intended purpose to avoid conflating them.
+        mana_cost = data.get("manaCost")
+        raw_cmc = data.get("convertedManaCost")
         cmc = None
-        if mana_cost_str is not None:
+        if raw_cmc is not None:
             try:
-                cmc = float(mana_cost_str)
+                cmc = float(raw_cmc)
                 if cmc < 0:
                     logger.warning(
                         "Negative CMC value %r for card %r; setting to None",
                         cmc,
-                        data.get("name", ""),
+                        data.get("name", "") or data.get("productName", ""),
                     )
                     cmc = None
             except (ValueError, TypeError):
                 logger.warning(
                     "Invalid CMC value %r for card %r; setting to None",
-                    mana_cost_str,
-                    data.get("name", ""),
+                    raw_cmc,
+                    data.get("name", "") or data.get("productName", ""),
                 )
-                mana_cost_str = str(mana_cost_str)
                 cmc = None
 
         # Extract image URL
@@ -1172,7 +1187,7 @@ class TCGPlayer(BaseProvider):
                 collector_number=card_number if card_number else None,
                 rarity=rarity,
                 type_line=card_type if card_type else None,
-                mana_cost=mana_cost_str,
+                mana_cost=mana_cost,
                 cmc=cmc,
                 colors=colors if colors else None,
                 color_identity=color_identity if color_identity else None,
@@ -1412,7 +1427,24 @@ class TCGPlayer(BaseProvider):
         results = data.get("results", [])
         tcgplayer_pricing_data: dict[str, float] = {}
 
-        for sku in results:
+        # The TCGPlayer pricing endpoint returns SKU pricing nested
+        # under results[].skus (each top-level result is a wrapper with
+        # a "skus" list). Some legacy/extended responses instead return
+        # SKU objects directly in results. Handle both shapes.
+        skus: list[Any] = []
+        for result in results:
+            if not isinstance(result, dict):
+                continue
+            if "skus" in result:
+                nested = result.get("skus", [])
+                if isinstance(nested, list):
+                    skus.extend(nested)
+            elif "conditionName" in result:
+                skus.append(result)
+
+        for sku in skus:
+            if not isinstance(sku, dict):
+                continue
             condition = sku.get("conditionName", "").lower().replace(" ", "_")
             price = sku.get("price", 0)
             if (
@@ -1536,6 +1568,9 @@ class TCGPlayer(BaseProvider):
             Dictionary of attributes to serialize, excluding credentials.
         """
         state = self.__dict__.copy()
+        # Remove the non-picklable auth lock; it is re-created in
+        # __setstate__ after unpickling.
+        state.pop("_auth_lock", None)
         # Remove sensitive OAuth2 credentials from both the provider
         # and the auth handler to avoid leaking secrets via pickle.
         state.pop("client_id", None)
@@ -1543,13 +1578,36 @@ class TCGPlayer(BaseProvider):
         state.pop("scope", None)
         auth_handler = state.get("auth_handler")
         if auth_handler is not None:
+            # Copy the auth handler before clearing its secrets so the
+            # live provider's auth_handler is not mutated in-place
+            # (a shallow __dict__.copy() only copies the reference).
+            auth_handler = copy.copy(auth_handler)
             if hasattr(auth_handler, "_client_id"):
                 auth_handler._client_id = None
             if hasattr(auth_handler, "_client_secret"):
                 auth_handler._client_secret = None
             if hasattr(auth_handler, "access_token"):
                 auth_handler.access_token = None
+            state["auth_handler"] = auth_handler
         return state
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Restore state after unpickling.
+
+        Re-creates non-picklable members (such as the auth lock) so the
+        provider is usable immediately after unpickling.
+
+        Args:
+            state: The serialized state dictionary produced by
+                __getstate__.
+        """
+        # Restore attributes from the pickled state. vars(self) returns
+        # the underlying dict (typed as dict[str, Any]) so update() is
+        # accepted by the type checker.
+        vars(self).update(state)
+        # Re-create the auth lock that was excluded from serialization.
+        if not hasattr(self, "_auth_lock"):
+            self._auth_lock = threading.RLock()
 
     def __repr__(self) -> str:
         """Return a string representation of the TCGPlayer provider.

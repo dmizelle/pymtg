@@ -204,8 +204,7 @@ class Aggregator:
 
         # Query each provider
         for provider in providers_to_query:
-            provider_name = provider.name
-            result_dict[provider_name] = self._query_provider(
+            result_dict[provider.name] = self._query_provider(
                 provider=provider,
                 name=name,
                 colors=colors,
@@ -261,8 +260,7 @@ class Aggregator:
             return result_dict
 
         for provider in providers_to_query:
-            provider_name = provider.name
-            result_dict[provider_name] = self._query_provider_syntax(
+            result_dict[provider.name] = self._query_provider_syntax(
                 provider=provider,
                 query=query,
                 limit=limit,
@@ -327,18 +325,43 @@ class Aggregator:
         error: dict[str, Any] | None = None
         cards: list[Card] = []
 
-        try:
-            # Convert string colors to enum if needed
-            def convert_colors(color_list: list[str] | None) -> list[Color] | None:
-                """Convert a list of color strings to Color enum values."""
-                if color_list is None:
-                    return None
-                return [Color(c.upper()) for c in color_list]
+        # Convert string colors to enum if needed. This validation runs
+        # outside the provider try/except below so an invalid color (a
+        # client-side input error) is surfaced to the caller directly
+        # rather than being misattributed as a provider failure.
+        def convert_colors(color_list: list[str] | None) -> list[Color] | None:
+            """Convert a list of color strings to Color enum values.
 
+            Args:
+                color_list: List of color strings (e.g. ["W", "U"]).
+
+            Returns:
+                List of Color enum values, or None if input is None.
+
+            Raises:
+                ValueError: If any color string is not a valid Color.
+            """
+            if color_list is None:
+                return None
+            converted: list[Color] = []
+            for c in color_list:
+                try:
+                    converted.append(Color(c.upper()))
+                except ValueError:
+                    raise ValueError(
+                        f"Invalid color value: {c!r}. "
+                        f"Valid values: {[e.value for e in Color]}"
+                    ) from None
+            return converted
+
+        converted_colors = convert_colors(colors)
+        converted_identity = convert_colors(identity)
+
+        try:
             cards = provider.search(
                 name=name,
-                colors=convert_colors(colors),
-                identity=convert_colors(identity),
+                colors=converted_colors,
+                identity=converted_identity,
                 type_line=type_line,
                 limit=limit,
                 page=page,

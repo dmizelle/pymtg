@@ -7,6 +7,7 @@ for making requests to MTG API providers.
 import logging
 import posixpath
 from typing import Any, cast
+from urllib.parse import unquote
 
 import requests
 from requests.structures import CaseInsensitiveDict
@@ -453,13 +454,26 @@ class HTTPClient:
                 "absolute URLs are not permitted as endpoints; the "
                 "endpoint is always joined to base_url to prevent SSRF"
             )
+        # Reject protocol-relative URLs (e.g. "//evil.com/path") which
+        # could bypass the absolute-URL check and enable SSRF.
+        if endpoint.startswith("//"):
+            raise ValueError(
+                "protocol-relative URLs are not permitted as endpoints; "
+                "the endpoint is always joined to base_url to prevent SSRF"
+            )
         # base_url already has trailing slashes stripped in __init__;
         # ensure the endpoint has no leading slash to avoid a double slash.
         path = endpoint.lstrip("/")
+        # Decode percent-encoded sequences before normalization so that
+        # encoded traversal (e.g. %2e%2e or ..%2f) is caught by the
+        # normpath check below rather than bypassing it.
+        decoded = unquote(path)
         # Normalize the path and reject traversal that escapes the base.
-        normalized = posixpath.normpath(path)
+        normalized = posixpath.normpath(decoded)
         if normalized == ".." or normalized.startswith("../"):
             raise ValueError("endpoint must not escape the base path")
+        if normalized == ".":
+            raise ValueError("endpoint must not collapse to the base path")
         return f"{self.base_url}/{normalized}"
 
     def _merge_headers(

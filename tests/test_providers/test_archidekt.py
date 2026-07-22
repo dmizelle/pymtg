@@ -530,8 +530,8 @@ class TestArchidektSearch(unittest.TestCase):
         mock_response = MagicMock()
         mock_http_client.get.return_value = mock_response
 
-        # Mock empty response data
-        mock_handle_response.return_value = []
+        # Mock empty response data (API returns a dict with empty results)
+        mock_handle_response.return_value = {"results": []}
 
         archidekt = Archidekt()
         cards = archidekt.search(name="Non-existent Card")
@@ -1286,8 +1286,10 @@ class TestArchidektCardFaceFlavorText(unittest.TestCase):
             ],
         }
         card = archidekt._parse_card(data)
-        assert card.card_faces is not None
-        self.assertEqual(card.card_faces[0].flavor_text, "A string flavor")
+        self.assertIsNotNone(card.card_faces)
+        card_faces = card.card_faces
+        assert card_faces is not None
+        self.assertEqual(card_faces[0].flavor_text, "A string flavor")
 
     def test_parse_card_face_flavor_text_list(self):
         """Tests that list flavor_text in card_faces is joined to a string.
@@ -1307,9 +1309,11 @@ class TestArchidektCardFaceFlavorText(unittest.TestCase):
             ],
         }
         card = archidekt._parse_card(data)
-        assert card.card_faces is not None
+        self.assertIsNotNone(card.card_faces)
+        card_faces = card.card_faces
+        assert card_faces is not None
         self.assertEqual(
-            card.card_faces[0].flavor_text,
+            card_faces[0].flavor_text,
             "Flavor part one Flavor part two",
         )
 
@@ -1327,8 +1331,10 @@ class TestArchidektCardFaceFlavorText(unittest.TestCase):
             ],
         }
         card = archidekt._parse_card(data)
-        assert card.card_faces is not None
-        self.assertIsNone(card.card_faces[0].flavor_text)
+        self.assertIsNotNone(card.card_faces)
+        card_faces = card.card_faces
+        assert card_faces is not None
+        self.assertIsNone(card_faces[0].flavor_text)
 
     def test_parse_card_face_flavor_text_missing(self):
         """Tests that missing flavor_text in card_faces returns None."""
@@ -1343,8 +1349,10 @@ class TestArchidektCardFaceFlavorText(unittest.TestCase):
             ],
         }
         card = archidekt._parse_card(data)
-        assert card.card_faces is not None
-        self.assertIsNone(card.card_faces[0].flavor_text)
+        self.assertIsNotNone(card.card_faces)
+        card_faces = card.card_faces
+        assert card_faces is not None
+        self.assertIsNone(card_faces[0].flavor_text)
 
     def test_parse_card_face_flavor_text_empty_string(self):
         """Tests that empty string flavor_text in card_faces returns None."""
@@ -1360,8 +1368,10 @@ class TestArchidektCardFaceFlavorText(unittest.TestCase):
             ],
         }
         card = archidekt._parse_card(data)
-        assert card.card_faces is not None
-        self.assertIsNone(card.card_faces[0].flavor_text)
+        self.assertIsNotNone(card.card_faces)
+        card_faces = card.card_faces
+        assert card_faces is not None
+        self.assertIsNone(card_faces[0].flavor_text)
 
     def test_parse_card_face_flavor_text_type_safety(self):
         """Tests that CardFace.flavor_text is always str or None, never list.
@@ -1382,8 +1392,10 @@ class TestArchidektCardFaceFlavorText(unittest.TestCase):
             ],
         }
         card = archidekt._parse_card(data)
-        assert card.card_faces is not None
-        flavor = card.card_faces[0].flavor_text
+        self.assertIsNotNone(card.card_faces)
+        card_faces = card.card_faces
+        assert card_faces is not None
+        flavor = card_faces[0].flavor_text
         self.assertIn(type(flavor), (str, type(None)))
 
 

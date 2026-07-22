@@ -492,6 +492,14 @@ class HARLogger:
     def _process_body(self, body: str | bytes | dict | None) -> tuple[Any, int]:
         """Process request/response body for HAR format.
 
+        Sensitive fields are redacted when the body is a dict, a list, or a
+        string that parses as JSON. Non-JSON string bodies (e.g. form-encoded
+        ``password=secret&username=admin``, XML, or plain text) are returned
+        verbatim because there is no reliable, format-agnostic way to
+        identify sensitive fields in arbitrary text. Callers logging
+        non-JSON text bodies should sanitize sensitive data before logging
+        to avoid leaking credentials in those formats.
+
         Args:
             body: The body content.
 
@@ -512,7 +520,14 @@ class HARLogger:
             body_size = len(body)
         elif isinstance(body, dict):
             processed_body = self._sanitize_dict(copy.deepcopy(body))
-            body_size = len(json.dumps(processed_body).encode("utf-8"))
+            try:
+                body_size = len(json.dumps(processed_body).encode("utf-8"))
+            except (TypeError, ValueError):
+                # Fall back to a string representation when the dict
+                # contains values that are not JSON-serializable (e.g.
+                # datetime objects, custom objects, or bytes), so that
+                # logging never crashes the caller.
+                body_size = len(str(processed_body).encode("utf-8"))
         else:  # string
             # Attempt to parse and sanitize JSON-formatted string bodies
             # so that sensitive fields embedded in JSON strings are not
@@ -650,7 +665,11 @@ class HARLogger:
         Returns:
             The MIME type from Content-Type header, or "application/octet-stream".
         """
-        content_type = headers.get("Content-Type", headers.get("content-type", ""))
+        content_type = ""
+        for key, value in headers.items():
+            if key.lower() == "content-type":
+                content_type = value
+                break
         if content_type:
             # Extract just the MIME type (before semicolon if present)
             return content_type.split(";")[0].strip()
@@ -674,20 +693,24 @@ class HARLogger:
             ValueError: If no entries have been captured, or if no
                 complete entries (with both request and response) exist.
         """
-        if not self.entries:
-            raise ValueError("No HAR entries to export")
+        with self._lock:
+            if not self.entries:
+                raise ValueError("No HAR entries to export")
 
-        # Filter to complete entries (HAR 1.2 requires both request and
-        # response on every entry).
-        complete_entries = [
-            entry
-            for entry in self.entries
-            if entry.request is not None and entry.response is not None
-        ]
-        if not complete_entries:
-            raise ValueError(
-                "No complete HAR entries (with request and response) to export"
-            )
+            # Filter to complete entries (HAR 1.2 requires both request
+            # and response on every entry). Snapshot the serialized form
+            # under the lock so a concurrent log_request/log_response/
+            # clear() cannot mutate the list during iteration.
+            complete_entries = [
+                entry
+                for entry in self.entries
+                if entry.request is not None and entry.response is not None
+            ]
+            if not complete_entries:
+                raise ValueError(
+                    "No complete HAR entries (with request and response) " "to export"
+                )
+            entries_data = [entry.to_dict() for entry in complete_entries]
 
         # Build the HAR structure
         har_data = {
@@ -698,7 +721,7 @@ class HARLogger:
                     "version": "1.0.0",
                 },
                 "pages": [{"id": self.page_id, "title": "pymtg HAR Export"}],
-                "entries": [entry.to_dict() for entry in complete_entries],
+                "entries": entries_data,
             }
         }
 
@@ -787,7 +810,8 @@ class HARLogger:
         Returns:
             The number of entries in the logger.
         """
-        return len(self.entries)
+        with self._lock:
+            return len(self.entries)
 
     def __repr__(self) -> str:
         """Return a string representation of the HARLogger.
@@ -795,7 +819,10 @@ class HARLogger:
         Returns:
             String representation including enabled status and entry count.
         """
-        return f"HARLogger(enabled={self._enabled}, entries={len(self.entries)})"
+        with self._lock:
+            return (
+                f"HARLogger(enabled={self._enabled}, " f"entries={len(self.entries)})"
+            )
 
     def __getstate__(self) -> dict[str, Any]:
         """Custom pickle serialization to exclude sensitive data from entries.

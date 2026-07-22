@@ -260,10 +260,15 @@ class OAuth1Handler(BaseAuthHandler):
             # Generate OAuth1 parameters
             oauth_params = self._generate_oauth_params()
 
-            # Parse and merge with existing query parameters
+            # Parse and merge with existing query parameters AND body
+            # parameters (for application/x-www-form-urlencoded bodies),
+            # per RFC 5849 §3.4.1.3.
             all_params = self._merge_with_existing_params(
                 str(request.url), oauth_params
             )
+            body_params = self._extract_body_params(request)
+            for k, vs in body_params.items():
+                all_params.setdefault(k, []).extend(vs)
 
             # Build signature base string
             base_string = self._build_signature_base_string(
@@ -346,6 +351,43 @@ class OAuth1Handler(BaseAuthHandler):
                 merged.setdefault(k, []).append(str(v))
         return merged
 
+    def _extract_body_params(
+        self, request: requests.PreparedRequest
+    ) -> dict[str, list[str]]:
+        """Extract form-encoded body parameters from a prepared request.
+
+        Per RFC 5849 §3.4.1.3, when the request body has a content type of
+        ``application/x-www-form-urlencoded``, each name-value pair in the
+        body MUST be included as a protocol parameter in the signature base
+        string. Bodies of any other content type (e.g. JSON, multipart, or
+        empty) contribute no parameters.
+
+        Args:
+            request: The prepared request whose body to inspect.
+
+        Returns:
+            Mapping of parameter name to a list of its string values
+            (multi-valued form fields are expanded into separate entries).
+        """
+        content_type = request.headers.get("Content-Type", "")
+        if "application/x-www-form-urlencoded" not in content_type:
+            return {}
+        body = request.body
+        if not body:
+            return {}
+        if isinstance(body, bytes):
+            try:
+                body_str = body.decode("utf-8")
+            except (UnicodeDecodeError, AttributeError):
+                return {}
+        else:
+            body_str = str(body)
+        # keep_blank_values=True preserves empty-valued form fields so
+        # they are included in the signature base string, consistent with
+        # query-string handling.
+        parsed = parse_qs(body_str, keep_blank_values=True)
+        return {str(k): [str(v) for v in vs] for k, vs in parsed.items()}
+
     def _build_signature_base_string(
         self, method: str, url: str, params: dict[str, list[str]]
     ) -> str:
@@ -385,9 +427,17 @@ class OAuth1Handler(BaseAuthHandler):
 
         param_string = "&".join(encoded_params)
 
-        # Build base string
+        # Build base string. Per RFC 5849 §3.4.1.2, the scheme and host
+        # must be lowercased and the default port (80 for http, 443 for
+        # https) must be omitted.
         parsed_url = urlparse(url)
-        base_url = f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path}"
+        scheme = parsed_url.scheme.lower()
+        host = parsed_url.hostname.lower() if parsed_url.hostname else ""
+        port = parsed_url.port
+        if (scheme == "http" and port == 80) or (scheme == "https" and port == 443):
+            port = None
+        netloc = host if port is None else f"{host}:{port}"
+        base_url = f"{scheme}://{netloc}{parsed_url.path}"
         method_upper = method.upper() if method else ""
         return (
             f"{method_upper}&{quote(str(base_url), safe='')}&"

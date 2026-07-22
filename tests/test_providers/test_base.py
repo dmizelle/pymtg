@@ -113,7 +113,12 @@ class TestHandleResponse:
         assert result == {"data": "created"}
 
     def test_handle_response_json_fallback_to_text(self):
-        """Test that a JSON parse failure returns response.text instead."""
+        """Test that a JSON parse failure raises APIError.
+
+        A malformed JSON body on a 2xx response should surface as an
+        explicit APIError rather than silently returning response.text,
+        which would break downstream callers expecting parsed JSON.
+        """
         provider = MockProvider()
         response = MagicMock()
         response.status_code = 200
@@ -121,8 +126,8 @@ class TestHandleResponse:
         response.json.side_effect = ValueError("invalid JSON")
         response.text = "<html>not json</html>"
 
-        result = provider._handle_response(response)
-        assert result == "<html>not json</html>"
+        with pytest.raises(APIError):
+            provider._handle_response(response)
 
     def test_handle_response_404_raises_not_found(self):
         """Test that 404 status code raises NotFoundError."""
@@ -235,9 +240,9 @@ class TestHandleResponse:
         assert exc_info.value.retry_after > 0
 
         # Verify the parsed date is correct by comparing with expected delta
-        # Allow 1 second tolerance for execution time
+        # Allow 2 second tolerance for execution time and int() truncation
         expected_retry_after = int(timedelta(days=1).total_seconds())
-        assert abs(exc_info.value.retry_after - expected_retry_after) <= 1
+        assert abs(exc_info.value.retry_after - expected_retry_after) <= 2
 
     def test_handle_response_429_without_retry_after(self):
         """Test that 429 status code without Retry-After uses default 0."""

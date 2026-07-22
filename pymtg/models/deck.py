@@ -178,6 +178,10 @@ class Deck(PyMTGBaseModel):
             key = card.card.name.lower()
             if key not in seen:
                 seen[key] = card
+        for card in self.get_commander_cards():
+            key = card.card.name.lower()
+            if key not in seen:
+                seen[key] = card
         for card in self.get_maybeboard_cards():
             key = card.card.name.lower()
             if key not in seen:

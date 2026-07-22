@@ -78,6 +78,12 @@ class SessionAuthHandler(BaseAuthHandler):
         self._username = None
         self._password = None
 
+        # Close any previously-stored session to avoid leaking the old
+        # requests.Session when re-authenticating (e.g. via refresh()).
+        if self._session is not None:
+            self._session.close()
+            self._session = None
+
         auth_session = requests.Session()
         session_stored = False
         try:
@@ -177,11 +183,11 @@ class SessionAuthHandler(BaseAuthHandler):
         finally:
             if not session_stored:
                 auth_session.close()
-                # Reset authenticated flag and clean up credentials on failure
                 self._authenticated = False
                 self._expires_at = None
-                self._username = None
-                self._password = None
+                # Preserve stored credentials so refresh() can be retried
+                # after transient failures. Use clear_auth() for explicit
+                # credential cleanup.
 
     def is_authenticated(self) -> bool:
         """Check if authentication is valid.
@@ -235,11 +241,13 @@ class SessionAuthHandler(BaseAuthHandler):
                 if value is not None:
                     session.cookies.set(name, value)
 
-        # Also set CSRF token in headers if present
-        if self.csrf_cookie in self.session_cookies:
-            csrf_token = self.session_cookies[self.csrf_cookie]
-            if csrf_token is not None:
-                session.headers.update({self.csrf_header: csrf_token})
+        # Also set CSRF token in headers if present, clearing any stale
+        # value from a prior apply_auth() call otherwise.
+        csrf_token = self.session_cookies.get(self.csrf_cookie)
+        if csrf_token is not None:
+            session.headers.update({self.csrf_header: csrf_token})
+        else:
+            session.headers.pop(self.csrf_header, None)
 
     def clear_auth(self) -> None:
         """Clear authentication credentials."""

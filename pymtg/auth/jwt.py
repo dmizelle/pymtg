@@ -36,6 +36,7 @@ class JWTAuthHandler(BaseAuthHandler):
         authenticated: Whether authentication is valid.
         auth_header_name: The header name for the JWT token (default: "Authorization").
         auth_header_prefix: The prefix for the JWT token (default: "JWT").
+        provider: The provider name reported in raised exceptions.
     """
 
     def __init__(
@@ -45,6 +46,7 @@ class JWTAuthHandler(BaseAuthHandler):
         refresh_endpoint: str = "/api/rest-auth/token/refresh/",
         auth_header_name: str = "Authorization",
         auth_header_prefix: str = "JWT",
+        provider: str | None = None,
     ) -> None:
         """Initialize the JWTAuthHandler.
 
@@ -58,12 +60,18 @@ class JWTAuthHandler(BaseAuthHandler):
                 Defaults to "Authorization".
             auth_header_prefix: The prefix for the JWT token.
                 Defaults to "JWT".
+            provider: The provider name to report in raised
+                :class:`~pymtg.exceptions.AuthenticationError` and
+                :class:`~pymtg.exceptions.NetworkError` exceptions. Defaults
+                to ``None`` so the handler is generic; callers using a
+                named backend (e.g. "archidekt") should pass it explicitly.
         """
         self.base_url = base_url.rstrip("/")
         self.login_endpoint = login_endpoint
         self.refresh_endpoint = refresh_endpoint
         self.auth_header_name = auth_header_name
         self.auth_header_prefix = auth_header_prefix
+        self.provider = provider
 
         # Token storage
         self._access_token: str | None = None
@@ -149,7 +157,7 @@ class JWTAuthHandler(BaseAuthHandler):
                 raise AuthenticationError(
                     error_msg,
                     auth_type="jwt",
-                    provider="archidekt",
+                    provider=self.provider,
                     status_code=response.status_code,
                 )
 
@@ -160,14 +168,14 @@ class JWTAuthHandler(BaseAuthHandler):
                     raise AuthenticationError(
                         "Invalid authentication response format",
                         auth_type="jwt",
-                        provider="archidekt",
+                        provider=self.provider,
                         status_code=response.status_code,
                     )
             except (json.JSONDecodeError, ValueError) as e:
                 raise AuthenticationError(
                     f"Failed to parse authentication response: {e}",
                     auth_type="jwt",
-                    provider="archidekt",
+                    provider=self.provider,
                     status_code=response.status_code,
                 ) from e
 
@@ -185,7 +193,7 @@ class JWTAuthHandler(BaseAuthHandler):
                 raise AuthenticationError(
                     "No valid access token in authentication response",
                     auth_type="jwt",
-                    provider="archidekt",
+                    provider=self.provider,
                     status_code=response.status_code,
                     details={"response_keys": list(auth_data.keys())},
                 )
@@ -213,7 +221,7 @@ class JWTAuthHandler(BaseAuthHandler):
             raise NetworkError(
                 "Network error during authentication",
                 original_exception=e,
-                provider="archidekt",
+                provider=self.provider,
             ) from e
         finally:
             auth_session.close()
@@ -283,7 +291,7 @@ class JWTAuthHandler(BaseAuthHandler):
             "credentials provided. Call authenticate(username=..., "
             "password=...) first.",
             auth_type="jwt",
-            provider="archidekt",
+            provider=self.provider,
         )
 
     def _refresh_with_token(self, refresh_token: str) -> None:
@@ -344,11 +352,12 @@ class JWTAuthHandler(BaseAuthHandler):
                 # Clear stale tokens on refresh failure
                 self._access_token = None
                 self._refresh_token = None
+                self._user_id = None
                 self._authenticated = False
                 raise AuthenticationError(
                     error_msg,
                     auth_type="jwt",
-                    provider="archidekt",
+                    provider=self.provider,
                     status_code=response.status_code,
                 )
 
@@ -357,11 +366,12 @@ class JWTAuthHandler(BaseAuthHandler):
             except (json.JSONDecodeError, ValueError) as e:
                 self._access_token = None
                 self._refresh_token = None
+                self._user_id = None
                 self._authenticated = False
                 raise AuthenticationError(
                     f"Failed to parse refresh response: {e}",
                     auth_type="jwt",
-                    provider="archidekt",
+                    provider=self.provider,
                     status_code=response.status_code,
                 ) from e
 
@@ -376,11 +386,12 @@ class JWTAuthHandler(BaseAuthHandler):
                 # unauthenticated rather than holding a stale access token.
                 self._access_token = None
                 self._refresh_token = None
+                self._user_id = None
                 self._authenticated = False
                 raise AuthenticationError(
                     "Refresh response did not contain a valid access token",
                     auth_type="jwt",
-                    provider="archidekt",
+                    provider=self.provider,
                     status_code=response.status_code,
                     details={"response_keys": list(token_data.keys())},
                 )
@@ -397,11 +408,12 @@ class JWTAuthHandler(BaseAuthHandler):
             # with an expired access token after a network failure.
             self._access_token = None
             self._refresh_token = None
+            self._user_id = None
             self._authenticated = False
             raise NetworkError(
                 "Network error during token refresh",
                 original_exception=e,
-                provider="archidekt",
+                provider=self.provider,
             ) from e
         finally:
             session.close()
@@ -415,14 +427,15 @@ class JWTAuthHandler(BaseAuthHandler):
             session: The requests.Session to apply authentication to.
         """
         if not self._access_token:
-            # Warn (rather than silently sending an unauthenticated request)
-            # so misconfigured callers are surfaced instead of receiving a
-            # confusing 401 from the server.
             logger.warning(
                 "apply_auth() called on a JWTAuthHandler with no access "
                 "token; no Authorization header will be set. Call "
                 "authenticate(username=..., password=...) first."
             )
+            # Remove any previously-applied Authorization header so a reused
+            # session does not carry a stale/invalid token after auth is
+            # cleared or a refresh fails.
+            session.headers.pop(self.auth_header_name, None)
             return
         auth_value = f"{self.auth_header_prefix} {self._access_token}"
         session.headers.update({self.auth_header_name: auth_value})

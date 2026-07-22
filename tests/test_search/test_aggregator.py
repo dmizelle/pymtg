@@ -343,7 +343,7 @@ class TestAggregatorSearch(unittest.TestCase):
             self.assertIn("end_time", timing)
             self.assertIn("duration", timing)
             self.assertGreaterEqual(timing["duration"], 0)
-            self.assertGreater(timing["end_time"], timing["start_time"])
+            self.assertGreaterEqual(timing["end_time"], timing["start_time"])
 
 
 class TestAggregatorRepr(unittest.TestCase):

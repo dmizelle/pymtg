@@ -41,6 +41,8 @@ import logging
 import re
 import threading
 import uuid
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any, Iterator
 
 import requests
@@ -233,6 +235,7 @@ class Archidekt(BaseProvider):
         self.auth_handler = JWTAuthHandler(
             base_url=self.base_url or "https://archidekt.com",
             login_endpoint="/rest-auth/login/",
+            provider="archidekt",
         )
 
         # Apply authentication if credentials were provided
@@ -306,11 +309,16 @@ class Archidekt(BaseProvider):
         Raises:
             ArchidektAuthenticationError: If authentication fails.
             NetworkError: If there is a network error.
+            APIError: If the API returns an error during authentication.
         """
         try:
             self.auth_handler.authenticate(username=username, password=password)
             self._apply_auth_to_http_client()
             logger.info("Archidekt JWT authentication successful")
+        except (NetworkError, APIError):
+            # Preserve transient network/API errors so callers can
+            # distinguish them from genuine authentication failures.
+            raise
         except Exception as e:
             raise ArchidektAuthenticationError(
                 f"Authentication failed: {e}",
@@ -347,11 +355,17 @@ class Archidekt(BaseProvider):
         Raises:
             ArchidektAuthenticationError: If token refresh fails and no
                 fallback credentials are provided.
+            NetworkError: If there is a network error during refresh.
+            APIError: If the API returns an error during refresh.
         """
         try:
             self.auth_handler.refresh(username=username, password=password)
             self._apply_auth_to_http_client()
             logger.info("Archidekt authentication refreshed successfully")
+        except (NetworkError, APIError):
+            # Preserve transient network/API errors so callers can
+            # distinguish them from genuine authentication failures.
+            raise
         except Exception as e:
             raise ArchidektAuthenticationError(
                 f"Authentication refresh failed: {e}",
@@ -418,10 +432,9 @@ class Archidekt(BaseProvider):
         Returns:
             True if the request should proceed, False if rate limited.
         """
-        should_proceed = self.rate_limiter.check("archidekt")
-        if should_proceed:
-            self.rate_limiter.record("archidekt")
-        return should_proceed
+        # Use the atomic check-and-record to avoid the TOCTOU race that
+        # affects a separate check() followed by record().
+        return self.rate_limiter.check_and_record("archidekt")
 
     def _sanitize_response_text(self, text: str) -> str:
         """Sanitize response text to remove sensitive data before logging.
@@ -436,24 +449,28 @@ class Archidekt(BaseProvider):
         Returns:
             Sanitized text with sensitive fields redacted.
         """
-        # Use a pattern that handles escaped quotes in JSON strings
+        # Use a pattern that handles escaped quotes in JSON strings.
+        # A named capture group ``key`` extracts the field name (including
+        # the surrounding quotes and trailing colon) so the redacted value
+        # can be reconstructed without splitting on ":" which is unsafe
+        # when the sensitive value itself contains a colon.
         # (?:[^"\\]|\\.)* matches either non-quote/non-backslash chars OR escaped chars
         sensitive_patterns = [
-            r'"token"\s*:\s*"(?:[^"\\]|\\.)*"',
-            r'"access_token"\s*:\s*"(?:[^"\\]|\\.)*"',
-            r'"refresh_token"\s*:\s*"(?:[^"\\]|\\.)*"',
-            r'"password"\s*:\s*"(?:[^"\\]|\\.)*"',
-            r'"username"\s*:\s*"(?:[^"\\]|\\.)*"',
-            r'"email"\s*:\s*"(?:[^"\\]|\\.)*"',
-            r'"api_key"\s*:\s*"(?:[^"\\]|\\.)*"',
-            r'"secret"\s*:\s*"(?:[^"\\]|\\.)*"',
+            r'(?P<key>"token"\s*:)\s*"(?:[^"\\]|\\.)*"',
+            r'(?P<key>"access_token"\s*:)\s*"(?:[^"\\]|\\.)*"',
+            r'(?P<key>"refresh_token"\s*:)\s*"(?:[^"\\]|\\.)*"',
+            r'(?P<key>"password"\s*:)\s*"(?:[^"\\]|\\.)*"',
+            r'(?P<key>"username"\s*:)\s*"(?:[^"\\]|\\.)*"',
+            r'(?P<key>"email"\s*:)\s*"(?:[^"\\]|\\.)*"',
+            r'(?P<key>"api_key"\s*:)\s*"(?:[^"\\]|\\.)*"',
+            r'(?P<key>"secret"\s*:)\s*"(?:[^"\\]|\\.)*"',
         ]
 
         sanitized = text
         for pattern in sensitive_patterns:
             sanitized = re.sub(
                 pattern,
-                lambda m: m.group(0).split(":")[0] + ': "[REDACTED]"',
+                lambda m: m.group("key") + ' "[REDACTED]"',
                 sanitized,
             )
 
@@ -525,8 +542,19 @@ class Archidekt(BaseProvider):
                     try:
                         retry_after = int(retry_header)
                     except (ValueError, TypeError):
-                        # Could be an HTTP-date or malformed; use default.
-                        pass
+                        # Could be an HTTP-date (RFC 7231) or malformed.
+                        # Parse the date and compute the remaining seconds.
+                        try:
+                            retry_date = parsedate_to_datetime(retry_header)
+                            if retry_date is not None:
+                                now = datetime.now(tz=retry_date.tzinfo)
+                                delta = (retry_date - now).total_seconds()
+                                retry_after = max(0, int(delta))
+                        except (TypeError, ValueError, OverflowError):
+                            logger.warning(
+                                "Could not parse Retry-After " "header: %s",
+                                retry_header,
+                            )
                 raise ArchidektRateLimitError(
                     "Rate limit exceeded",
                     status_code=status_code,
@@ -936,75 +964,71 @@ class Archidekt(BaseProvider):
             )
 
         try:
-            # Apply rate limiting
-            if not self._apply_rate_limiting():
-                logger.warning("Rate limited - waiting for next window")
-                self.rate_limiter.wait("archidekt")
+            with self.rate_limiter.guard("archidekt"):
+                params: dict[str, Any] = {
+                    "nameSearch": query,
+                    "game": self.GAME_ID_PAPER,
+                    "includeTokens": "",
+                    "includeDigital": "",
+                    "includeEmblems": "",
+                    "includeArtCards": "",
+                    "unique": "",
+                }
 
-            params: dict[str, Any] = {
-                "nameSearch": query,
-                "game": self.GAME_ID_PAPER,
-                "includeTokens": "",
-                "includeDigital": "",
-                "includeEmblems": "",
-                "includeArtCards": "",
-                "unique": "",
-            }
+                if limit:
+                    params["pageSize"] = limit
+                if page > 1:
+                    params["page"] = page
+                if order:
+                    params["orderBy"] = order
 
-            if limit:
-                params["pageSize"] = limit
-            if page > 1:
-                params["page"] = page
-            if order:
-                params["orderBy"] = order
+                # Add additional filter parameters
+                extra_params: dict[str, Any] = {
+                    "game": game,
+                    "formatLegality": format,
+                    "rarity": rarity,
+                    "set": set_code,
+                    "subtype": subtype,
+                    "cmc": cmc,
+                    "power": power,
+                    "toughness": toughness,
+                    "loyalty": loyalty,
+                    "textSearch": text_search,
+                    "keyword": keyword,
+                    "artist": artist,
+                    "release": release,
+                    "setType": set_type,
+                    "includeTokens": include_tokens,
+                    "includeDigital": include_digital,
+                    "includeEmblems": include_emblems,
+                    "includeArtCards": include_art_cards,
+                    "unique": unique,
+                }
 
-            # Add additional filter parameters
-            extra_params: dict[str, Any] = {
-                "game": game,
-                "formatLegality": format,
-                "rarity": rarity,
-                "set": set_code,
-                "subtype": subtype,
-                "cmc": cmc,
-                "power": power,
-                "toughness": toughness,
-                "loyalty": loyalty,
-                "textSearch": text_search,
-                "keyword": keyword,
-                "artist": artist,
-                "release": release,
-                "setType": set_type,
-                "includeTokens": include_tokens,
-                "includeDigital": include_digital,
-                "includeEmblems": include_emblems,
-                "includeArtCards": include_art_cards,
-                "unique": unique,
-            }
+                for key, value in extra_params.items():
+                    if value is not None:
+                        params[key] = value
 
-            for key, value in extra_params.items():
-                if value is not None:
-                    params[key] = value
+                response = self.http_client.get("cards/v2/", params=params)
+                data = self._handle_response(response, "card_search_syntax")
 
-            response = self.http_client.get("cards/v2/", params=params)
-            data = self._handle_response(response, "card_search_syntax")
+                if not data or not isinstance(data, dict):
+                    return []
 
-            if not data or not isinstance(data, dict):
-                return []
+                results = data.get("results", [])
+                if not results:
+                    return []
 
-            results = data.get("results", [])
-            if not results:
-                return []
+                cards = []
+                for card_data in results:
+                    try:
+                        card = self._parse_card(card_data)
+                        cards.append(card)
+                    except Exception as e:
+                        logger.warning(f"Failed to parse card data: {e}")
+                        continue
 
-            cards = []
-            for card_data in results:
-                try:
-                    card = self._parse_card(card_data)
-                    cards.append(card)
-                except Exception as e:
-                    logger.warning(f"Failed to parse card data: {e}")
-                    continue
-
-            return cards
+                return cards
 
         except requests.exceptions.RequestException as e:
             logger.error(f"Network error during Archidekt search_syntax: {e}")
@@ -1040,52 +1064,48 @@ class Archidekt(BaseProvider):
             )
 
         try:
-            # Apply rate limiting
-            if not self._apply_rate_limiting():
-                logger.warning("Rate limited - waiting for next window")
-                self.rate_limiter.wait("archidekt")
+            with self.rate_limiter.guard("archidekt"):
+                # Archidekt doesn't have a direct GET /cards/v2/{id}/ endpoint
+                # We need to use search. Try multiple approaches:
+                # 1. Try as oracleCardIds (works for numeric IDs and some string IDs)
+                # 2. Try as regular id with exact match
+                # 3. Try name search
 
-            # Archidekt doesn't have a direct GET /cards/v2/{id}/ endpoint
-            # We need to use search. Try multiple approaches:
-            # 1. Try as oracleCardIds (works for numeric IDs and some string IDs)
-            # 2. Try as regular id with exact match
-            # 3. Try name search
+                # First, try using oracleCardIds for all card IDs
+                # This works for numeric IDs and can also work for non-numeric IDs
+                params = {
+                    "oracleCardIds": card_id,
+                    "game": 1,
+                    "unique": True,
+                    "pageSize": 1,
+                }
+                response = self.http_client.get("cards/v2/", params=params)
+                data = self._handle_response(response, "card")
 
-            # First, try using oracleCardIds for all card IDs
-            # This works for numeric IDs and can also work for non-numeric IDs
-            params = {
-                "oracleCardIds": card_id,
-                "game": 1,
-                "unique": True,
-                "pageSize": 1,
-            }
-            response = self.http_client.get("cards/v2/", params=params)
-            data = self._handle_response(response, "card")
+                if data and data.get("results"):
+                    return self._parse_card(data["results"][0])
 
-            if data and data.get("results"):
+                # If oracleCardIds didn't work, try as a name or other identifier
+                params = {
+                    "nameSearch": card_id,
+                    "exact": True,
+                    "game": 1,
+                    "unique": True,
+                    "pageSize": 1,
+                }
+                response = self.http_client.get("cards/v2/", params=params)
+                data = self._handle_response(response, "card")
+
+                if not data or not data.get("results"):
+                    raise ArchidektNotFoundError(
+                        "Card not found",
+                        status_code=404,
+                        resource_type="card",
+                        resource_id=card_id,
+                    )
+
+                # Return the first result
                 return self._parse_card(data["results"][0])
-
-            # If oracleCardIds didn't work, try as a name or other identifier
-            params = {
-                "nameSearch": card_id,
-                "exact": True,
-                "game": 1,
-                "unique": True,
-                "pageSize": 1,
-            }
-            response = self.http_client.get("cards/v2/", params=params)
-            data = self._handle_response(response, "card")
-
-            if not data or not data.get("results"):
-                raise ArchidektNotFoundError(
-                    "Card not found",
-                    status_code=404,
-                    resource_type="card",
-                    resource_id=card_id,
-                )
-
-            # Return the first result
-            return self._parse_card(data["results"][0])
 
         except requests.exceptions.RequestException as e:
             logger.error(f"Network error during Archidekt get_card: {e}")
@@ -1121,23 +1141,19 @@ class Archidekt(BaseProvider):
             )
 
         try:
-            # Apply rate limiting
-            if not self._apply_rate_limiting():
-                logger.warning("Rate limited - waiting for next window")
-                self.rate_limiter.wait("archidekt")
+            with self.rate_limiter.guard("archidekt"):
+                response = self.http_client.get(f"decks/v2/{deck_id}/")
+                data = self._handle_response(response, "deck")
 
-            response = self.http_client.get(f"decks/v2/{deck_id}/")
-            data = self._handle_response(response, "deck")
+                if not data:
+                    raise ArchidektNotFoundError(
+                        "Deck not found",
+                        status_code=404,
+                        resource_type="deck",
+                        resource_id=deck_id,
+                    )
 
-            if not data:
-                raise ArchidektNotFoundError(
-                    "Deck not found",
-                    status_code=404,
-                    resource_type="deck",
-                    resource_id=deck_id,
-                )
-
-            return self._parse_deck(data)
+                return self._parse_deck(data)
 
         except requests.exceptions.RequestException as e:
             logger.error(f"Network error during Archidekt get_deck: {e}")
@@ -1161,57 +1177,53 @@ class Archidekt(BaseProvider):
             ArchidektAPIError: If the API returns an error.
         """
         try:
-            # Apply rate limiting
-            if not self._apply_rate_limiting():
-                logger.warning("Rate limited - waiting for next window")
-                self.rate_limiter.wait("archidekt")
+            with self.rate_limiter.guard("archidekt"):
+                # Archidekt API uses /api/users/{user_id}/decks/ endpoint
+                # If no user_id provided, use the authenticated user's ID
+                target_user_id = user_id
+                if not target_user_id:
+                    if not hasattr(self, "auth_handler") or self.auth_handler is None:
+                        raise ArchidektValidationError(
+                            "user_id is required or authentication must be provided",
+                            provider=self.name,
+                        )
+                    target_user_id = self.auth_handler.user_id
 
-            # Archidekt API uses /api/users/{user_id}/decks/ endpoint
-            # If no user_id provided, use the authenticated user's ID
-            target_user_id = user_id
-            if not target_user_id:
-                if not hasattr(self, "auth_handler") or self.auth_handler is None:
+                if not target_user_id:
                     raise ArchidektValidationError(
                         "user_id is required or authentication must be provided",
                         provider=self.name,
                     )
-                target_user_id = self.auth_handler.user_id
 
-            if not target_user_id:
-                raise ArchidektValidationError(
-                    "user_id is required or authentication must be provided",
-                    provider=self.name,
-                )
+                response = self.http_client.get(f"users/{target_user_id}/decks/")
+                data = self._handle_response(response, "user_decks")
 
-            response = self.http_client.get(f"users/{target_user_id}/decks/")
-            data = self._handle_response(response, "user_decks")
+                if not data:
+                    return []
 
-            if not data:
-                return []
-
-            # Handle both single deck and list of decks
-            if isinstance(data, dict):
-                if "results" in data:
-                    results = data["results"]
-                elif "decks" in data:
-                    results = data["decks"]
+                # Handle both single deck and list of decks
+                if isinstance(data, dict):
+                    if "results" in data:
+                        results = data["results"]
+                    elif "decks" in data:
+                        results = data["decks"]
+                    else:
+                        results = [data]
+                elif isinstance(data, list):
+                    results = data
                 else:
                     results = [data]
-            elif isinstance(data, list):
-                results = data
-            else:
-                results = [data]
 
-            decks = []
-            for deck_data in results:
-                try:
-                    deck = self._parse_deck(deck_data)
-                    decks.append(deck)
-                except Exception as e:
-                    logger.warning(f"Failed to parse deck data: {e}")
-                    continue
+                decks = []
+                for deck_data in results:
+                    try:
+                        deck = self._parse_deck(deck_data)
+                        decks.append(deck)
+                    except Exception as e:
+                        logger.warning(f"Failed to parse deck data: {e}")
+                        continue
 
-            return decks
+                return decks
 
         except requests.exceptions.RequestException as e:
             logger.error(f"Network error during Archidekt get_user_decks: {e}")
@@ -1259,51 +1271,47 @@ class Archidekt(BaseProvider):
             )
 
         try:
-            # Apply rate limiting
-            if not self._apply_rate_limiting():
-                logger.warning("Rate limited - waiting for next window")
-                self.rate_limiter.wait("archidekt")
-
-            # Map format to Archidekt format ID
-            deck_format = (
-                self.FORMAT_MAP.get(format, self.FORMAT_MAP[Format.COMMANDER])
-                if format
-                else self.FORMAT_MAP[Format.COMMANDER]
-            )
-
-            # Build deck creation payload based on HAR file analysis
-            # Use the authenticated user's root folder if available, otherwise use None
-            # to let Archidekt use the default folder
-            default_folder_id = None
-            if hasattr(self.auth_handler, "user_id") and self.auth_handler.user_id:
-                # In Archidekt, the root folder ID is typically the same as user_id
-                # or can be fetched from the API. For now, use None to let the API decide.
-                default_folder_id = None
-
-            payload = {
-                "name": name,
-                "deckFormat": deck_format,
-                "game": self.GAME_ID_PAPER,  # Paper magic
-                "parent_folder": folder_id or default_folder_id,
-            }
-
-            # Add optional fields
-            if description:
-                payload["description"] = description
-
-            payload["private"] = private
-            payload["unlisted"] = unlisted
-
-            response = self.http_client.post("decks/v2/", json=payload)
-            data = self._handle_response(response, "deck_creation")
-
-            if not data:
-                raise ArchidektAPIError(
-                    "Deck creation failed - no response data",
-                    provider=self.name,
+            with self.rate_limiter.guard("archidekt"):
+                # Map format to Archidekt format ID
+                deck_format = (
+                    self.FORMAT_MAP.get(format, self.FORMAT_MAP[Format.COMMANDER])
+                    if format
+                    else self.FORMAT_MAP[Format.COMMANDER]
                 )
 
-            return self._parse_deck(data)
+                # Build deck creation payload based on HAR file analysis
+                # Use the authenticated user's root folder if available, otherwise use None
+                # to let Archidekt use the default folder
+                default_folder_id = None
+                if hasattr(self.auth_handler, "user_id") and self.auth_handler.user_id:
+                    # In Archidekt, the root folder ID is typically the same as user_id
+                    # or can be fetched from the API. For now, use None to let the API decide.
+                    default_folder_id = None
+
+                payload = {
+                    "name": name,
+                    "deckFormat": deck_format,
+                    "game": self.GAME_ID_PAPER,  # Paper magic
+                    "parent_folder": folder_id or default_folder_id,
+                }
+
+                # Add optional fields
+                if description:
+                    payload["description"] = description
+
+                payload["private"] = private
+                payload["unlisted"] = unlisted
+
+                response = self.http_client.post("decks/v2/", json=payload)
+                data = self._handle_response(response, "deck_creation")
+
+                if not data:
+                    raise ArchidektAPIError(
+                        "Deck creation failed - no response data",
+                        provider=self.name,
+                    )
+
+                return self._parse_deck(data)
 
         except requests.exceptions.RequestException as e:
             logger.error(f"Network error during Archidekt create_deck: {e}")
@@ -1312,6 +1320,66 @@ class Archidekt(BaseProvider):
                 original_exception=e,
                 provider=self.name,
             ) from e
+
+    def _resolve_card_id_by_name(self, card_name: str) -> str:
+        """Resolve a card name to its Archidekt card ID without rate limiting.
+
+        Performs an internal card search to look up the card ID for a given
+        name. Used by methods such as :meth:`add_card_to_deck` when only a
+        card name is supplied. This bypasses the rate limiter because the
+        calling method already governs the overall operation with the
+        ``guard()`` context manager, avoiding double-counting a single
+        logical operation against the rate limit.
+
+        Args:
+            card_name: The card name to resolve.
+
+        Returns:
+            The resolved card ID as a string.
+
+        Raises:
+            ArchidektValidationError: If the card cannot be found or has
+                no valid ID.
+            NetworkError: If there is a network error during the lookup.
+            ArchidektAPIError: If the API returns an error.
+        """
+        search_params = self._build_search_query(name=card_name, limit=1)
+        endpoint = "cards/v2/"
+        try:
+            response = self.http_client.get(endpoint, params=search_params)
+            data = self._handle_response(response, "card_search")
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Network error during Archidekt card lookup: {e}")
+            raise NetworkError(
+                "Network error during card lookup",
+                original_exception=e,
+                provider=self.name,
+            ) from e
+
+        if not data or not isinstance(data, dict):
+            raise ArchidektValidationError(
+                f"Card not found: {card_name}",
+                provider=self.name,
+            )
+        results = data.get("results", [])
+        if not results:
+            raise ArchidektValidationError(
+                f"Card not found: {card_name}",
+                provider=self.name,
+            )
+        try:
+            card = self._parse_card(results[0])
+        except Exception as e:
+            raise ArchidektValidationError(
+                f"Card found but could not be parsed: {card_name}",
+            ) from e
+        resolved_id = getattr(card, "id", None) or getattr(card, "oracle_id", None)
+        if not resolved_id:
+            raise ArchidektValidationError(
+                f"Card found but has no valid ID: {card_name}",
+                provider=self.name,
+            )
+        return str(resolved_id)
 
     def add_card_to_deck(
         self,
@@ -1357,25 +1425,11 @@ class Archidekt(BaseProvider):
                 provider=self.name,
             )
 
-        # If only card_name is provided, resolve to card_id
+        # If only card_name is provided, resolve to card_id. Use the
+        # internal resolver (which bypasses rate limiting) so the overall
+        # operation is counted once by the guard() block below.
         if card_id is None and card_name:
-            # Search for the card to get its ID
-            cards = self.search(name=card_name, limit=1)
-            if not cards:
-                raise ArchidektValidationError(
-                    f"Card not found: {card_name}",
-                    provider=self.name,
-                )
-            # Ensure we have a valid card_id from either id or oracle_id
-            resolved_id = getattr(cards[0], "id", None) or getattr(
-                cards[0], "oracle_id", None
-            )
-            if not resolved_id:
-                raise ArchidektValidationError(
-                    f"Card found but has no valid ID: {card_name}",
-                    provider=self.name,
-                )
-            card_id = str(resolved_id)
+            card_id = self._resolve_card_id_by_name(card_name)
 
         if not card_id:
             raise ArchidektValidationError(
@@ -1398,65 +1452,63 @@ class Archidekt(BaseProvider):
             ) from conv_err
 
         try:
-            # Apply rate limiting
-            if not self._apply_rate_limiting():
-                logger.warning("Rate limited - waiting for next window")
-                self.rate_limiter.wait("archidekt")
+            with self.rate_limiter.guard("archidekt"):
+                # Generate unique patch ID
+                patch_id = str(uuid.uuid4())
 
-            # Generate unique patch ID
-            patch_id = str(uuid.uuid4())
+                # Build the operation payload based on HAR file analysis
+                # PATCH /api/decks/{deck_id}/modifyCards/v2/ with operations
+                operations = [
+                    {
+                        "cardId": card_id_int,  # Archidekt uses integer card IDs
+                        "deckId": deck_id_int,  # Archidekt uses integer deck IDs
+                        "patchId": patch_id,
+                        "operation": "Add",
+                        "quantity": quantity,
+                        "modifier": "Foil" if foil else "Normal",
+                    }
+                ]
 
-            # Build the operation payload based on HAR file analysis
-            # PATCH /api/decks/{deck_id}/modifyCards/v2/ with operations
-            operations = [
-                {
-                    "cardId": card_id_int,  # Archidekt uses integer card IDs
-                    "deckId": deck_id_int,  # Archidekt uses integer deck IDs
-                    "patchId": patch_id,
-                    "operation": "Add",
-                    "quantity": quantity,
-                    "modifier": "Foil" if foil else "Normal",
+                # Add categories if provided
+                if categories:
+                    for op in operations:
+                        op["categories"] = categories
+
+                payload = {
+                    "operations": operations,
+                    "deckId": deck_id_int,
                 }
-            ]
 
-            # Add categories if provided
-            if categories:
-                for op in operations:
-                    op["categories"] = categories
-
-            payload = {
-                "operations": operations,
-                "deckId": deck_id_int,
-            }
-
-            response = self.http_client.patch(
-                f"decks/{deck_id}/modifyCards/v2/", json=payload
-            )
-            data = self._handle_response(response, "deck_modify_cards")
-
-            # Extract the actual deck_relation_id from the API response
-            # The response likely contains a list of results with deckRelationId fields
-            actual_relation_id = None
-            if data and isinstance(data, dict):
-                # Try to extract from the first result if available
-                results = data.get("results", [])
-                if results and isinstance(results, list) and len(results) > 0:
-                    actual_relation_id = results[0].get("deckRelationId") or results[
-                        0
-                    ].get("id")
-
-            # Fall back to patch_id if no relation ID found (should not happen)
-            if actual_relation_id is None:
-                actual_relation_id = patch_id
-                logger.warning(
-                    f"Could not extract deck_relation_id from response, using patch_id: {patch_id}"
+                response = self.http_client.patch(
+                    f"decks/{deck_id}/modifyCards/v2/", json=payload
                 )
+                data = self._handle_response(response, "deck_modify_cards")
 
-            # Store the actual deck_relation_id
-            with self._lock:
-                self._deck_relation_map[(deck_id, card_id)] = str(actual_relation_id)
+                # Extract the actual deck_relation_id from the API response
+                # The response likely contains a list of results with deckRelationId fields
+                actual_relation_id = None
+                if data and isinstance(data, dict):
+                    # Try to extract from the first result if available
+                    results = data.get("results", [])
+                    if results and isinstance(results, list) and len(results) > 0:
+                        actual_relation_id = results[0].get(
+                            "deckRelationId"
+                        ) or results[0].get("id")
 
-            return data
+                # Fall back to patch_id if no relation ID found (should not happen)
+                if actual_relation_id is None:
+                    actual_relation_id = patch_id
+                    logger.warning(
+                        f"Could not extract deck_relation_id from response, using patch_id: {patch_id}"
+                    )
+
+                # Store the actual deck_relation_id
+                with self._lock:
+                    self._deck_relation_map[(deck_id, card_id)] = str(
+                        actual_relation_id
+                    )
+
+                return data
 
         except requests.exceptions.RequestException as e:
             logger.error(f"Network error during Archidekt add_card_to_deck: {e}")
@@ -1532,37 +1584,39 @@ class Archidekt(BaseProvider):
             ) from conv_err
 
         try:
-            # Apply rate limiting
-            if not self._apply_rate_limiting():
-                logger.warning("Rate limited - waiting for next window")
-                self.rate_limiter.wait("archidekt")
+            with self.rate_limiter.guard("archidekt"):
+                # Generate unique patch ID
+                patch_id = str(uuid.uuid4())
 
-            # Generate unique patch ID
-            patch_id = str(uuid.uuid4())
+                # Build the operation payload
+                operations = [
+                    {
+                        "cardId": card_id_int,
+                        "deckId": deck_id_int,
+                        "deckRelationId": deck_relation_id,
+                        "patchId": patch_id,
+                        "operation": "Remove",
+                        "quantity": quantity,
+                    }
+                ]
 
-            # Build the operation payload
-            operations = [
-                {
-                    "cardId": card_id_int,
+                payload = {
+                    "operations": operations,
                     "deckId": deck_id_int,
-                    "deckRelationId": deck_relation_id,
-                    "patchId": patch_id,
-                    "operation": "Remove",
-                    "quantity": quantity,
                 }
-            ]
 
-            payload = {
-                "operations": operations,
-                "deckId": deck_id_int,
-            }
+                response = self.http_client.patch(
+                    f"decks/{deck_id}/modifyCards/v2/", json=payload
+                )
+                data = self._handle_response(response, "deck_modify_cards")
 
-            response = self.http_client.patch(
-                f"decks/{deck_id}/modifyCards/v2/", json=payload
-            )
-            data = self._handle_response(response, "deck_modify_cards")
+                # Remove the now-stale relation entry so a subsequent
+                # remove with the same (deck_id, card_id) cannot reuse an
+                # invalid relation ID.
+                with self._lock:
+                    self._deck_relation_map.pop((deck_id, card_id), None)
 
-            return data
+                return data
 
         except requests.exceptions.RequestException as e:
             logger.error(f"Network error during Archidekt remove_card_from_deck: {e}")
@@ -1918,7 +1972,9 @@ class Archidekt(BaseProvider):
         created_at = str(deck_data.get("createdAt", "") or "")
         updated_at = str(deck_data.get("updatedAt", "") or "")
 
-        # Extract color information
+        # Extract color information. Archidekt may return colors as a dict
+        # (e.g. {"W": true, "U": false}) or as a list (e.g. ["W", "U"]);
+        # handle both formats for robustness.
         colors_data = deck_data.get("colors", {})
         color_identity = []
         color_map = {
@@ -1929,9 +1985,14 @@ class Archidekt(BaseProvider):
             "G": Color.GREEN,
         }
 
-        for color_code, is_present in colors_data.items():
-            if is_present and color_code in color_map:
-                color_identity.append(color_map[color_code])
+        if isinstance(colors_data, dict):
+            for color_code, is_present in colors_data.items():
+                if is_present and color_code in color_map:
+                    color_identity.append(color_map[color_code])
+        elif isinstance(colors_data, list):
+            for color_code in colors_data:
+                if color_code in color_map:
+                    color_identity.append(color_map[color_code])
 
         # Extract description
         description = str(deck_data.get("description", "") or "")
@@ -1968,10 +2029,13 @@ class Archidekt(BaseProvider):
                 card_entry.get("quantity", default_quantity) or default_quantity
             )
 
-            # Try to get board from entry first, then from card data
+            # Try to get board from entry first, then from card entry
+            # categories. In Archidekt's deck API, categories live on the
+            # card entry (the deck card wrapper), not on the inner card
+            # definition, so read from card_entry.
             entry_board = board
             if not entry_board:
-                card_categories = card_data.get("categories", [])
+                card_categories = card_entry.get("categories", [])
                 if isinstance(card_categories, list):
                     for category in card_categories:
                         category_lower = str(category).lower()
@@ -2140,21 +2204,18 @@ class Archidekt(BaseProvider):
             - Response: JSON array of 1000+ edition objects
         """
         try:
-            if not self._apply_rate_limiting():
-                logger.warning("Rate limited - waiting for next window")
-                self.rate_limiter.wait("archidekt")
+            with self.rate_limiter.guard("archidekt"):
+                # Public endpoint - no authentication required
+                response = self.http_client.get("cards/editions/")
+                data = self._handle_response(response, "editions")
 
-            # Public endpoint - no authentication required
-            response = self.http_client.get("cards/editions/")
-            data = self._handle_response(response, "editions")
+                if not data:
+                    return []
 
-            if not data:
-                return []
-
-            # Ensure we have a list
-            if isinstance(data, dict):
-                return [data]
-            return list(data)
+                # Ensure we have a list
+                if isinstance(data, dict):
+                    return [data]
+                return list(data)
 
         except requests.exceptions.RequestException as e:
             logger.error(f"Network error during Archidekt get_editions: {e}")
@@ -2184,21 +2245,18 @@ class Archidekt(BaseProvider):
             - Response: JSON array of subtype objects
         """
         try:
-            if not self._apply_rate_limiting():
-                logger.warning("Rate limited - waiting for next window")
-                self.rate_limiter.wait("archidekt")
+            with self.rate_limiter.guard("archidekt"):
+                # Public endpoint - no authentication required
+                response = self.http_client.get("cards/subtypes/")
+                data = self._handle_response(response, "subtypes")
 
-            # Public endpoint - no authentication required
-            response = self.http_client.get("cards/subtypes/")
-            data = self._handle_response(response, "subtypes")
+                if not data:
+                    return []
 
-            if not data:
-                return []
-
-            # Ensure we have a list
-            if isinstance(data, dict):
-                return [data]
-            return list(data)
+                # Ensure we have a list
+                if isinstance(data, dict):
+                    return [data]
+                return list(data)
 
         except requests.exceptions.RequestException as e:
             logger.error(f"Network error during Archidekt get_subtypes: {e}")
@@ -2242,17 +2300,14 @@ class Archidekt(BaseProvider):
         self._check_authentication()
 
         try:
-            if not self._apply_rate_limiting():
-                logger.warning("Rate limited - waiting for next window")
-                self.rate_limiter.wait("archidekt")
+            with self.rate_limiter.guard("archidekt"):
+                response = self.http_client.get(f"decks/folders/{folder_id}/")
+                data = self._handle_response(response, "folder")
 
-            response = self.http_client.get(f"decks/folders/{folder_id}/")
-            data = self._handle_response(response, "folder")
+                if not data:
+                    return {}
 
-            if not data:
-                return {}
-
-            return data
+                return data
 
         except requests.exceptions.RequestException as e:
             logger.error(f"Network error during Archidekt get_folder: {e}")
@@ -2290,24 +2345,21 @@ class Archidekt(BaseProvider):
         self._check_authentication()
 
         try:
-            if not self._apply_rate_limiting():
-                logger.warning("Rate limited - waiting for next window")
-                self.rate_limiter.wait("archidekt")
+            with self.rate_limiter.guard("archidekt"):
+                params = {}
+                if q is not None:
+                    params["q"] = q
 
-            params = {}
-            if q is not None:
-                params["q"] = q
+                response = self.http_client.get("decks/tags/v2/", params=params)
+                data = self._handle_response(response, "tags")
 
-            response = self.http_client.get("decks/tags/v2/", params=params)
-            data = self._handle_response(response, "tags")
+                if not data:
+                    return []
 
-            if not data:
-                return []
-
-            # Ensure we have a list
-            if isinstance(data, dict):
-                return [data]
-            return list(data)
+                # Ensure we have a list
+                if isinstance(data, dict):
+                    return [data]
+                return list(data)
 
         except requests.exceptions.RequestException as e:
             logger.error(f"Network error during Archidekt get_tags: {e}")
@@ -2350,17 +2402,14 @@ class Archidekt(BaseProvider):
             )
 
         try:
-            if not self._apply_rate_limiting():
-                logger.warning("Rate limited - waiting for next window")
-                self.rate_limiter.wait("archidekt")
+            with self.rate_limiter.guard("archidekt"):
+                response = self.http_client.post(
+                    "decks/folders/deleteItems/",
+                    json={"items": items},
+                )
+                data = self._handle_response(response, "delete_folder_items")
 
-            response = self.http_client.post(
-                "decks/folders/deleteItems/",
-                json={"items": items},
-            )
-            data = self._handle_response(response, "delete_folder_items")
-
-            return data
+                return data
 
         except requests.exceptions.RequestException as e:
             logger.error(f"Network error during Archidekt delete_folder_items: {e}")
@@ -2418,21 +2467,20 @@ class Archidekt(BaseProvider):
         self._check_authentication()
 
         try:
-            if not self._apply_rate_limiting():
-                logger.warning("Rate limited - waiting for next window")
-                self.rate_limiter.wait("archidekt")
+            with self.rate_limiter.guard("archidekt"):
+                params: dict[str, Any] = {"page": page}
+                if order_by:
+                    params["orderBy"] = order_by
 
-            params: dict[str, Any] = {"page": page}
-            if order_by:
-                params["orderBy"] = order_by
+                response = self.http_client.get(
+                    f"comments/{comment_id}/", params=params
+                )
+                data = self._handle_response(response, "comment")
 
-            response = self.http_client.get(f"comments/{comment_id}/", params=params)
-            data = self._handle_response(response, "comment")
+                if not data:
+                    return {}
 
-            if not data:
-                return {}
-
-            return data
+                return data
 
         except requests.exceptions.RequestException as e:
             logger.error(f"Network error during Archidekt get_comment: {e}")
@@ -2464,35 +2512,32 @@ class Archidekt(BaseProvider):
             - Response: {"notificationCount": 0, "patreonAccount": null}
         """
         try:
-            if not self._apply_rate_limiting():
-                logger.warning("Rate limited - waiting for next window")
-                self.rate_limiter.wait("archidekt")
+            with self.rate_limiter.guard("archidekt"):
+                # If no user_id provided, use the authenticated user's ID
+                target_user_id = user_id
+                if not target_user_id:
+                    if not hasattr(self, "auth_handler") or self.auth_handler is None:
+                        raise ArchidektValidationError(
+                            "user_id is required or authentication must be provided",
+                            provider=self.name,
+                        )
+                    target_user_id = self.auth_handler.user_id
 
-            # If no user_id provided, use the authenticated user's ID
-            target_user_id = user_id
-            if not target_user_id:
-                if not hasattr(self, "auth_handler") or self.auth_handler is None:
+                if not target_user_id:
                     raise ArchidektValidationError(
                         "user_id is required or authentication must be provided",
                         provider=self.name,
                     )
-                target_user_id = self.auth_handler.user_id
 
-            if not target_user_id:
-                raise ArchidektValidationError(
-                    "user_id is required or authentication must be provided",
-                    provider=self.name,
+                response = self.http_client.get(
+                    f"users/{target_user_id}/notificationCount/"
                 )
+                data = self._handle_response(response, "notification_count")
 
-            response = self.http_client.get(
-                f"users/{target_user_id}/notificationCount/"
-            )
-            data = self._handle_response(response, "notification_count")
+                if not data:
+                    return {}
 
-            if not data:
-                return {}
-
-            return data
+                return data
 
         except requests.exceptions.RequestException as e:
             logger.error(f"Network error during Archidekt get_notification_count: {e}")
@@ -2540,6 +2585,7 @@ class Archidekt(BaseProvider):
         self.auth_handler = JWTAuthHandler(
             base_url=self.base_url or "https://archidekt.com",
             login_endpoint="/rest-auth/login/",
+            provider="archidekt",
         )
         # The HTTP client session headers are stale after unpickle; clear any
         # leftover Authorization header so requests do not send outdated tokens.

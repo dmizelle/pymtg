@@ -74,25 +74,6 @@ class Moxfield(BaseProvider):
             print(card.name, card.set_name)
     """
 
-    # Valid Moxfield/Parse.bot search parameters
-    VALID_SEARCH_PARAMS: set[str] = {
-        "format",
-        "rarity",
-        "set",
-        "cmc",
-        "color",
-        "type",
-        "subtype",
-        "power",
-        "toughness",
-        "loyalty",
-        "textsearch",
-        "keyword",
-        "artist",
-        "release",
-        "set_type",
-    }
-
     def __init__(self, api_key: str | None = None) -> None:
         """Initialize the Moxfield provider.
 
@@ -187,10 +168,16 @@ class Moxfield(BaseProvider):
     def clear_auth(self) -> None:
         """Clear authentication credentials.
 
-        Clears the stored API key and resets authentication state.
+        Clears the stored API key, resets authentication state, and
+        removes the API key header from the HTTP client session so that
+        subsequent requests no longer carry the credential.
         """
         self._api_key = None
         self.auth_handler.clear_auth()
+        # Remove the API key header from the HTTP client session so
+        # subsequent requests do not continue to send the stale key.
+        if self.http_client and self.http_client.session:
+            self.http_client.session.headers.pop("X-API-Key", None)
 
     def search(
         self,
@@ -266,6 +253,9 @@ class Moxfield(BaseProvider):
         if limit is not None and (not isinstance(limit, int) or limit < 1):
             raise InvalidQueryError("limit must be a positive integer (>= 1)")
 
+        if not isinstance(page, int) or page < 1:
+            raise InvalidQueryError("page must be a positive integer (>= 1)")
+
         try:
             # Build query parameters
             params: dict[str, Any] = {}
@@ -302,6 +292,10 @@ class Moxfield(BaseProvider):
                 params["limit"] = limit
             if page > 1:
                 params["offset"] = (page - 1) * limit
+
+            # Apply sort order if requested.
+            if order:
+                params["order"] = order
 
             # Note: format, rarity, set, cmc, color, type, etc. are
             # already embedded in the `query` string via
@@ -400,32 +394,39 @@ class Moxfield(BaseProvider):
             )
 
         try:
-            params: dict[str, Any] = {"query": query}
+            params: dict[str, Any] = {}
 
             if limit:
                 params["limit"] = limit
 
-            extra_params: dict[str, Any] = {
-                "format": format,
-                "rarity": rarity,
-                "set": set,
-                "cmc": cmc,
-                "color": color,
-                "type": card_type,
-                "subtype": subtype,
-                "power": power,
-                "toughness": toughness,
-                "loyalty": loyalty,
-                "textsearch": textsearch,
-                "keyword": keyword,
-                "artist": artist,
-                "release": release,
-                "set_type": set_type,
-            }
-
-            for key, value in extra_params.items():
-                if value is not None:
-                    params[key] = value
+            # Embed all filter parameters into the `query` string via
+            # _build_search_query() rather than forwarding them as
+            # standalone HTTP params. The Parse.bot /cards/search
+            # endpoint applies filters from the query string; sending
+            # them separately could either be ignored or conflict with
+            # the raw `query` the caller provided. Dict-typed comparison
+            # filters (cmc/power/toughness) are also handled here so
+            # they are not passed to requests as raw dict values.
+            built_query = self._build_search_query(
+                query=query,
+                format=format,
+                rarity=rarity,
+                set=set,
+                cmc=cmc,
+                color=color,
+                card_type=card_type,
+                subtype=subtype,
+                power=power,
+                toughness=toughness,
+                loyalty=loyalty,
+                textsearch=textsearch,
+                keyword=keyword,
+                artist=artist,
+                release=release,
+                set_type=set_type,
+            )
+            if built_query:
+                params["query"] = built_query
 
             # Use Parse.bot's /cards/search endpoint with raw query
             response = self.http_client.get("/cards/search", params=params)
@@ -707,6 +708,12 @@ class Moxfield(BaseProvider):
                 auth_type="api_key",
             )
 
+        if not query or not isinstance(query, str):
+            raise InvalidQueryError("query must be a non-empty string")
+
+        if limit is not None and (not isinstance(limit, int) or limit < 1):
+            raise InvalidQueryError("limit must be a positive integer (>= 1)")
+
         try:
             params: dict[str, Any] = {"query": query}
             if limit:
@@ -755,6 +762,7 @@ class Moxfield(BaseProvider):
         artist: str | None = None,
         release: str | None = None,
         set_type: str | None = None,
+        query: str | None = None,
     ) -> str:
         """Build a Parse.bot/Moxfield query string from search parameters.
 
@@ -778,11 +786,17 @@ class Moxfield(BaseProvider):
             artist: Artist filter.
             release: Release date filter.
             set_type: Set type filter.
+            query: Raw query string in Parse.bot search syntax. Combined
+                with any other filters supplied.
 
         Returns:
             A query string suitable for Parse.bot's Moxfield API.
         """
         query_parts = []
+
+        # Add the raw query string first (already in search syntax).
+        if query:
+            query_parts.append(query)
 
         # WUBRG color order for sorting
         color_order = {"W": 0, "U": 1, "B": 2, "R": 3, "G": 4}
@@ -847,7 +861,17 @@ class Moxfield(BaseProvider):
                 continue
             # Sanitize key to prevent injection
             sanitized_key = str(key).replace(":", "").replace(" ", "")
-            if isinstance(value, str):
+            if isinstance(value, dict):
+                # Comparison-operator filters (e.g. {"$gte": 4}). Convert
+                # each operator/operand pair into `key{op}{operand}`
+                # tokens using Parse.bot comparison syntax.
+                for op, operand in value.items():
+                    sanitized_op = str(op).replace(":", "").replace(" ", "")
+                    sanitized_value = str(operand).replace(":", "").replace(" ", " ")
+                    query_parts.append(
+                        f"{sanitized_key}{sanitized_op}{sanitized_value}"
+                    )
+            elif isinstance(value, str):
                 # Sanitize value to prevent injection
                 sanitized_value = value.replace(":", "").replace(" ", " ")
                 query_parts.append(f"{sanitized_key}:{sanitized_value}")
@@ -914,7 +938,10 @@ class Moxfield(BaseProvider):
             if parsed_faces:
                 card_faces = parsed_faces
 
-            # Use first face for main card attributes if card_faces exist
+            # Use first face for main card attributes if card_faces exist.
+            # When card_faces_data is non-empty, parsed_faces is always
+            # non-empty (CardFace() never raises), so no else branch is
+            # needed here.
             if card_faces:
                 first_face = card_faces[0]
                 name = first_face.name or data.get("name", "")
@@ -924,14 +951,6 @@ class Moxfield(BaseProvider):
                 power = first_face.power
                 toughness = first_face.toughness
                 loyalty = first_face.loyalty
-            else:
-                name = data.get("name", "")
-                mana_cost = data.get("mana_cost", "")
-                type_line = data.get("type_line", "")
-                oracle_text = data.get("oracle_text", "") or data.get("text", "")
-                power = data.get("power")
-                toughness = data.get("toughness")
-                loyalty = data.get("loyalty")
         else:
             # Single-faced card
             name = data.get("name", "")
@@ -1140,7 +1159,7 @@ class Moxfield(BaseProvider):
 
             # Determine board - default to MAIN
             board = Board.MAIN
-            board_str = card_data.get("board", "") or card_data.get("type", "") or ""
+            board_str = card_data.get("board", "") or ""
             if board_str:
                 try:
                     board = Board[board_str.upper()]
