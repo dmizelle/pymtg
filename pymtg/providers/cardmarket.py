@@ -1163,26 +1163,6 @@ class Cardmarket(BaseProvider):
                 )
             self._request_count += 1
 
-    def _check_rate_limit(self) -> None:
-        """Check if the rate limit has been exceeded.
-
-        Cardmarket has a rate limit of 30,000-100,000 requests per day.
-        Raises RateLimitError when the limit is reached.
-
-        Raises:
-            RateLimitError: If rate limit is exceeded.
-        """
-        with self._lock:
-            if self._request_count >= self._rate_limit:
-                raise RateLimitError(
-                    f"Cardmarket rate limit exceeded ({self._rate_limit} requests/day)"
-                )
-
-    def _record_request(self) -> None:
-        """Record that a request was made."""
-        with self._lock:
-            self._request_count += 1
-
     def _handle_response(
         self, response: requests.Response, resource_type: str | None = None
     ) -> Any:

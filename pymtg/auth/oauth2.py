@@ -60,17 +60,27 @@ class OAuth2ClientCredentialsHandler(BaseAuthHandler):
         self._authenticated = False
 
     def __getstate__(self) -> dict[str, Any]:
-        """Exclude the non-picklable lock from pickle serialization.
+        """Exclude sensitive data and the non-picklable lock from pickle.
 
         The internal ``_lock`` (a ``threading.RLock``) cannot be pickled.
-        It is excluded here and re-created by ``__setstate__`` after
-        unpickling so the handler remains usable.
+        Sensitive credentials (``_client_secret``, ``access_token``) are
+        also scrubbed so that serialized state does not leak secrets. The
+        deserialized instance will be unauthenticated and must call
+        :meth:`authenticate` again before use.
 
         Returns:
-            A copy of the handler's state dict without ``_lock``.
+            A copy of the handler's state dict with ``_lock``, secrets,
+            and token state removed.
         """
         state = self.__dict__.copy()
-        state.pop("_lock", None)
+        # Exclude sensitive data from pickle.
+        state["_client_secret"] = None
+        state["access_token"] = None
+        state["token_type"] = None
+        state["_authenticated"] = False
+        # threading.RLock is not picklable; exclude it here and recreate it
+        # in __setstate__.
+        state["_lock"] = None
         return state
 
     def __setstate__(self, state: dict[str, Any]) -> None:
@@ -82,8 +92,7 @@ class OAuth2ClientCredentialsHandler(BaseAuthHandler):
         """
         for key, value in state.items():
             setattr(self, key, value)
-        if not hasattr(self, "_lock"):
-            self._lock = threading.RLock()
+        self._lock = threading.RLock()
 
     def authenticate(
         self,
@@ -277,6 +286,10 @@ class OAuth2ClientCredentialsHandler(BaseAuthHandler):
                     "apply_auth() called with no valid token; "
                     "Authorization header not set"
                 )
+                # Remove any previously-applied Authorization header so a
+                # reused session does not carry a stale/invalid token after
+                # auth is cleared or a refresh fails.
+                session.headers.pop("Authorization", None)
 
     def clear_auth(self) -> None:
         """Clear authentication credentials."""

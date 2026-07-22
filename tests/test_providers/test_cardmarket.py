@@ -8,6 +8,8 @@ Note:
     pre-approved developer credentials.
 """
 
+from datetime import date
+
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -1396,71 +1398,129 @@ class TestCardmarketRateLimiting:
         assert cardmarket._request_count == 0
         assert cardmarket._rate_limit == 30000
 
-    def test_record_request_increments_counter(self):
-        """Test that _record_request increments the request counter."""
-        cardmarket = Cardmarket()
+    def test_check_and_record_increments_counter(self):
+        """Test that _check_and_record_request increments the counter.
 
-        cardmarket._record_request()
+        Verifies that calling _check_and_record_request increments the
+        request count by one when below the rate limit.
+        """
+        cardmarket = Cardmarket()
+        cardmarket._rate_limit = 100
+        cardmarket._rate_limit_reset_day = date.today()
+        cardmarket._request_count = 0
+
+        cardmarket._check_and_record_request()
         assert cardmarket._request_count == 1
 
-        cardmarket._record_request()
+        cardmarket._check_and_record_request()
         assert cardmarket._request_count == 2
 
-    def test_check_rate_limit_raises_when_exceeded(self):
-        """Test that _check_rate_limit raises RateLimitError when limit is reached."""
+    def test_check_and_record_raises_when_exceeded(self):
+        """Test that _check_and_record_request raises at the limit.
+
+        Verifies that calling _check_and_record_request raises
+        RateLimitError when the request count equals the rate limit.
+        """
         cardmarket = Cardmarket()
         cardmarket._rate_limit = 2
+        cardmarket._rate_limit_reset_day = date.today()
         cardmarket._request_count = 2
 
         with pytest.raises(RateLimitError):
-            cardmarket._check_rate_limit()
+            cardmarket._check_and_record_request()
 
-    def test_check_rate_limit_passes_when_below_limit(self):
-        """Test that _check_rate_limit does not raise when below limit."""
+    def test_check_and_record_passes_when_below_limit(self):
+        """Test that _check_and_record_request passes when below limit.
+
+        Verifies that no exception is raised and the counter is
+        incremented when the request count is well below the limit.
+        """
         cardmarket = Cardmarket()
         cardmarket._rate_limit = 100
+        cardmarket._rate_limit_reset_day = date.today()
         cardmarket._request_count = 50
 
-        # Should not raise
-        cardmarket._check_rate_limit()
+        cardmarket._check_and_record_request()
+        assert cardmarket._request_count == 51
 
-    def test_check_rate_limit_passes_one_below_limit(self):
-        """Test that _check_rate_limit does not raise when one below limit."""
+    def test_check_and_record_passes_one_below_limit(self):
+        """Test that _check_and_record_request passes one below limit.
+
+        Verifies that the method succeeds (and increments) when the
+        count is exactly one below the rate limit.
+        """
         cardmarket = Cardmarket()
         cardmarket._rate_limit = 100
+        cardmarket._rate_limit_reset_day = date.today()
         cardmarket._request_count = 99
 
-        # Should not raise (only raises when >= limit)
-        cardmarket._check_rate_limit()
+        cardmarket._check_and_record_request()
+        assert cardmarket._request_count == 100
 
-    def test_check_rate_limit_raises_at_limit(self):
-        """Test that _check_rate_limit raises when count >= limit."""
+    def test_check_and_record_raises_at_limit(self):
+        """Test that _check_and_record_request raises when count >= limit.
+
+        Verifies that the method raises RateLimitError with a
+        descriptive message when the request count equals the limit.
+        """
         cardmarket = Cardmarket()
         cardmarket._rate_limit = 100
+        cardmarket._rate_limit_reset_day = date.today()
         cardmarket._request_count = 100
 
         with pytest.raises(RateLimitError) as exc_info:
-            cardmarket._check_rate_limit()
+            cardmarket._check_and_record_request()
 
         assert "rate limit exceeded" in str(exc_info.value).lower()
 
-    def test_record_and_check_rate_limit_interaction(self):
-        """Test that _record_request and _check_rate_limit work together."""
+    def test_check_and_record_raises_on_fourth_request(self):
+        """Test that _check_and_record_request raises after N requests.
+
+        Verifies that repeatedly calling the method eventually raises
+        when the rate limit is reached.
+        """
         cardmarket = Cardmarket()
         cardmarket._rate_limit = 3
 
-        # Record requests up to limit
-        for _ in range(3):
-            cardmarket._record_request()
+        # First 3 requests should succeed (daily reset sets count to 0,
+        # then increments to 1, 2, 3).
+        cardmarket._check_and_record_request()
+        cardmarket._check_and_record_request()
+        cardmarket._check_and_record_request()
 
-        # Should raise now
+        # Fourth request should raise (count == 3 >= limit == 3)
         with pytest.raises(RateLimitError):
-            cardmarket._check_rate_limit()
+            cardmarket._check_and_record_request()
 
-    def test_check_rate_limit_zero_limit(self):
-        """Test that _check_rate_limit raises immediately when limit is 0."""
+    def test_check_and_record_zero_limit(self):
+        """Test that _check_and_record_request raises when limit is 0.
+
+        Verifies that the method raises immediately when the rate
+        limit is set to 0 (no requests allowed).
+        """
         cardmarket = Cardmarket()
         cardmarket._rate_limit = 0
+        cardmarket._rate_limit_reset_day = date.today()
 
         with pytest.raises(RateLimitError):
-            cardmarket._check_rate_limit()
+            cardmarket._check_and_record_request()
+
+    def test_check_and_record_resets_on_new_day(self):
+        """Test that _check_and_record_request resets counter on new day.
+
+        Verifies that when the calendar day changes, the request
+        counter is reset to 0 before checking and incrementing.
+        """
+        from datetime import timedelta
+
+        cardmarket = Cardmarket()
+        cardmarket._rate_limit = 2
+        # Simulate a previous day's counting window
+        yesterday = date.today() - timedelta(days=1)
+        cardmarket._rate_limit_reset_day = yesterday
+        cardmarket._request_count = 2  # Hit limit yesterday
+
+        # Today is a new day — should reset and succeed
+        cardmarket._check_and_record_request()
+        assert cardmarket._request_count == 1
+        assert cardmarket._rate_limit_reset_day == date.today()

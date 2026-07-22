@@ -2564,6 +2564,10 @@ class Archidekt(BaseProvider):
         # Handle auth_handler pickle - store None as it contains sensitive tokens
         state["auth_handler"] = None  # Will need re-authentication
 
+        # Exclude non-picklable objects (threading.Lock / RateLimiter)
+        state.pop("_lock", None)
+        state.pop("rate_limiter", None)
+
         return state
 
     def __setstate__(self, state: dict[str, Any]) -> None:
@@ -2581,6 +2585,16 @@ class Archidekt(BaseProvider):
             state: Dictionary of attributes from pickle.
         """
         self.__dict__.update(state)  # type: ignore[attr-defined]
+        # Recreate non-picklable objects excluded by __getstate__
+        self._lock = threading.Lock()
+        self.rate_limiter = RateLimiter(
+            {
+                "archidekt": RateLimitConfig(
+                    requests_per_minute=60,
+                    burst_size=10,
+                ),
+            }
+        )
         # Reinitialize auth_handler since it was excluded from pickle state
         self.auth_handler = JWTAuthHandler(
             base_url=self.base_url or "https://archidekt.com",
