@@ -118,14 +118,14 @@ def main():
             print(f"      Error: {e}")
             print()
 
-        # Example: Search for decks
-        print("   c) Searching for decks...")
+        # Example: Search for cards
+        print("   c) Searching for cards...")
         try:
-            # Search for Commander decks
-            decks = archidekt.search(format=Format.COMMANDER, limit=3)
-            print(f"      Found {len(decks)} Commander decks:")
-            for deck in decks:
-                print(f"        - {deck.name}")
+            # Search for Commander-legal cards
+            cards = archidekt.search(format=Format.COMMANDER, limit=3)
+            print(f"      Found {len(cards)} Commander-legal cards:")
+            for card in cards:
+                print(f"        - {card.name}")
             print()
         except pymtg.PyMTGError as e:
             print(f"      Error: {e}")
@@ -185,13 +185,13 @@ def main():
             print(f"      Error: {e}")
             print()
 
-        # Example: Search for decks
-        print("   c) Searching for decks...")
+        # Example: Search for cards
+        print("   c) Searching for cards...")
         try:
-            decks = moxfield.search(name="commander", limit=3)
-            print(f"      Found {len(decks)} decks matching 'commander':")
-            for deck in decks:
-                print(f"        - {deck.name}")
+            cards = moxfield.search(name="commander", limit=3)
+            print(f"      Found {len(cards)} cards matching 'commander':")
+            for card in cards:
+                print(f"        - {card.name}")
             print()
         except pymtg.PyMTGError as e:
             print(f"      Error: {e}")
@@ -296,7 +296,7 @@ def main():
     print()
 
     try:
-        aggregator = pymtg.Aggregator()
+        aggregator = pymtg.Aggregator(providers=[pymtg.Scryfall()])
         print(f"   Aggregator initialized with {len(aggregator.providers)} providers")
         print()
 
