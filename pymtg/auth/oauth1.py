@@ -527,9 +527,12 @@ class OAuth1Handler(BaseAuthHandler):
             ).digest()
         elif self.signature_method == "PLAINTEXT":
             # Per RFC 5849 §3.4.2, the PLAINTEXT signature is the signing
-            # key (consumer_secret&token_secret). Return the raw secrets so
-            # that _build_oauth_header percent-encodes them exactly once.
-            return f"{self._consumer_secret}&{self._access_token_secret}"
+            # key (encode(consumer_secret) + "&" + encode(token_secret)).
+            # The signing_key parameter already has each secret percent-
+            # encoded individually. _build_oauth_header will then encode
+            # the full signature value once more for the header, which is
+            # correct per the spec.
+            return signing_key
         else:
             raise ValueError(f"Unsupported signature method: {self.signature_method}")
 

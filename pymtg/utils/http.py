@@ -466,8 +466,15 @@ class HTTPClient:
         path = endpoint.lstrip("/")
         # Decode percent-encoded sequences before normalization so that
         # encoded traversal (e.g. %2e%2e or ..%2f) is caught by the
-        # normpath check below rather than bypassing it.
-        decoded = unquote(path)
+        # normpath check below rather than bypassing it. Decode
+        # iteratively to prevent double-encoding bypass (e.g.
+        # %252e%252e%252fadmin), stopping once the string stabilizes.
+        decoded = path
+        for _ in range(5):
+            new_decoded = unquote(decoded)
+            if new_decoded == decoded:
+                break
+            decoded = new_decoded
         # Treat backslashes as path separators. posixpath.normpath treats
         # backslashes as regular characters, so a backslash-encoded
         # traversal (e.g. "..%5c..%5cadmin" or "..\\..\\admin") would

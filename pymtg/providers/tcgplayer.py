@@ -1579,6 +1579,17 @@ class TCGPlayer(BaseProvider):
             self._auth_lock = threading.RLock()
         if not hasattr(self, "_lock"):
             self._lock = threading.Lock()
+        # Restore scrubbed credential attributes to None so the
+        # provider is in a consistent unauthenticated state after
+        # unpickling. __getstate__ pops these keys, so without
+        # explicit restoration here, accessing self.client_id would
+        # raise AttributeError.
+        if not hasattr(self, "client_id"):
+            self.client_id = None
+        if not hasattr(self, "client_secret"):
+            self.client_secret = None
+        if not hasattr(self, "scope"):
+            self.scope = None
 
     def __repr__(self) -> str:
         """Return a string representation of the TCGPlayer provider.

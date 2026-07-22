@@ -188,7 +188,7 @@ def main():
         # Example: Search for decks
         print("   c) Searching for decks...")
         try:
-            decks = moxfield.search(q="commander", limit=3)
+            decks = moxfield.search(name="commander", limit=3)
             print(f"      Found {len(decks)} decks matching 'commander':")
             for deck in decks:
                 print(f"        - {deck.name}")

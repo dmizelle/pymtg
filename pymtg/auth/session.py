@@ -98,7 +98,7 @@ class SessionAuthHandler(BaseAuthHandler):
                 # First, get the login page to retrieve CSRF token
                 login_url = f"{self.base_url}{self.login_endpoint}"
                 logger.debug("Getting CSRF token from %s", login_url)
-                csrf_response = auth_session.get(login_url)
+                csrf_response = auth_session.get(login_url, timeout=30.0)
 
                 if csrf_response.status_code != 200:
                     raise AuthenticationError(
@@ -134,6 +134,7 @@ class SessionAuthHandler(BaseAuthHandler):
                     headers=headers,
                     cookies={self.csrf_cookie: csrf_token},
                     allow_redirects=True,
+                    timeout=30.0,
                 )
 
                 if response.status_code != 200:
@@ -330,6 +331,7 @@ class SessionAuthHandler(BaseAuthHandler):
         state["_password"] = None
         state["_username"] = None
         state["_authenticated"] = False
+        state["session_cookies"] = {}
         state["_lock"] = None
         state["_session"] = None
         return state

@@ -352,8 +352,17 @@ class HARLogger:
         http_version: str = "HTTP/1.1",
         cookies: dict[str, str] | None = None,
         redirect_url: str = "",
+        entry_id: str | None = None,
     ) -> HAREntry | None:
         """Log an HTTP response for the most recent request.
+
+        When ``entry_id`` is provided, the response is matched to the
+        entry whose ``started_date_time`` equals that value. This avoids
+        mismatching responses to the wrong request under concurrent
+        usage, where multiple threads may interleave request/response
+        logging. When ``entry_id`` is None, the response is matched to
+        the most recent entry without a response (backward-compatible
+        behavior).
 
         Args:
             status: HTTP status code.
@@ -363,13 +372,39 @@ class HARLogger:
             http_version: HTTP version.
             cookies: Dictionary of cookies.
             redirect_url: Redirect URL if any.
+            entry_id: The ``started_date_time`` of the request entry to
+                match this response to, as returned by ``log_request``.
+                When provided, the response is matched to the specific
+                entry. When None, the most recent unmatched entry is
+                used.
 
         Returns:
             The HAREntry that was updated with the response, or None if
-            no request was logged or logging is disabled.
+            no matching request was found or logging is disabled.
         """
         with self._lock:
             if not self._enabled or not self.entries:
+                return None
+
+            # If an entry_id is provided, match the response to the
+            # specific entry whose started_date_time equals entry_id.
+            # This prevents mismatching responses under concurrent usage
+            # where interleaved request/response logging could otherwise
+            # attach a response to the wrong request.
+            if entry_id is not None:
+                for entry in reversed(self.entries):
+                    if entry.started_date_time == entry_id and entry.response is None:
+                        return self._update_entry_with_response(
+                            entry,
+                            status,
+                            status_text,
+                            headers,
+                            body,
+                            http_version,
+                            cookies,
+                            redirect_url,
+                        )
+                # No matching entry found for the given entry_id
                 return None
 
             # Find the most recent entry without a response
