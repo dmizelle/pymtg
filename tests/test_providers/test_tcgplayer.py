@@ -720,7 +720,7 @@ class TestTCGPlayerIterSearch(unittest.TestCase):
         mock_search.side_effect = [page, page, page, []]
 
         # limit=5 binds to signature param (total cap = 5)
-        results = list(self.tcgplayer.iter_search(name="test", **{"limit": 5}))
+        results = list(self.tcgplayer.iter_search(name="test", limit=5))
 
         self.assertEqual(len(results), 5)
         # search() should receive page_size (default 50) as its limit, not 5
@@ -977,7 +977,7 @@ class TestTCGPlayerResponseParsing(unittest.TestCase):
         self.assertEqual(card.toughness, "4")
         self.assertIsNotNone(card.colors)
         colors = card.colors
-        self.assertIsNotNone(colors)
+        assert colors is not None
         self.assertEqual(len(colors), 1)
         self.assertEqual(
             colors[0], Color.WHITE
@@ -1085,9 +1085,10 @@ class TestTCGPlayerResponseParsing(unittest.TestCase):
         card = self.tcgplayer._parse_card_data(data)
 
         self.assertIsInstance(card, Card)
-        self.assertIsNotNone(card.pricing)
+        assert card.pricing is not None
         self.assertIsNotNone(card.pricing.tcgplayer)
         tcg_pricing = card.pricing.tcgplayer
+        assert tcg_pricing is not None
         self.assertEqual(tcg_pricing.near_mint, 5000.00)
         self.assertEqual(tcg_pricing.very_good, 3000.00)
 

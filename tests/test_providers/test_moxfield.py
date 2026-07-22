@@ -542,6 +542,7 @@ class TestMoxfieldCardParsing(unittest.TestCase):
             "set_type": "core",
         }
         card = moxfield._parse_card(data)
+        assert card is not None
         # When scryfall_id is present, it's used as the id
         self.assertEqual(card.id, "scryfall-uuid-123")
         self.assertEqual(card.scryfall_id, "scryfall-uuid-123")
@@ -567,6 +568,7 @@ class TestMoxfieldCardParsing(unittest.TestCase):
             "rarity": "common",
         }
         card = moxfield._parse_card(data)
+        assert card is not None
         self.assertEqual(card.name, "Counterspell")
         self.assertEqual(card.colors, [Color.BLUE])
         self.assertEqual(card.color_identity, [Color.BLUE])
@@ -603,6 +605,7 @@ class TestMoxfieldCardParsing(unittest.TestCase):
             "rarity": "common",
         }
         card = moxfield._parse_card(data)
+        assert card is not None
         self.assertEqual(card.name, "Delver of Secrets")
         self.assertIsNotNone(card.card_faces)
         card_faces = card.card_faces
@@ -628,6 +631,7 @@ class TestMoxfieldCardParsing(unittest.TestCase):
             "flavor_text": ["A flavorful card", None, "Another flavor"],
         }
         card = moxfield._parse_card(data)
+        assert card is not None
         assert card.flavors is not None
         self.assertEqual(len(card.flavors), 2)
         self.assertEqual(card.flavors[0], "A flavorful card")
@@ -642,6 +646,7 @@ class TestMoxfieldCardParsing(unittest.TestCase):
             "flavor_text": [None, None],
         }
         card = moxfield._parse_card(data)
+        assert card is not None
         self.assertIsNone(card.flavors)
 
     def test_parse_card_image_uris_filters_empty_strings(self):
@@ -657,6 +662,7 @@ class TestMoxfieldCardParsing(unittest.TestCase):
             },
         }
         card = moxfield._parse_card(data)
+        assert card is not None
         assert card.image_uris is not None
         self.assertEqual(len(card.image_uris), 2)
         self.assertIn("normal", card.image_uris)
@@ -677,6 +683,7 @@ class TestMoxfieldCardParsing(unittest.TestCase):
             },
         }
         card = moxfield._parse_card(data)
+        assert card is not None
         assert card.image_uris is not None
         self.assertEqual(len(card.image_uris), 2)
         self.assertIn("normal", card.image_uris)
@@ -696,6 +703,7 @@ class TestMoxfieldCardParsing(unittest.TestCase):
             },
         }
         card = moxfield._parse_card(data)
+        assert card is not None
         self.assertIsNone(card.image_uris)
 
     def test_parse_colors(self):

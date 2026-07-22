@@ -21,7 +21,7 @@ import warnings
 from typing import ClassVar
 
 import pytest
-from pydantic import ValidationError
+from pydantic import AnyUrl, ValidationError
 
 from pymtg.models import (
     Board,
@@ -1375,10 +1375,12 @@ class TestSet:
             digital=False,
             foil_only=False,
             nonfoil_only=False,
-            icon_svg_uri="https://example.com/icon.svg",
-            search_uri="https://api.scryfall.com/cards/search?order=set&q=%21LEA",
-            scryfall_uri="https://scryfall.com/sets/lea",
-            uri="https://example.com/sets/lea",
+            icon_svg_uri=AnyUrl("https://example.com/icon.svg"),
+            search_uri=AnyUrl(
+                "https://api.scryfall.com/cards/search?order=set&q=%21LEA"
+            ),
+            scryfall_uri=AnyUrl("https://scryfall.com/sets/lea"),
+            uri=AnyUrl("https://example.com/sets/lea"),
             source="scryfall",
             mtgo_code="LEA",
             arena_code=None,

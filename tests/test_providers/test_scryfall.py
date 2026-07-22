@@ -479,7 +479,7 @@ class TestScryfallSearchSyntax(unittest.TestCase):
         scryfall = Scryfall()
 
         with self.assertRaises(InvalidQueryError) as context:
-            scryfall.search_syntax("name:test", page="two")
+            scryfall.search_syntax("name:test", page="two")  # type: ignore[arg-type]
 
         self.assertIn("page must be a positive integer (>= 1)", str(context.exception))
 
@@ -888,6 +888,7 @@ class TestScryfallResponseParsing(unittest.TestCase):
         pricing = scryfall._parse_pricing(None)
         self.assertIsNotNone(pricing)
         self.assertIsNotNone(pricing.scryfall)
+        assert pricing.scryfall is not None
         self.assertIsNone(pricing.scryfall.usd)
 
 

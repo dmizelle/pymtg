@@ -468,7 +468,7 @@ class TestCardmarketSearch:
             "get",
             return_value=MagicMock(status_code=200, json=lambda: mock_response_data),
         ) as mock_get:
-            cardmarket.search(name="Test", game=123)
+            cardmarket.search(name="Test", game="")
             call_args = mock_get.call_args
             assert call_args[1]["params"]["game"] == "Magic"
             assert any(

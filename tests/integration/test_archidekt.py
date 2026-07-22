@@ -81,7 +81,7 @@ class TestArchidektIntegration(unittest.TestCase):
         # Delete all created decks
         for deck_id in self.created_decks:
             try:
-                self.archidekt.delete_deck(deck_id)
+                self.archidekt.delete_deck(deck_id)  # type: ignore[attr-defined]
                 logger.info("Deleted test deck %s", deck_id)
             except Exception as e:
                 logger.warning("Failed to delete test deck %s: %s", deck_id, e)
@@ -278,7 +278,7 @@ class TestArchidektIntegration(unittest.TestCase):
             # Try to get comments for this deck
             if hasattr(deck, "id") and deck.id:
                 try:
-                    comments = self.archidekt.get_deck_comments(deck.id)
+                    comments = self.archidekt.get_deck_comments(deck.id)  # type: ignore[attr-defined]
                     if comments:
                         public_deck = deck
                         break
@@ -298,7 +298,7 @@ class TestArchidektIntegration(unittest.TestCase):
             self.skipTest("No decks with comments available for test")
 
         # Get comments for the deck
-        comments = self.archidekt.get_deck_comments(public_deck.id)
+        comments = self.archidekt.get_deck_comments(public_deck.id)  # type: ignore[attr-defined]
         if not comments:
             self.skipTest("No comments available for test")
 

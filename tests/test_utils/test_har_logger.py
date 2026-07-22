@@ -143,6 +143,7 @@ class TestHARLoggerRequestLogging:
         logger.log_request("POST", "https://example.com", headers=headers)
 
         entry = logger.entries[0]
+        assert entry.request is not None
         assert len(entry.request.headers) == 2
         header_dicts = {h["name"]: h["value"] for h in entry.request.headers}
         assert header_dicts["Content-Type"] == "application/json"
@@ -156,6 +157,7 @@ class TestHARLoggerRequestLogging:
         logger.log_request("POST", "https://example.com", body=body)
 
         entry = logger.entries[0]
+        assert entry.request is not None
         assert entry.request.post_data == body
         assert entry.request.body_size == len(body)
 
@@ -167,6 +169,7 @@ class TestHARLoggerRequestLogging:
         logger.log_request("POST", "https://example.com", body=body)
 
         entry = logger.entries[0]
+        assert entry.request is not None
         assert isinstance(entry.request.post_data, dict)
         assert entry.request.post_data["key"] == "value"
         assert entry.request.post_data["nested"]["a"] == 1
@@ -179,6 +182,7 @@ class TestHARLoggerRequestLogging:
         logger.log_request("GET", "https://example.com", query_params=params)
 
         entry = logger.entries[0]
+        assert entry.request is not None
         assert len(entry.request.query_string) == 2
         param_dicts = {p["name"]: p["value"] for p in entry.request.query_string}
         assert param_dicts["page"] == "1"
@@ -192,6 +196,7 @@ class TestHARLoggerRequestLogging:
         logger.log_request("GET", "https://example.com", cookies=cookies)
 
         entry = logger.entries[0]
+        assert entry.request is not None
         assert len(entry.request.cookies) == 2
         cookie_dicts = {c["name"]: c["value"] for c in entry.request.cookies}
         assert (
@@ -210,6 +215,7 @@ class TestHARLoggerRequestLogging:
         logger.log_request("GET", "https://example.com", headers=headers)
 
         entry = logger.entries[0]
+        assert entry.request is not None
         header_dicts = {h["name"]: h["value"] for h in entry.request.headers}
         assert header_dicts["Authorization"] == "[REDACTED]"
         assert header_dicts["Content-Type"] == "application/json"
@@ -228,6 +234,7 @@ class TestHARLoggerRequestLogging:
         logger.log_request("POST", "https://example.com", body=body)
 
         entry = logger.entries[0]
+        assert entry.request is not None
         processed_body = entry.request.post_data
 
         assert processed_body["username"] == "[REDACTED]"
@@ -254,6 +261,7 @@ class TestHARLoggerRequestLogging:
         logger.log_request("POST", "https://example.com", body=body)
 
         entry = logger.entries[0]
+        assert entry.request is not None
         processed_body = entry.request.post_data
 
         # The entire credentials dict should be sanitized because "credentials" is in sanitize_fields
@@ -319,6 +327,7 @@ class TestHARLoggerResponseLogging:
         logger.log_response(status=401, headers=headers)
 
         entry = logger.entries[0]
+        assert entry.response is not None
         header_dicts = {h["name"]: h["value"] for h in entry.response.headers}
         assert header_dicts["WWW-Authenticate"] == "[REDACTED]"
 
@@ -529,6 +538,8 @@ class TestHARLoggerAddCompleteEntry:
         )
 
         assert entry is not None
+        assert entry.request is not None
+        assert entry.response is not None
         assert entry.request.method == "POST"
         assert entry.request.url == "https://example.com/api"
         assert entry.response.status == 201
@@ -574,6 +585,7 @@ class TestHARLoggerSecurity:
         logger.log_request("GET", "https://example.com", headers=sensitive_headers)
 
         entry = logger.entries[0]
+        assert entry.request is not None
         header_dicts = {h["name"]: h["value"] for h in entry.request.headers}
 
         # All sensitive headers should be sanitized
@@ -593,6 +605,7 @@ class TestHARLoggerSecurity:
         logger.log_request("GET", "https://example.com", headers=headers)
 
         entry = logger.entries[0]
+        assert entry.request is not None
         header_dicts = {h["name"]: h["value"] for h in entry.request.headers}
 
         # All variations should be sanitized
