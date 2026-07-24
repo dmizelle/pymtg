@@ -1247,6 +1247,9 @@ class Archidekt(BaseProvider):
         private: bool = True,
         unlisted: bool = False,
         folder_id: str | None = None,
+        edh_bracket: int | None = None,
+        theorycrafted: bool = False,
+        commanders_to_add: list[str] | None = None,
     ) -> Deck:
         """Create a new deck.
 
@@ -1258,6 +1261,12 @@ class Archidekt(BaseProvider):
             unlisted: Whether the deck is unlisted. Defaults to False.
             folder_id: The parent folder ID for the deck. If None, uses
                 the default folder.
+            edh_bracket: The EDH bracket rating for the deck. Defaults to
+                None.
+            theorycrafted: Whether the deck is theorycrafted. Defaults to
+                False.
+            commanders_to_add: List of commander card IDs to add to the
+                deck upon creation. Defaults to None.
 
         Returns:
             The created Deck object.
@@ -1276,6 +1285,30 @@ class Archidekt(BaseProvider):
                 provider=self.name,
             )
 
+        # Convert folder_id and commander IDs to int before the try block
+        # so that ValueError is caught as ArchidektValidationError rather
+        # than escaping the RequestException handler below.
+        folder_id_int: int | None = None
+        if folder_id:
+            try:
+                folder_id_int = int(folder_id)
+            except (TypeError, ValueError) as conv_err:
+                raise ArchidektValidationError(
+                    f"folder_id must be numeric, got {folder_id!r}",
+                    provider=self.name,
+                ) from conv_err
+
+        commanders_int: list[int] = []
+        if commanders_to_add:
+            try:
+                commanders_int = [int(c) for c in commanders_to_add]
+            except (TypeError, ValueError) as conv_err:
+                raise ArchidektValidationError(
+                    "commanders_to_add must contain numeric IDs, "
+                    f"got {commanders_to_add!r}",
+                    provider=self.name,
+                ) from conv_err
+
         try:
             with self.rate_limiter.guard("archidekt"):
                 # Map format to Archidekt format ID
@@ -1289,16 +1322,23 @@ class Archidekt(BaseProvider):
                 payload = {
                     "name": name,
                     "deckFormat": deck_format,
-                    "game": self.GAME_ID_PAPER,  # Paper magic
-                    "parent_folder": folder_id,
+                    "edhBracket": edh_bracket,
+                    "description": description,
+                    "featured": "",
+                    "playmat": "",
+                    "private": private,
+                    "unlisted": unlisted,
+                    "theorycrafted": theorycrafted,
+                    "game": self.GAME_ID_PAPER,
+                    "parent_folder": folder_id_int,
+                    "cardPackage": None,
+                    "extras": {
+                        "decksToInclude": [],
+                        "commandersToAdd": commanders_int,
+                        "forceCardsToSingleton": False,
+                        "ignoreCardsOutOfCommanderIdentity": True,
+                    },
                 }
-
-                # Add optional fields
-                if description:
-                    payload["description"] = description
-
-                payload["private"] = private
-                payload["unlisted"] = unlisted
 
                 response = self.http_client.post("decks/v2/", json=payload)
                 data = self._handle_response(response, "deck_creation")
@@ -1435,46 +1475,32 @@ class Archidekt(BaseProvider):
                 provider=self.name,
             )
 
-        # Archidekt uses integer card/deck IDs. A non-numeric ID (e.g. a
-        # UUID-style oracle id) would raise ValueError; validate explicitly
-        # here BEFORE the try/except block so that ArchidektValidationError is
-        # not accidentally caught by the RequestException handler.
-        try:
-            card_id_int = int(card_id)
-            deck_id_int = int(deck_id)
-        except (TypeError, ValueError) as conv_err:
-            raise ArchidektValidationError(
-                f"card_id and deck_id must be numeric, got "
-                f"card_id={card_id!r}, deck_id={deck_id!r}",
-                provider=self.name,
-            ) from conv_err
-
         try:
             with self.rate_limiter.guard("archidekt"):
-                # Generate unique patch ID
-                patch_id = str(uuid.uuid4())
+                # Generate short unique patch ID matching the HAR format
+                patch_id = str(uuid.uuid4())[:11]
 
-                # Build the operation payload based on HAR file analysis
-                # PATCH /api/decks/{deck_id}/modifyCards/v2/ with operations
-                operations = [
-                    {
-                        "cardId": card_id_int,  # Archidekt uses integer card IDs
-                        "deckId": deck_id_int,  # Archidekt uses integer deck IDs
-                        "patchId": patch_id,
-                        "operation": "Add",
-                        "quantity": quantity,
-                        "modifier": "Foil" if foil else "Normal",
-                    }
-                ]
-
-                # Add categories if provided
-                if categories:
-                    for op in operations:
-                        op["categories"] = categories
-
+                # Build the card payload based on HAR file analysis.
+                # PATCH /api/decks/{deck_id}/modifyCards/v2/ uses a
+                # "cards" array with action/cardid/modifications.
                 payload = {
-                    "operations": operations,
-                    "deckId": deck_id_int,
+                    "cards": [
+                        {
+                            "action": "add",
+                            "cardid": str(card_id),
+                            "customCardId": None,
+                            "categories": categories or [],
+                            "patchId": patch_id,
+                            "modifications": {
+                                "quantity": quantity,
+                                "modifier": "Foil" if foil else "Normal",
+                                "customCmc": None,
+                                "companion": False,
+                                "flippedDefault": False,
+                                "label": ",#656565",
+                            },
+                        }
+                    ]
                 }
 
                 response = self.http_client.patch(
@@ -1482,22 +1508,28 @@ class Archidekt(BaseProvider):
                 )
                 data = self._handle_response(response, "deck_modify_cards")
 
-                # Extract the actual deck_relation_id from the API response
-                # The response likely contains a list of results with deckRelationId fields
+                # Extract the actual deck_relation_id from the API response.
+                # The response contains an "add" array with deckRelationId
+                # fields for each added card.
                 actual_relation_id = None
                 if data and isinstance(data, dict):
-                    # Try to extract from the first result if available
-                    results = data.get("results", [])
-                    if results and isinstance(results, list) and len(results) > 0:
-                        actual_relation_id = results[0].get(
+                    add_results = data.get("add", [])
+                    if (
+                        add_results
+                        and isinstance(add_results, list)
+                        and len(add_results) > 0
+                    ):
+                        actual_relation_id = add_results[0].get(
                             "deckRelationId"
-                        ) or results[0].get("id")
+                        ) or add_results[0].get("id")
 
-                # Fall back to patch_id if no relation ID found (should not happen)
+                # Fall back to patch_id if no relation ID found (should not
+                # happen in normal operation).
                 if actual_relation_id is None:
                     actual_relation_id = patch_id
                     logger.warning(
-                        f"Could not extract deck_relation_id from response, using patch_id: {patch_id}"
+                        "Could not extract deck_relation_id from response, "
+                        f"using patch_id: {patch_id}"
                     )
 
                 # Store the actual deck_relation_id
@@ -1568,40 +1600,33 @@ class Archidekt(BaseProvider):
                 provider=self.name,
             )
 
-        # Archidekt uses integer card/deck IDs. A non-numeric ID would
-        # raise ValueError; validate explicitly here BEFORE the try/except
-        # block so that ArchidektValidationError is not accidentally caught by
-        # the RequestException handler.
-        try:
-            card_id_int = int(card_id)
-            deck_id_int = int(deck_id)
-        except (TypeError, ValueError) as conv_err:
-            raise ArchidektValidationError(
-                f"card_id and deck_id must be numeric, got "
-                f"card_id={card_id!r}, deck_id={deck_id!r}",
-                provider=self.name,
-            ) from conv_err
-
         try:
             with self.rate_limiter.guard("archidekt"):
-                # Generate unique patch ID
-                patch_id = str(uuid.uuid4())
+                # Generate short unique patch ID matching the HAR format
+                patch_id = str(uuid.uuid4())[:11]
 
-                # Build the operation payload
-                operations = [
-                    {
-                        "cardId": card_id_int,
-                        "deckId": deck_id_int,
-                        "deckRelationId": deck_relation_id,
-                        "patchId": patch_id,
-                        "operation": "Remove",
-                        "quantity": quantity,
-                    }
-                ]
-
+                # Build the card payload based on HAR file analysis.
+                # PATCH /api/decks/{deck_id}/modifyCards/v2/ uses a
+                # "cards" array with action/cardid/modifications.
                 payload = {
-                    "operations": operations,
-                    "deckId": deck_id_int,
+                    "cards": [
+                        {
+                            "action": "remove",
+                            "cardid": str(card_id),
+                            "customCardId": None,
+                            "categories": [],
+                            "patchId": patch_id,
+                            "modifications": {
+                                "quantity": quantity,
+                                "modifier": "Normal",
+                                "customCmc": None,
+                                "companion": False,
+                                "flippedDefault": False,
+                                "label": ",#656565",
+                            },
+                            "deckRelationId": str(deck_relation_id),
+                        }
+                    ]
                 }
 
                 response = self.http_client.patch(
@@ -1621,6 +1646,473 @@ class Archidekt(BaseProvider):
             logger.error(f"Network error during Archidekt remove_card_from_deck: {e}")
             raise NetworkError(
                 "Network error during remove_card_from_deck",
+                original_exception=e,
+                provider=self.name,
+            ) from e
+
+    def update_deck(
+        self,
+        deck_id: str,
+        name: str | None = None,
+        format: Format | None = None,
+        edh_bracket: int | None = None,
+        private: bool | None = None,
+        unlisted: bool | None = None,
+        theorycrafted: bool | None = None,
+        game: int | None = None,
+    ) -> dict[str, Any]:
+        """Update metadata for an existing deck.
+
+        Args:
+            deck_id: The Archidekt deck ID to update.
+            name: The new deck name. If None, left unchanged.
+            format: The new deck format. If None, left unchanged.
+            edh_bracket: The new EDH bracket rating. If None, left
+                unchanged.
+            private: Whether the deck is private. If None, left unchanged.
+            unlisted: Whether the deck is unlisted. If None, left
+                unchanged.
+            theorycrafted: Whether the deck is theorycrafted. If None,
+                left unchanged.
+            game: The game ID (1=Paper, 2=MTGO, 3=Arena). If None, left
+                unchanged.
+
+        Returns:
+            The updated deck metadata as returned by the API.
+
+        Raises:
+            ArchidektAuthenticationError: If authentication is required but
+                not provided.
+            ArchidektValidationError: If deck_id is empty or no optional
+                parameters are provided.
+            NetworkError: If there is a network error.
+            ArchidektAPIError: If the API returns an error.
+        """
+        self._check_authentication()
+
+        if not deck_id:
+            raise ArchidektValidationError(
+                "deck_id is required for update_deck()",
+                provider=self.name,
+            )
+
+        if all(
+            v is None
+            for v in (
+                name,
+                format,
+                edh_bracket,
+                private,
+                unlisted,
+                theorycrafted,
+                game,
+            )
+        ):
+            raise ArchidektValidationError(
+                "At least one optional parameter must be provided to " "update_deck()",
+                provider=self.name,
+            )
+
+        payload: dict[str, Any] = {}
+        if name is not None:
+            payload["name"] = name
+        if format is not None:
+            payload["deckFormat"] = self.FORMAT_MAP.get(
+                format, self.FORMAT_MAP[Format.COMMANDER]
+            )
+        if edh_bracket is not None:
+            payload["edhBracket"] = edh_bracket
+        if private is not None:
+            payload["private"] = private
+        if unlisted is not None:
+            payload["unlisted"] = unlisted
+        if theorycrafted is not None:
+            payload["theorycrafted"] = theorycrafted
+        if game is not None:
+            payload["game"] = game
+
+        try:
+            with self.rate_limiter.guard("archidekt"):
+                response = self.http_client.patch(
+                    f"decks/{deck_id}/update/", json=payload
+                )
+                data = self._handle_response(response, "deck_update")
+                return data if data is not None else {}
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Network error during Archidekt update_deck: {e}")
+            raise NetworkError(
+                "Network error during update_deck",
+                original_exception=e,
+                provider=self.name,
+            ) from e
+
+    def delete_deck(self, deck_id: str) -> bool:
+        """Delete a deck.
+
+        Args:
+            deck_id: The Archidekt deck ID to delete.
+
+        Returns:
+            True if the deck was successfully deleted.
+
+        Raises:
+            ArchidektAuthenticationError: If authentication is required but
+                not provided.
+            ArchidektValidationError: If deck_id is empty.
+            NetworkError: If there is a network error.
+            ArchidektAPIError: If the API returns an error.
+        """
+        self._check_authentication()
+
+        if not deck_id:
+            raise ArchidektValidationError(
+                "deck_id is required for delete_deck()",
+                provider=self.name,
+            )
+
+        try:
+            with self.rate_limiter.guard("archidekt"):
+                response = self.http_client.delete(f"decks/{deck_id}/")
+                # A successful delete returns 204 No Content with no body.
+                if response.status_code == 204:
+                    return True
+                # Any other status is handled (and may raise) below.
+                self._handle_response(response, "deck_delete")
+                return True
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Network error during Archidekt delete_deck: {e}")
+            raise NetworkError(
+                "Network error during delete_deck",
+                original_exception=e,
+                provider=self.name,
+            ) from e
+
+    def clone_deck(
+        self,
+        source_deck_id: str,
+        name: str | None = None,
+        private: bool = True,
+        unlisted: bool = False,
+        theorycrafted: bool = True,
+    ) -> dict[str, Any]:
+        """Clone (copy) an existing deck.
+
+        Args:
+            source_deck_id: The ID of the deck to copy.
+            name: The name for the cloned deck. If None, a default name is
+                generated.
+            private: Whether the cloned deck is private. Defaults to True.
+            unlisted: Whether the cloned deck is unlisted. Defaults to
+                False.
+            theorycrafted: Whether the cloned deck is theorycrafted.
+                Defaults to True.
+
+        Returns:
+            The cloned deck metadata, including its new ID and parent
+            folder.
+
+        Raises:
+            ArchidektAuthenticationError: If authentication is required but
+                not provided.
+            ArchidektValidationError: If source_deck_id is empty.
+            NetworkError: If there is a network error.
+            ArchidektAPIError: If the API returns an error.
+        """
+        self._check_authentication()
+
+        if not source_deck_id:
+            raise ArchidektValidationError(
+                "source_deck_id is required for clone_deck()",
+                provider=self.name,
+            )
+
+        try:
+            copy_id_int = int(source_deck_id)
+        except (TypeError, ValueError) as conv_err:
+            raise ArchidektValidationError(
+                f"source_deck_id must be numeric, got {source_deck_id!r}",
+                provider=self.name,
+            ) from conv_err
+
+        payload = {
+            "name": name or f"Copy of deck {source_deck_id}",
+            "deckFormat": 3,
+            "edhBracket": None,
+            "description": "",
+            "featured": "",
+            "playmat": "",
+            "copyId": copy_id_int,
+            "private": private,
+            "unlisted": unlisted,
+            "theorycrafted": theorycrafted,
+            "game": None,
+            "cardPackage": None,
+            "extras": {},
+        }
+
+        try:
+            with self.rate_limiter.guard("archidekt"):
+                response = self.http_client.post("decks/copy/", json=payload)
+                data = self._handle_response(response, "deck_clone")
+                return data if data is not None else {}
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Network error during Archidekt clone_deck: {e}")
+            raise NetworkError(
+                "Network error during clone_deck",
+                original_exception=e,
+                provider=self.name,
+            ) from e
+
+    def export_deck_pdf(
+        self,
+        deck_name: str,
+        cards: list[dict[str, Any]],
+        deck_size: int = 0,
+        sideboard_size: int = 0,
+        date: str = "",
+        first_name: str = "",
+        last_name: str = "",
+        designer: str = "",
+        location: str = "",
+        event: str = "",
+    ) -> dict[str, Any]:
+        """Export a deck to a PDF.
+
+        Args:
+            deck_name: The deck name to print on the PDF.
+            cards: A list of card dicts, each with "name" (str) and
+                "quantity" (int) keys.
+            deck_size: The main deck size. Defaults to 0.
+            sideboard_size: The sideboard size. Defaults to 0.
+            date: The date to print. Defaults to "".
+            first_name: The player's first name. Defaults to "".
+            last_name: The player's last name. Defaults to "".
+            designer: The deck designer. Defaults to "".
+            location: The event location. Defaults to "".
+            event: The event name. Defaults to "".
+
+        Returns:
+            A dict containing the generated PDF URL under the "fileUrl"
+            key.
+
+        Raises:
+            ArchidektAuthenticationError: If authentication is required but
+                not provided.
+            ArchidektValidationError: If deck_name is empty or cards is
+                empty.
+            NetworkError: If there is a network error.
+            ArchidektAPIError: If the API returns an error.
+        """
+        self._check_authentication()
+
+        if not deck_name:
+            raise ArchidektValidationError(
+                "deck_name is required for export_deck_pdf()",
+                provider=self.name,
+            )
+
+        if not cards:
+            raise ArchidektValidationError(
+                "cards is required for export_deck_pdf()",
+                provider=self.name,
+            )
+
+        payload: dict[str, Any] = {
+            "deckName": deck_name,
+            "deckSize": deck_size,
+            "sideboardSize": sideboard_size,
+            "date": date,
+            "firstName": first_name,
+            "lastName": last_name,
+            "designer": designer,
+            "location": location,
+            "event": event,
+            "firstOfLastName": "",
+        }
+        for i, card in enumerate(cards):
+            card_name = card.get("name")
+            card_qty = card.get("quantity")
+            if card_name is None or card_qty is None:
+                raise ArchidektValidationError(
+                    f"Each card must have 'name' and 'quantity' keys, "
+                    f"got {card!r} at index {i}",
+                    provider=self.name,
+                )
+            payload[f"card_{i}"] = card_name
+            payload[f"card_{i}_qty"] = card_qty
+
+        try:
+            with self.rate_limiter.guard("archidekt"):
+                response = self.http_client.post("decks/exportPdf/", json=payload)
+                data = self._handle_response(response, "deck_export_pdf")
+                return data if data is not None else {}
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Network error during Archidekt export_deck_pdf: {e}")
+            raise NetworkError(
+                "Network error during export_deck_pdf",
+                original_exception=e,
+                provider=self.name,
+            ) from e
+
+    def vote_deck(
+        self,
+        deck_id: str,
+        remove: bool = False,
+    ) -> dict[str, Any]:
+        """Vote for (or remove a vote from) a deck.
+
+        Args:
+            deck_id: The Archidekt deck ID to vote on.
+            remove: If True, remove an existing vote. Defaults to False.
+
+        Returns:
+            A dict containing the deck's updated vote "points".
+
+        Raises:
+            ArchidektAuthenticationError: If authentication is required but
+                not provided.
+            ArchidektValidationError: If deck_id is empty.
+            NetworkError: If there is a network error.
+            ArchidektAPIError: If the API returns an error.
+        """
+        self._check_authentication()
+
+        if not deck_id:
+            raise ArchidektValidationError(
+                "deck_id is required for vote_deck()",
+                provider=self.name,
+            )
+
+        payload = {"up": True, "remove": remove}
+
+        try:
+            with self.rate_limiter.guard("archidekt"):
+                response = self.http_client.put(f"decks/{deck_id}/vote/", json=payload)
+                data = self._handle_response(response, "deck_vote")
+                return data if data is not None else {}
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Network error during Archidekt vote_deck: {e}")
+            raise NetworkError(
+                "Network error during vote_deck",
+                original_exception=e,
+                provider=self.name,
+            ) from e
+
+    def modify_cards(
+        self,
+        deck_id: str,
+        operations: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Perform batch card operations on a deck.
+
+        Each operation in ``operations`` may contain the following keys:
+        ``action`` (str: "add", "remove", or "modify"), ``card_id`` (str),
+        ``quantity`` (int, default 1), ``categories`` (list[str], default
+        []), ``modifier`` (str: "Normal" or "Foil", default "Normal"),
+        ``deck_relation_id`` (str | None, required for "remove" and
+        "modify"), ``companion`` (bool, default False), and ``custom_cmc``
+        (int | None, default None).
+
+        Args:
+            deck_id: The Archidekt deck ID to modify.
+            operations: A list of card operation dicts.
+
+        Returns:
+            The API response, including "add" and "createdCategories"
+            fields for added cards.
+
+        Raises:
+            ArchidektAuthenticationError: If authentication is required but
+                not provided.
+            ArchidektValidationError: If deck_id is empty or operations is
+                empty.
+            NetworkError: If there is a network error.
+            ArchidektAPIError: If the API returns an error.
+        """
+        self._check_authentication()
+
+        if not deck_id:
+            raise ArchidektValidationError(
+                "deck_id is required for modify_cards()",
+                provider=self.name,
+            )
+
+        if not operations:
+            raise ArchidektValidationError(
+                "operations is required for modify_cards()",
+                provider=self.name,
+            )
+
+        # Validate operations before entering the try block so that
+        # KeyError / missing-key issues surface as ArchidektValidationError
+        # rather than escaping the RequestException handler.
+        for i, op in enumerate(operations):
+            if "action" not in op:
+                raise ArchidektValidationError(
+                    f"Operation at index {i} missing required 'action' key",
+                    provider=self.name,
+                )
+            if "card_id" not in op:
+                raise ArchidektValidationError(
+                    f"Operation at index {i} missing required 'card_id' key",
+                    provider=self.name,
+                )
+
+        cards: list[dict[str, Any]] = []
+        for op in operations:
+            patch_id = str(uuid.uuid4())[:11]
+            card_entry: dict[str, Any] = {
+                "action": op["action"],
+                "cardid": str(op["card_id"]),
+                "customCardId": None,
+                "categories": op.get("categories", []),
+                "patchId": patch_id,
+                "modifications": {
+                    "quantity": op.get("quantity", 1),
+                    "modifier": op.get("modifier", "Normal"),
+                    "customCmc": op.get("custom_cmc"),
+                    "companion": op.get("companion", False),
+                    "flippedDefault": False,
+                    "label": ",#656565",
+                },
+            }
+            if op.get("deck_relation_id"):
+                card_entry["deckRelationId"] = str(op["deck_relation_id"])
+            cards.append(card_entry)
+
+        payload = {"cards": cards}
+
+        try:
+            with self.rate_limiter.guard("archidekt"):
+                response = self.http_client.patch(
+                    f"decks/{deck_id}/modifyCards/v2/", json=payload
+                )
+                data = self._handle_response(response, "deck_modify_cards")
+
+                # Extract deck_relation_ids from the response and store
+                # them so subsequent remove/modify operations can look
+                # them up. The "add" array corresponds, in order, to the
+                # "add" actions in the operations list.
+                if data and isinstance(data, dict):
+                    add_results = data.get("add", [])
+                    if isinstance(add_results, list):
+                        add_ops = [op for op in operations if op.get("action") == "add"]
+                        with self._lock:
+                            for op, entry in zip(add_ops, add_results):
+                                if not isinstance(entry, dict):
+                                    continue
+                                relation_id = entry.get("deckRelationId")
+                                if relation_id is not None:
+                                    self._deck_relation_map[
+                                        (deck_id, str(op["card_id"]))
+                                    ] = str(relation_id)
+                            self._evict_relation_map()
+
+                return data if data is not None else {}
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Network error during Archidekt modify_cards: {e}")
+            raise NetworkError(
+                "Network error during modify_cards",
                 original_exception=e,
                 provider=self.name,
             ) from e
@@ -2270,13 +2762,19 @@ class Archidekt(BaseProvider):
     # Deck Organization Methods
     # =========================================================================
 
-    def get_folder(self, folder_id: str) -> dict[str, Any]:
+    def get_folder(
+        self,
+        folder_id: str,
+        order_by: str = "-updatedAt",
+    ) -> dict[str, Any]:
         """Get contents of a deck folder.
 
         Retrieves metadata about a folder including its subfolders and decks.
 
         Args:
             folder_id: The ID of the folder to retrieve.
+            order_by: The field to order results by. Defaults to
+                "-updatedAt" (most recently updated first).
 
         Returns:
             A folder object containing:
@@ -2301,7 +2799,14 @@ class Archidekt(BaseProvider):
 
         try:
             with self.rate_limiter.guard("archidekt"):
-                response = self.http_client.get(f"decks/folders/{folder_id}/")
+                params = {
+                    "folderId": folder_id,
+                    "name": "",
+                    "orderBy": order_by,
+                }
+                response = self.http_client.get(
+                    f"decks/folders/{folder_id}/", params=params
+                )
                 data = self._handle_response(response, "folder")
 
                 if not data:
@@ -2543,6 +3048,729 @@ class Archidekt(BaseProvider):
             logger.error(f"Network error during Archidekt get_notification_count: {e}")
             raise NetworkError(
                 "Network error during get_notification_count",
+                original_exception=e,
+                provider=self.name,
+            ) from e
+
+    # =========================================================================
+    # Folder Management Methods
+    # =========================================================================
+
+    def create_folder(
+        self,
+        name: str,
+        parent_folder_id: str,
+        private: bool = False,
+    ) -> dict[str, Any]:
+        """Create a new deck folder.
+
+        Creates a folder under the specified parent folder.
+
+        Args:
+            name: The name of the new folder.
+            parent_folder_id: The ID of the parent folder.
+            private: Whether the folder is private. Defaults to False.
+
+        Returns:
+            A folder object containing:
+                - id (int): Folder ID
+                - name (str): Folder name
+                - parentFolder (int): Parent folder ID
+                - private (bool): Whether folder is private
+
+        Raises:
+            ArchidektAuthenticationError: If authentication is required but not provided.
+            ArchidektValidationError: If required parameters are missing.
+            NetworkError: If there is a network error.
+            ArchidektAPIError: If the API returns an error.
+
+        Evidence from HAR file `/tmp/archidekt4.har`:
+            - POST /api/decks/folders/
+            - Request: {"name": "folder123", "private": true, "parentFolder": "1735877"}
+            - Status: 200
+            - Response: {"id": 1755116, "name": "folder123", ...}
+        """
+        self._check_authentication()
+
+        if not name:
+            raise ArchidektValidationError(
+                "name is required for create_folder()",
+                provider=self.name,
+            )
+        if not parent_folder_id:
+            raise ArchidektValidationError(
+                "parent_folder_id is required for create_folder()",
+                provider=self.name,
+            )
+
+        try:
+            with self.rate_limiter.guard("archidekt"):
+                payload = {
+                    "name": name,
+                    "private": private,
+                    "parentFolder": str(parent_folder_id),
+                }
+                response = self.http_client.post("decks/folders/", json=payload)
+                data = self._handle_response(response, "create_folder")
+
+                if not data:
+                    return {}
+
+                return data
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Network error during Archidekt create_folder: {e}")
+            raise NetworkError(
+                "Network error during create_folder",
+                original_exception=e,
+                provider=self.name,
+            ) from e
+
+    def get_folder_tree(self) -> dict[str, Any]:
+        """Get the full folder tree for the authenticated user.
+
+        Retrieves the complete folder hierarchy starting from the root folder.
+
+        Returns:
+            A nested folder tree object containing:
+                - id (int): Folder ID
+                - name (str): Folder name
+                - children (list or None): Nested folder objects
+                - private (bool): Whether folder is private
+
+        Raises:
+            ArchidektAuthenticationError: If authentication is required but not provided.
+            NetworkError: If there is a network error.
+            ArchidektAPIError: If the API returns an error.
+
+        Evidence from HAR file `/tmp/archidekt4.har`:
+            - GET /api/decks/folderTree/
+            - Status: 200
+            - Response: JSON object with nested folder structure
+        """
+        self._check_authentication()
+
+        try:
+            with self.rate_limiter.guard("archidekt"):
+                response = self.http_client.get("decks/folderTree/")
+                data = self._handle_response(response, "folder_tree")
+
+                if not data:
+                    return {}
+
+                return data
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Network error during Archidekt get_folder_tree: {e}")
+            raise NetworkError(
+                "Network error during get_folder_tree",
+                original_exception=e,
+                provider=self.name,
+            ) from e
+
+    def mass_update(
+        self,
+        items: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Batch update decks and/or folders (move, rename).
+
+        Applies a batch of patch operations to decks and folders.
+
+        Args:
+            items: List of update items, each containing:
+                - id (int): The deck or folder ID
+                - type (str): "deck" or "folder"
+                - patch (dict): Fields to update, e.g.
+                    {"parentFolder": 1755116} or {"name": "new name"}
+
+        Returns:
+            A list of response objects reflecting the applied updates.
+
+        Raises:
+            ArchidektAuthenticationError: If authentication is required but not provided.
+            ArchidektValidationError: If required parameters are missing.
+            NetworkError: If there is a network error.
+            ArchidektAPIError: If the API returns an error.
+
+        Evidence from HAR file `/tmp/archidekt4.har`:
+            - PATCH /api/massUpdate/
+            - Request: {"items": [{"id": 24588160, "type": "deck", "patch": {...}}]}
+            - Status: 200
+            - Response: JSON list of updated items
+        """
+        self._check_authentication()
+
+        if not items:
+            raise ArchidektValidationError(
+                "items parameter is required and must not be empty",
+                provider=self.name,
+            )
+
+        try:
+            with self.rate_limiter.guard("archidekt"):
+                payload = {"items": items}
+                response = self.http_client.patch("massUpdate/", json=payload)
+                data = self._handle_response(response, "mass_update")
+
+                if not data:
+                    return []
+
+                # Ensure we have a list
+                if isinstance(data, dict):
+                    return [data]
+                return list(data)
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Network error during Archidekt mass_update: {e}")
+            raise NetworkError(
+                "Network error during mass_update",
+                original_exception=e,
+                provider=self.name,
+            ) from e
+
+    def synchronize_categories(
+        self,
+        deck_id: str,
+        categories: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Synchronize deck categories.
+
+        Updates the set of categories for a deck, creating new ones as needed.
+
+        Args:
+            deck_id: The ID of the deck.
+            categories: List of category objects, each containing:
+                - id (int or None): Category ID, or None for new categories
+                - name (str): Category name
+                - isPremier (bool): Whether category is a premier category
+                - includedInDeck (bool): Whether category is in deck
+                - includedInPrice (bool): Whether category is in price
+
+        Returns:
+            A dict containing a `categories` list with the synchronized
+            category objects (including assigned IDs).
+
+        Raises:
+            ArchidektAuthenticationError: If authentication is required but not provided.
+            ArchidektValidationError: If required parameters are missing.
+            NetworkError: If there is a network error.
+            ArchidektAPIError: If the API returns an error.
+
+        Evidence from HAR file `/tmp/archidekt4.har`:
+            - PATCH /api/decks/{deck_id}/synchronizeCategories/
+            - Request: {"categories": [{...}]}
+            - Status: 200
+            - Response: {"categories": [{...}]}
+        """
+        self._check_authentication()
+
+        if not deck_id:
+            raise ArchidektValidationError(
+                "deck_id is required for synchronize_categories()",
+                provider=self.name,
+            )
+        if categories is None:
+            raise ArchidektValidationError(
+                "categories parameter is required for " "synchronize_categories()",
+                provider=self.name,
+            )
+
+        try:
+            with self.rate_limiter.guard("archidekt"):
+                payload = {"categories": categories}
+                response = self.http_client.patch(
+                    f"decks/{deck_id}/synchronizeCategories/",
+                    json=payload,
+                )
+                data = self._handle_response(response, "synchronize_categories")
+
+                if not data:
+                    return {}
+
+                return data
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Network error during Archidekt synchronize_categories: {e}")
+            raise NetworkError(
+                "Network error during synchronize_categories",
+                original_exception=e,
+                provider=self.name,
+            ) from e
+
+    def mass_deck_edit(
+        self,
+        current: str,
+        edit: str,
+        parser: str = "archidekt",
+    ) -> dict[str, Any]:
+        """Parse text-based deck edits into add/remove operations.
+
+        Sends a current decklist and an edited version to the server, which
+        diffs the two and returns the operations needed to transform the
+        current list into the edited list.
+
+        Args:
+            current: The current decklist text.
+            edit: The edited decklist text.
+            parser: The parser to use for the decklist text. Defaults to
+                "archidekt".
+
+        Returns:
+            A dict containing:
+                - toAdd (list): Cards to add
+                - toRemove (list): Cards to remove
+                - cardErrors (list): Card resolution errors
+                - syntaxErrors (list): Parse/syntax errors
+                - categories (dict): Category information
+
+        Raises:
+            ArchidektAuthenticationError: If authentication is required but not provided.
+            ArchidektValidationError: If required parameters are missing.
+            NetworkError: If there is a network error.
+            ArchidektAPIError: If the API returns an error.
+
+        Evidence from HAR file `/tmp/archidekt4.har`:
+            - POST /api/cards/massDeckEdit/
+            - Request: {"parser": "archidekt", "current": "...", "edit": "..."}
+            - Status: 200
+            - Response: JSON object with toAdd, toRemove, errors, categories
+        """
+        self._check_authentication()
+
+        if not current:
+            raise ArchidektValidationError(
+                "current is required for mass_deck_edit()",
+                provider=self.name,
+            )
+        if not edit:
+            raise ArchidektValidationError(
+                "edit is required for mass_deck_edit()",
+                provider=self.name,
+            )
+
+        try:
+            with self.rate_limiter.guard("archidekt"):
+                payload = {
+                    "parser": parser,
+                    "current": current,
+                    "edit": edit,
+                }
+                response = self.http_client.post("cards/massDeckEdit/", json=payload)
+                data = self._handle_response(response, "mass_deck_edit")
+
+                if not data:
+                    return {}
+
+                return data
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Network error during Archidekt mass_deck_edit: {e}")
+            raise NetworkError(
+                "Network error during mass_deck_edit",
+                original_exception=e,
+                provider=self.name,
+            ) from e
+
+    # =========================================================================
+    # Social Features Methods (Extended)
+    # =========================================================================
+
+    def create_comment(
+        self,
+        parent_id: str,
+        text: str,
+    ) -> dict[str, Any]:
+        """Post a comment on a deck.
+
+        Converts plain text to Quill Delta JSON format and posts a comment
+        as a child of the given parent (deck or comment) ID.
+
+        Args:
+            parent_id: The ID of the parent deck or comment.
+            text: The plain text content of the comment.
+
+        Returns:
+            A comment object containing:
+                - id (int): Comment ID
+                - text (str): Quill Delta JSON text
+                - parent (int): Parent ID
+                - owner (dict): Owner user information
+                - createdAt (str): Creation timestamp
+                - archived (bool): Whether comment is archived
+                - children (list): Child comments
+                - childrenCount (int): Number of child comments
+                - points (int): Upvote count
+
+        Raises:
+            ArchidektAuthenticationError: If authentication is required but not provided.
+            ArchidektValidationError: If required parameters are missing.
+            NetworkError: If there is a network error.
+            ArchidektAPIError: If the API returns an error.
+
+        Evidence from HAR file `/tmp/archidekt4.har`:
+            - POST /api/comments/createComment/
+            - Request: {"parent": 24644008, "text": "{\\"ops\\":[...]}"}
+            - Status: 200
+            - Response: JSON object with comment details
+        """
+        self._check_authentication()
+
+        if not parent_id:
+            raise ArchidektValidationError(
+                "parent_id is required for create_comment()",
+                provider=self.name,
+            )
+        if not text:
+            raise ArchidektValidationError(
+                "text is required for create_comment()",
+                provider=self.name,
+            )
+
+        try:
+            parent_id_int = int(parent_id)
+        except (TypeError, ValueError) as conv_err:
+            raise ArchidektValidationError(
+                f"parent_id must be numeric, got {parent_id!r}",
+                provider=self.name,
+            ) from conv_err
+
+        try:
+            with self.rate_limiter.guard("archidekt"):
+                delta_text = json.dumps({"ops": [{"insert": text + "\n"}]})
+                payload = {
+                    "parent": parent_id_int,
+                    "text": delta_text,
+                }
+                response = self.http_client.post(
+                    "comments/createComment/", json=payload
+                )
+                data = self._handle_response(response, "create_comment")
+
+                if not data:
+                    return {}
+
+                return data
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Network error during Archidekt create_comment: {e}")
+            raise NetworkError(
+                "Network error during create_comment",
+                original_exception=e,
+                provider=self.name,
+            ) from e
+
+    def get_notifications(self, user_id: str | None = None) -> dict[str, Any]:
+        """Get the full notification list for a user.
+
+        Args:
+            user_id: The user ID. If None, uses the authenticated user.
+
+        Returns:
+            A notifications object containing:
+                - notifications (list): List of notification objects
+
+        Raises:
+            NetworkError: If there is a network error.
+            ArchidektAPIError: If the API returns an error.
+            ArchidektValidationError: If user_id is not provided and not authenticated.
+
+        Evidence from HAR file `/tmp/archidekt4.har`:
+            - GET /api/users/{user_id}/notifications/
+            - Status: 200
+            - Response: {"notifications": [...]}
+        """
+        try:
+            with self.rate_limiter.guard("archidekt"):
+                target_user_id = user_id
+                if not target_user_id:
+                    if not hasattr(self, "auth_handler") or self.auth_handler is None:
+                        raise ArchidektValidationError(
+                            "user_id is required or authentication must be " "provided",
+                            provider=self.name,
+                        )
+                    target_user_id = self.auth_handler.user_id
+
+                if not target_user_id:
+                    raise ArchidektValidationError(
+                        "user_id is required or authentication must be " "provided",
+                        provider=self.name,
+                    )
+
+                response = self.http_client.get(
+                    f"users/{target_user_id}/notifications/"
+                )
+                data = self._handle_response(response, "notifications")
+
+                if not data:
+                    return {}
+
+                return data
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Network error during Archidekt get_notifications: {e}")
+            raise NetworkError(
+                "Network error during get_notifications",
+                original_exception=e,
+                provider=self.name,
+            ) from e
+
+    def get_followers(self, user_id: str) -> dict[str, Any]:
+        """Get a list of followers for a user.
+
+        Args:
+            user_id: The ID of the user whose followers to retrieve.
+
+        Returns:
+            A paginated followers object containing:
+                - count (int): Total number of followers
+                - next (str or None): URL for next page of results
+                - previous (str or None): URL for previous page of results
+                - results (list): List of follower user objects
+
+        Raises:
+            ArchidektAuthenticationError: If authentication is required but not provided.
+            ArchidektValidationError: If user_id is missing.
+            NetworkError: If there is a network error.
+            ArchidektAPIError: If the API returns an error.
+
+        Evidence from HAR file `/tmp/archidekt4.har`:
+            - GET /api/users/{user_id}/followers/
+            - Status: 200
+            - Response: {"count": 0, "next": null, "previous": null, "results": []}
+        """
+        self._check_authentication()
+
+        if not user_id:
+            raise ArchidektValidationError(
+                "user_id is required for get_followers()",
+                provider=self.name,
+            )
+
+        try:
+            with self.rate_limiter.guard("archidekt"):
+                response = self.http_client.get(f"users/{user_id}/followers/")
+                data = self._handle_response(response, "followers")
+
+                if not data:
+                    return {}
+
+                return data
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Network error during Archidekt get_followers: {e}")
+            raise NetworkError(
+                "Network error during get_followers",
+                original_exception=e,
+                provider=self.name,
+            ) from e
+
+    def get_following(self, user_id: str) -> dict[str, Any]:
+        """Get the list of users a user is following.
+
+        Args:
+            user_id: The ID of the user whose following list to retrieve.
+
+        Returns:
+            A paginated following object containing:
+                - count (int): Total number of followed users
+                - next (str or None): URL for next page of results
+                - previous (str or None): URL for previous page of results
+                - results (list): List of followed user objects
+
+        Raises:
+            ArchidektAuthenticationError: If authentication is required but not provided.
+            ArchidektValidationError: If user_id is missing.
+            NetworkError: If there is a network error.
+            ArchidektAPIError: If the API returns an error.
+
+        Evidence from HAR file `/tmp/archidekt4.har`:
+            - GET /api/users/{user_id}/following/
+            - Status: 200
+            - Response: {"count": 0, "next": null, "previous": null, "results": []}
+        """
+        self._check_authentication()
+
+        if not user_id:
+            raise ArchidektValidationError(
+                "user_id is required for get_following()",
+                provider=self.name,
+            )
+
+        try:
+            with self.rate_limiter.guard("archidekt"):
+                response = self.http_client.get(f"users/{user_id}/following/")
+                data = self._handle_response(response, "following")
+
+                if not data:
+                    return {}
+
+                return data
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Network error during Archidekt get_following: {e}")
+            raise NetworkError(
+                "Network error during get_following",
+                original_exception=e,
+                provider=self.name,
+            ) from e
+
+    # =========================================================================
+    # Deck Discovery Methods
+    # =========================================================================
+
+    def get_curated_decks(self) -> dict[str, Any]:
+        """Get the authenticated user's curated decks.
+
+        Retrieves the list of decks owned by the authenticated user.
+
+        Returns:
+            A dict containing:
+                - results (list): List of deck summary objects
+
+        Raises:
+            ArchidektAuthenticationError: If authentication is required but not provided.
+            NetworkError: If there is a network error.
+            ArchidektAPIError: If the API returns an error.
+
+        Evidence from HAR file `/tmp/archidekt4.har`:
+            - GET /api/decks/curated/self/
+            - Status: 200
+            - Response: {"results": [{deck_summary}, ...]}
+        """
+        self._check_authentication()
+
+        try:
+            with self.rate_limiter.guard("archidekt"):
+                response = self.http_client.get("decks/curated/self/")
+                data = self._handle_response(response, "curated_decks")
+
+                if not data:
+                    return {}
+
+                return data
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Network error during Archidekt get_curated_decks: {e}")
+            raise NetworkError(
+                "Network error during get_curated_decks",
+                original_exception=e,
+                provider=self.name,
+            ) from e
+
+    def get_recent_decks(self) -> dict[str, Any]:
+        """Get the authenticated user's recently viewed decks.
+
+        Retrieves the list of decks recently viewed by the authenticated user.
+
+        Returns:
+            A dict containing:
+                - results (list): List of deck summary objects
+
+        Raises:
+            ArchidektAuthenticationError: If authentication is required but not provided.
+            NetworkError: If there is a network error.
+            ArchidektAPIError: If the API returns an error.
+
+        Evidence from HAR file `/tmp/archidekt4.har`:
+            - GET /api/decks/curated/self-recent/
+            - Status: 200
+            - Response: {"results": [{deck_summary}, ...]}
+        """
+        self._check_authentication()
+
+        try:
+            with self.rate_limiter.guard("archidekt"):
+                response = self.http_client.get("decks/curated/self-recent/")
+                data = self._handle_response(response, "recent_decks")
+
+                if not data:
+                    return {}
+
+                return data
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Network error during Archidekt get_recent_decks: {e}")
+            raise NetworkError(
+                "Network error during get_recent_decks",
+                original_exception=e,
+                provider=self.name,
+            ) from e
+
+    def get_followed_decks(self) -> dict[str, Any]:
+        """Get decks from users the authenticated user follows.
+
+        Retrieves the list of decks owned by users that the authenticated
+        user follows.
+
+        Returns:
+            A dict containing:
+                - results (list): List of deck summary objects
+
+        Raises:
+            ArchidektAuthenticationError: If authentication is required but not provided.
+            NetworkError: If there is a network error.
+            ArchidektAPIError: If the API returns an error.
+
+        Evidence from HAR file `/tmp/archidekt4.har`:
+            - GET /api/decks/curated/followed/
+            - Status: 200
+            - Response: {"results": [{deck_summary}, ...]}
+        """
+        self._check_authentication()
+
+        try:
+            with self.rate_limiter.guard("archidekt"):
+                response = self.http_client.get("decks/curated/followed/")
+                data = self._handle_response(response, "followed_decks")
+
+                if not data:
+                    return {}
+
+                return data
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Network error during Archidekt get_followed_decks: {e}")
+            raise NetworkError(
+                "Network error during get_followed_decks",
+                original_exception=e,
+                provider=self.name,
+            ) from e
+
+    def get_packages(self) -> dict[str, Any]:
+        """Get the authenticated user's card packages.
+
+        Retrieves the list of card packages owned by the authenticated user.
+
+        Returns:
+            A dict containing:
+                - results (list): List of card package objects
+
+        Raises:
+            ArchidektAuthenticationError: If authentication is required but not provided.
+            NetworkError: If there is a network error.
+            ArchidektAPIError: If the API returns an error.
+
+        Evidence from HAR file `/tmp/archidekt4.har`:
+            - GET /api/decks/curated/self-packages/
+            - Status: 200
+            - Response: {"results": [{package}, ...]}
+        """
+        self._check_authentication()
+
+        try:
+            with self.rate_limiter.guard("archidekt"):
+                response = self.http_client.get("decks/curated/self-packages/")
+                data = self._handle_response(response, "packages")
+
+                if not data:
+                    return {}
+
+                return data
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Network error during Archidekt get_packages: {e}")
+            raise NetworkError(
+                "Network error during get_packages",
                 original_exception=e,
                 provider=self.name,
             ) from e
