@@ -243,6 +243,7 @@ class Archidekt(BaseProvider):
         self.auth_handler = JWTAuthHandler(
             base_url=self.base_url or "https://archidekt.com",
             login_endpoint="/rest-auth/login/",
+            refresh_endpoint="/rest-auth/token/refresh/",
             provider="archidekt",
         )
 
@@ -3834,6 +3835,7 @@ class Archidekt(BaseProvider):
         self.auth_handler = JWTAuthHandler(
             base_url=self.base_url or "https://archidekt.com",
             login_endpoint="/rest-auth/login/",
+            refresh_endpoint="/rest-auth/token/refresh/",
             provider="archidekt",
         )
         # The HTTP client session headers are stale after unpickle; clear any

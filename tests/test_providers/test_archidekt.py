@@ -183,6 +183,29 @@ class TestArchidektAuthentication(unittest.TestCase):
         with self.assertRaises(AuthenticationError):
             archidekt.refresh_auth()
 
+    def test_refresh_endpoint_no_double_api_prefix(self):
+        """Tests that the refresh endpoint does not double the /api/ prefix.
+
+        The provider's base_url is ``https://archidekt.com/api/`` and the
+        refresh endpoint must be ``/rest-auth/token/refresh/`` (without a
+        leading ``/api/``) so the full URL is correct.  A doubled
+        ``/api/api/`` prefix would cause every refresh to 404.
+        """
+        archidekt = Archidekt()
+        self.assertEqual(
+            archidekt.auth_handler.refresh_endpoint,
+            "/rest-auth/token/refresh/",
+        )
+        full_url = (
+            f"{archidekt.auth_handler.base_url}"
+            f"{archidekt.auth_handler.refresh_endpoint}"
+        )
+        self.assertNotIn("/api/api/", full_url)
+        self.assertEqual(
+            full_url,
+            "https://archidekt.com/api/rest-auth/token/refresh/",
+        )
+
 
 class TestArchidektGetCard(unittest.TestCase):
     """Test Archidekt.get_card() method."""
