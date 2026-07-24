@@ -6,7 +6,7 @@ Welcome to PyMTG - A unified Python library for Magic: The Gathering APIs.
 
 PyMTG provides a normalized interface to multiple MTG API providers, including:
 
-- **Scryfall** - Comprehensive card database with free public API
+- **Scryfall** - Card database with free public API
 - **Archidekt** - Deck building and collection management
 - **Moxfield** - Deck building (via Parse.bot wrapper)
 - **TCGPlayer** - Marketplace data and pricing (requires approval)
@@ -65,7 +65,7 @@ print(results)  # dict keyed by provider name
 - **Normalized Data Models** - Consistent Card, Deck, and Pricing models across all providers
 - **Provider Abstraction** - Unified interface for search, card retrieval, and deck operations
 - **Rate Limit Handling** - Built-in rate limit tracking and respect
-- **Error Handling** - Comprehensive exception hierarchy for API errors
+- **Error Handling** - Consistent exception hierarchy for API errors
 - **Type Safety** - Full type annotations with Pydantic models
 
 ## Providers

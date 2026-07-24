@@ -129,7 +129,7 @@ Each provider MUST have documentation (via docstrings) explaining its capabiliti
 
 #### Scenario: Provider docstring
 - **WHEN** user views help(Scryfall)
-- **THEN** system displays comprehensive documentation about Scryfall provider capabilities
+- **THEN** system displays documentation about Scryfall provider capabilities
 
 #### Scenario: Method docstrings
 - **WHEN** user views help(Scryfall.search)

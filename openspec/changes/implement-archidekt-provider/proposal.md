@@ -1,6 +1,6 @@
 ## Why
 
-The current Archidekt provider implementation uses session-based authentication with CSRF tokens, but the actual Archidekt API (as revealed by HAR file analysis) uses JWT Bearer token authentication via `/api/rest-auth/login/`. This mismatch prevents the provider from working with the real Archidekt API. Additionally, the current implementation references incorrect API endpoints and lacks support for deck card management operations that are critical for a complete Archidekt integration.
+The current Archidekt provider implementation uses session-based authentication with CSRF tokens, but the actual Archidekt API (as revealed by HAR file analysis) uses JWT Bearer token authentication via `/api/rest-auth/login/`. This mismatch prevents the provider from working with the real Archidekt API. The current implementation also references incorrect API endpoints and lacks support for deck card management operations that are critical for a complete Archidekt integration.
 
 The HAR files provided at `/tmp/archidekt.har` and `/tmp/archidekt2.har` contain real API traffic that reveals the actual Archidekt API structure, including JWT authentication, card search endpoints, deck creation, card modification operations, and additional endpoints for card metadata, deck organization, social features, and realtime collaboration. This change implements a complete overhaul based on reverse-engineered API data.
 
@@ -12,7 +12,7 @@ The HAR files provided at `/tmp/archidekt.har` and `/tmp/archidekt2.har` contain
 - **BREAKING**: Update card search from `/api/cards/` to `/api/cards/v2/` with proper query parameters
 - Add support for deck card modification via `PATCH /api/decks/{id}/modifyCards/v2/`
 - Add proper request/response parsing for Archidekt's card and deck data structures
-- Add comprehensive error handling for Archidekt-specific API errors
+- Add error handling for Archidekt-specific API errors
 - Add rate limiting support (60 requests per minute)
 - Add HAR file export capability for debugging
 - Update data models to match Archidekt's actual response structure
@@ -50,7 +50,7 @@ The HAR files provided at `/tmp/archidekt.har` and `/tmp/archidekt2.har` contain
   
 - **Files Added**:
   - `pymtg/auth/jwt.py` - New JWT authentication handler
-  - `tests/providers/test_archidekt.py` - Comprehensive test suite with HAR-based mocks
+  - `tests/providers/test_archidekt.py` - Test suite with HAR-based mocks
   - `docs/providers/archidekt.md` - Updated provider documentation
   - `openspec/changes/implement-archidekt-provider/specs/card-metadata/spec.md` - Card editions and subtypes specification
   - `openspec/changes/implement-archidekt-provider/specs/deck-organization/spec.md` - Deck folders and tags specification
@@ -61,4 +61,4 @@ The HAR files provided at `/tmp/archidekt.har` and `/tmp/archidekt2.har` contain
 
 - **API Changes**: All Archidekt API interactions will use the correct JWT-based authentication and v2 endpoints
 
-- **Breaking Changes**: Users currently using the Archidekt provider will need to update their code to use the new authentication method (username/password → JWT tokens instead of session cookies)
+- **Breaking Changes**: Users currently using the Archidekt provider will need to update their code to use the new authentication method (username/password to JWT tokens instead of session cookies)

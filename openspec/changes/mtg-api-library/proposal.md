@@ -2,7 +2,7 @@
 
 Magic: The Gathering developers currently need to integrate with multiple deckbuilding and card database sites (Scryfall, Archidekt, Moxfield, TCGPlayer, Cardmarket, Deckbox), each with different APIs, authentication mechanisms, data formats, and query syntaxes. This forces developers to learn and maintain separate integrations for each provider, leading to duplicated effort, inconsistent data models, and brittle code.
 
-pymtg solves this by providing a **unified Python library** with a consistent interface and normalized data models across all major MTG API providers. This enables developers to build MTG applications that work seamlessly across multiple platforms without provider-specific code.
+pymtg solves this by providing a **unified Python library** with a consistent interface and normalized data models across all major MTG API providers. This enables developers to build MTG applications that work across multiple platforms without provider-specific code.
 
 ## What Changes
 
@@ -13,7 +13,7 @@ pymtg solves this by providing a **unified Python library** with a consistent in
 - Add authentication handling for different provider requirements (none for Scryfall, session cookies for Archidekt, API key for Parse.bot/Moxfield, OAuth2 for TCGPlayer, OAuth 1.0a for Cardmarket)
 - **Note:** Deckbox has no public API and is deferred to future release
 - Add rate limiting respect per provider
-- Add comprehensive error handling with custom exception hierarchy
+- Add error handling with custom exception hierarchy
 - Create documentation and examples
 
 ## Capabilities

@@ -404,7 +404,7 @@ def test_function_behavior():
 
 ### 3.2 Test Coverage
 
-- New functionality must include comprehensive tests
+- New functionality must include tests
 - Test docstrings must explain what is being tested and why
 - Edge cases must be documented in test docstrings
 

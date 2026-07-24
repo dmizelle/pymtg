@@ -40,11 +40,11 @@ This mismatch means the current implementation **will not work** with the real A
 1. **Functional Archidekt API access**: Users can authenticate, search cards, create decks, and manage deck cards
 2. **Accurate API mapping**: Implementation matches the actual Archidekt API endpoints and data structures from HAR analysis
 3. **Consistent with pymtg patterns**: Follows existing provider patterns (Scryfall, Moxfield, etc.)
-4. **Comprehensive error handling**: Proper exceptions for all error scenarios
+4. **Error handling**: Proper exceptions for all error scenarios
 5. **Rate limit awareness**: Respects Archidekt's ~60 requests/minute limit
 6. **HAR logging capability**: Enables debugging by exporting HTTP traffic to HAR format
 7. **Secure credential handling**: JWT tokens stored in memory only, cleared appropriately
-8. **Testable**: Includes comprehensive tests with HAR-based mock responses
+8. **Testable**: Includes tests with HAR-based mock responses
 
 ### Non-Goals
 
@@ -373,29 +373,29 @@ class Archidekt(BaseProvider):
 ## Risks / Trade-offs
 
 ### Risk: Archidekt API Changes
-→ **Mitigation**: API is unofficial and undocumented; implementation is based on current HAR analysis. If API changes, tests will fail and can be updated. HAR logging will help diagnose future changes.
+**Mitigation**: API is unofficial and undocumented; implementation is based on current HAR analysis. If API changes, tests will fail and can be updated. HAR logging will help diagnose future changes.
 
 ### Risk: JWT Token Expiration
-→ **Mitigation**: Implement token refresh using refresh_token when access_token expires. Track token expiration from JWT payload (exp claim).
+**Mitigation**: Implement token refresh using refresh_token when access_token expires. Track token expiration from JWT payload (exp claim).
 
 ### Risk: Rate Limit Sharing Across Instances
-→ **Mitigation**: Current implementation uses per-instance rate limiting. For multi-threaded use, use thread-safe structures. For distributed systems, would need external coordination (Redis, etc.).
+**Mitigation**: Current implementation uses per-instance rate limiting. For multi-threaded use, use thread-safe structures. For distributed systems, would need external coordination (Redis, etc.).
 
 ### Risk: Memory Usage from HAR Logging
-→ **Mitigation**: HAR entries can grow large; provide method to clear entries. Limit total entries or memory usage. Warn users not to enable in production for long periods.
+**Mitigation**: HAR entries can grow large; provide method to clear entries. Limit total entries or memory usage. Warn users not to enable in production for long periods.
 
 ### Risk: Incomplete HAR Analysis
-→ **Mitigation**: HAR file contains limited examples. Implementation may encounter undocumented endpoints or parameters. HAR logging will capture these for future analysis.
+**Mitigation**: HAR file contains limited examples. Implementation may encounter undocumented endpoints or parameters. HAR logging will capture these for future analysis.
 
 ### Trade-off: Async vs Sync
-→ **Decision**: Use async (httpx.AsyncClient) for better performance
-→ **Trade-off**: Requires async/await in user code; slightly more complex than sync
-→ **Justification**: Modern Python best practice; aligns with other async providers in pymtg
+**Decision**: Use async (httpx.AsyncClient) for better performance
+**Trade-off**: Requires async/await in user code; slightly more complex than sync
+**Justification**: Modern Python best practice; aligns with other async providers in pymtg
 
-### Trade-off: Comprehensive vs Minimal Implementation
-→ **Decision**: Implement comprehensive feature set (search, decks, card management)
-→ **Trade-off**: More code to maintain; longer initial implementation
-→ **Justification**: Users expect full Archidekt functionality; partial implementation would be frustrating
+### Trade-off: Full vs Minimal Implementation
+**Decision**: Implement full feature set (search, decks, card management)
+**Trade-off**: More code to maintain; longer initial implementation
+**Justification**: Users expect full Archidekt functionality; partial implementation would be frustrating
 
 ## Migration Plan
 

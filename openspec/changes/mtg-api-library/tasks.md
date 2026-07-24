@@ -62,7 +62,7 @@
 - [x] 7.8 Add Scryfall metadata (name="scryfall", base_url="https://api.scryfall.com", rate_limits)
 - [x] 7.9 Add rate limit tracking for Scryfall (2/sec for search, 10/sec for others)
 - [x] 7.10 Implement error handling for Scryfall HTTP errors (404, 429, 500, etc.)
-- [x] 7.11 Add comprehensive Google-style docstrings to all Scryfall methods
+- [x] 7.11 Add Google-style docstrings to all Scryfall methods
 
 ## 8. Scryfall Provider Tests (Phase 1)
 
@@ -98,7 +98,7 @@
 - [x] 10.11 Implement error handling for Archidekt HTTP errors
 - [x] 10.12 Add is_authenticated() method to test session validity
 - [x] 10.13 Add refresh_auth() method to refresh session
-- [x] 10.14 Add comprehensive Google-style docstrings
+- [x] 10.14 Add Google-style docstrings
 
 ## 11. Archidekt Provider Tests
 
@@ -125,7 +125,7 @@
 - [x] 12.10 Add rate limit tracking for Moxfield (5-100 req/min depending on Parse.bot tier)
 - [x] 12.11 Implement error handling for Moxfield HTTP errors
 - [x] 12.12 Add is_authenticated() method
-- [x] 12.13 Add comprehensive Google-style docstrings
+- [x] 12.13 Add Google-style docstrings
 
 ## 13. Moxfield Provider Tests
 
@@ -144,7 +144,7 @@
 - [x] 14.5 Implement timing tracking for each provider's response
 - [x] 14.6 Implement error handling: capture provider errors and include in results dict
 - [x] 14.7 Implement rate limit respect: ensure each provider is queried within its limits
-- [x] 14.8 Add comprehensive Google-style docstrings
+- [x] 14.8 Add Google-style docstrings
 
 ## 15. Universal Search Tests
 
@@ -190,7 +190,7 @@
 - [x] 20.9 Implement error handling for TCGPlayer HTTP errors
 - [x] 20.10 Add is_authenticated() method
 - [x] 20.11 Add refresh_auth() method
-- [x] 20.12 Add comprehensive Google-style docstrings
+- [x] 20.12 Add Google-style docstrings
 - [x] 20.13 Document approval requirement in docstrings
 
 ## 21. TCGPlayer Provider Tests
@@ -214,7 +214,7 @@
 - [x] 22.9 Implement error handling for Cardmarket HTTP errors
 - [x] 22.10 Add is_authenticated() method
 - [x] 22.11 Add refresh_auth() method
-- [x] 22.12 Add comprehensive Google-style docstrings
+- [x] 22.12 Add Google-style docstrings
 - [x] 22.13 Document approval requirement in docstrings
 
 ## 23. Cardmarket Provider Tests
@@ -231,7 +231,7 @@
 - [x] 24.3 Implement rate limit configuration per provider
 - [x] 24.4 Implement warning when approaching rate limits
 - [x] 24.5 Add utility for users to check current rate limit status
-- [x] 24.6 Add comprehensive Google-style docstrings
+- [x] 24.6 Add Google-style docstrings
 
 ## 25. Retry Utilities
 
@@ -239,7 +239,7 @@
 - [x] 25.2 Implement retry_on_rate_limit decorator/function
 - [x] 25.3 Implement exponential backoff with jitter
 - [x] 25.4 Implement retry configuration (max_retries, backoff_factor)
-- [x] 25.5 Add comprehensive Google-style docstrings
+- [x] 25.5 Add Google-style docstrings
 
 ## 26. Final Integration and Polish
 
@@ -253,7 +253,7 @@
 - [x] 26.8 Update pyproject.toml with final dependencies (removed pytest from main deps)
 - [x] 26.9 Add _version.py with correct version (0.1.0)
 - [x] 26.10 Create initial documentation in docs/ (added index.md)
-- [x] 26.11 Create comprehensive examples in docs/examples/ (already exists from earlier tasks)
+- [x] 26.11 Create examples in docs/examples/ (already exists from earlier tasks)
 
 ## 27. Testing Against Real APIs (Integration Tests)
 
@@ -308,7 +308,7 @@
 - [ ] 31.6 Implement response parsing from Deckbox JSON to normalized Card and Deck models (when available)
 - [ ] 31.7 Add rate limit tracking for Deckbox (when limits known)
 - [ ] 31.8 Implement error handling for Deckbox HTTP errors (when available)
-- [ ] 31.9 Add comprehensive Google-style docstrings (when implemented)
+- [ ] 31.9 Add Google-style docstrings (when implemented)
 
 ## 32. Deckbox Provider Tests (Future)
 

@@ -27,7 +27,7 @@ This phase implements the JWT authentication handler that replaces SessionAuthHa
   - [x] 1.3.1 Implement `__getstate__` to exclude credentials from pickle
   - [x] 1.3.2 Clear password from memory immediately after authentication
   - [x] 1.3.3 Store tokens in memory only (no disk persistence)
-- [x] 1.4 Add comprehensive unit tests for JWTAuthHandler
+- [x] 1.4 Add unit tests for JWTAuthHandler
   - [x] 1.4.1 Test successful authentication with valid credentials
   - [x] 1.4.2 Test authentication failure with invalid credentials
   - [x] 1.4.3 Test authentication with network error
@@ -52,7 +52,7 @@ This phase creates Archidekt-specific exception classes for proper error handlin
   - [x] 2.2.4 `ArchidektRateLimitError` (inherits from RateLimitError)
   - [x] 2.2.5 `ArchidektAPIError` (inherits from APIError)
   - [x] 2.2.6 `ArchidektValidationError` (inherits from InvalidQueryError)
-- [x] 2.3 Add comprehensive docstrings to all exception classes
+- [x] 2.3 Add docstrings to all exception classes
 - [x] 2.4 Add unit tests for exceptions
   - [x] 2.4.1 Test exception hierarchy (isinstance checks)
   - [x] 2.4.2 Test exception messages are properly set
@@ -69,7 +69,7 @@ This phase implements the rate limiting functionality for Archidekt's ~60 reques
   - [x] 3.2.2 Add `wait_if_needed()` method that checks rate limit and waits if necessary
   - [x] 3.2.3 Add `get_status()` method returning current rate limit status
   - [x] 3.2.4 Use thread-safe data structure (deque with lock)
-- [x] 3.3 Add comprehensive docstrings
+- [x] 3.3 Add docstrings
 - [x] 3.4 Add unit tests for RateLimiter
   - [x] 3.4.1 Test first request allowed immediately
   - [x] 3.4.2 Test 60th request in window is allowed
@@ -91,7 +91,7 @@ This phase implements the HAR logging functionality for debugging.
   - [x] 4.2.5 Add `export()` method to write to file
   - [x] 4.2.6 Add `clear()` method to reset entries
   - [x] 4.2.7 Implement sanitization for sensitive data (Authorization header, credentials)
-- [x] 4.3 Add comprehensive docstrings
+- [x] 4.3 Add docstrings
 - [x] 4.4 Add unit tests for HARLogger
   - [x] 4.4.1 Test enable/disable functionality
   - [x] 4.4.2 Test request logging captures all fields
@@ -206,7 +206,7 @@ This phase completely rewrites the Archidekt provider with the correct JWT authe
 - [x] 5.10.3 Add module-level docstring to archidekt.py
 - [x] 5.10.4 Add class docstring to Archidekt class
 
-## 6. Create Comprehensive Tests
+## 6. Create Tests
 
 This phase creates extensive tests using mock responses based on HAR file data.
 
@@ -310,7 +310,7 @@ This phase creates extensive tests using mock responses based on HAR file data.
 
 ### 6.9 Integration Tests
 
-- [x] 6.9.1 Test complete workflow: auth → search → create deck → add cards → get deck
+- [x] 6.9.1 Test complete workflow: auth, search, create deck, add cards, get deck
 - [x] 6.9.2 Test HAR logging captures complete workflow
 - [x] 6.9.3 Test rate limiting during multiple requests
 

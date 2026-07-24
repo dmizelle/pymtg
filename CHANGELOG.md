@@ -61,7 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `get_cards_by_name()` using `/cards/named` endpoint
     - Response parsing from Scryfall JSON to normalized Card model
     - Rate limit tracking (2/sec for search, 10/sec for others)
-    - Comprehensive error handling for all HTTP errors
+    - Error handling for all HTTP errors
   - **Archidekt**: Full implementation
     - Authentication: login flow with username/password to `/accounts/login/`
     - Session cookie management with `requests.Session`
@@ -106,7 +106,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Rate limit respect: ensure each provider is queried within its limits
 
 - **Testing**:
-  - Comprehensive unit tests for all providers
+  - Unit tests for all providers
   - Exception tests
   - Model tests
   - Universal search tests
@@ -114,7 +114,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Documentation**:
   - README.md with library overview, installation, and usage examples
-  - Comprehensive docstrings on all classes, methods, and modules
+  - Docstrings on all classes, methods, and modules
   - Examples in `docs/examples/`
   - API documentation structure
 

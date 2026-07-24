@@ -10,11 +10,11 @@ A unified Python interface to Magic: The Gathering APIs.
 
 `pymtg` provides a consistent, normalized interface to multiple Magic: The Gathering API providers including Scryfall, Archidekt, Moxfield, TCGPlayer, and Cardmarket. Instead of learning and maintaining separate integrations for each provider, you can use `pymtg` to access all of them through a single, unified API.
 
-### Key Features
+### Features
 
 - **Unified Interface**: Same methods across all providers for consistent usage
 - **Normalized Data Models**: Get the same `Card`, `Deck`, and `Pricing` objects regardless of the source
-- **Comprehensive Provider Support**: Public APIs (Scryfall) and authenticated services
+- **Provider Support**: Public APIs (Scryfall) and authenticated services
 - **Type Safety**: Full type annotations and Pydantic models for reliable development
 - **Error Handling**: Consistent exception hierarchy across all providers
 - **Rate Limit Awareness**: Automatic respect for each provider's rate limits
@@ -179,7 +179,7 @@ for card in scryfall.iter_search(
 
 ### Scryfall
 
-Scryfall has a comprehensive public API and doesn't require authentication for most endpoints.
+Scryfall has a public API covering all cards, sets, and prices, and doesn't require authentication for most endpoints.
 
 ```python
 import pymtg
@@ -209,7 +209,7 @@ if card.pricing and card.pricing.scryfall:
 
 ## Error Handling
 
-`pymtg` provides a comprehensive exception hierarchy for consistent error handling across all providers.
+`pymtg` provides a consistent exception hierarchy for error handling across all providers.
 
 ## Rate Limiting
 

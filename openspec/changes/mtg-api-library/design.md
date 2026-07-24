@@ -2,7 +2,7 @@
 
 This is a greenfield Python library project. Currently, no `pymtg` library exists. The project structure is minimal with only a placeholder `main.py`, `pyproject.toml`, and the OpenSpec configuration.
 
-The Python ecosystem has some existing MTG-related libraries:
+Existing Python MTG libraries:
 - **scrython**: Well-maintained Scryfall client, but limited to Scryfall only and lacks full feature parity with the API
 - **mtgsdk**: Node.js library for Scryfall
 - Various unofficial wrappers for specific sites (Archidekt, Moxfield) exist as community projects but are inconsistent
@@ -29,7 +29,7 @@ No existing library provides a unified interface across multiple MTG API provide
 - Support Universal Search to query across multiple providers simultaneously
 - Handle diverse authentication mechanisms transparently (no auth, session cookies, OAuth2, API keys)
 - Respect rate limits for each provider with automatic backoff
-- Provide comprehensive, consistent error handling
+- Provide consistent error handling
 - Be well-documented with Google-style docstrings
 - Be type-safe with Pydantic models
 - Be easy to extend with new providers
@@ -196,7 +196,7 @@ class Color(StrEnum):
 - Stable (don't change)
 - Available in Scryfall responses
 - Mapped to by other providers (TCGPlayer, Cardmarket IDs available in Scryfall responses)
-- The de facto standard in the MTG API ecosystem
+- The de facto standard MTG API
 
 All Card models will have both a provider-specific ID and the Scryfall ID (if available).
 
@@ -483,7 +483,7 @@ class NetworkError(PyMTGError):
 - Document rate limits clearly per provider
 
 ### D013: Minimum Card Model for MVP
-**Decision:** Implement a comprehensive but practical Card model that covers the essential fields needed for Card Lookup, Deck Aggregator, and Universal Search.
+**Decision:** Implement a practical Card model that covers the essential fields needed for Card Lookup, Deck Aggregator, and Universal Search.
 
 **Fields:**
 - `id`: Provider-specific ID
@@ -595,31 +595,31 @@ class NetworkError(PyMTGError):
 
 ## Risks / Trade-offs
 
-**[Risk: Provider API changes]** → Each provider can change their API at any time, breaking our adapters.
+**[Risk: Provider API changes]**: Each provider can change their API at any time, breaking our adapters.
 - **Mitigation:** Monitor provider API changelogs, implement version detection, provide clear error messages when APIs change, make adapters easy to update.
 
-**[Risk: Rate limit complexity]** → Different rate limits per provider, plus user's own usage patterns, makes it hard to provide a one-size-fits-all solution.
+**[Risk: Rate limit complexity]**: Different rate limits per provider, plus user's own usage patterns, makes it hard to provide a one-size-fits-all solution.
 - **Mitigation:** Document rate limits clearly, provide examples of respectful usage, offer opt-in utilities for rate limiting, let users control their own caching.
 
-**[Risk: Authentication complexity]** → Each provider has different auth mechanisms (none, session, OAuth2, API key) which are complex to implement correctly.
+**[Risk: Authentication complexity]**: Each provider has different auth mechanisms (none, session, OAuth2, API key) which are complex to implement correctly.
 - **Mitigation:** Isolate auth handling in the auth/ subpackage, provide clear examples per provider, document auth requirements thoroughly, test auth flows with real accounts.
 
-**[Risk: Data model drift]** → Providers may return data that doesn't perfectly fit our normalized models, or new card types/layouts may not be representable.
+**[Risk: Data model drift]**: Providers may return data that doesn't perfectly fit our normalized models, or new card types/layouts may not be representable.
 - **Mitigation:** Use Pydantic's flexible validation (coerce types where possible), make models extensible with optional fields, document limitations clearly, provide escape hatches for raw data access.
 
-**[Risk: Performance with eager loading]** → Loading full Card objects for large decks may be slow and memory-intensive.
+**[Risk: Performance with eager loading]**: Loading full Card objects for large decks may be slow and memory-intensive.
 - **Mitigation:** Document the memory implications, suggest pagination for large queries, consider adding lazy loading option in future version, allow users to select specific fields.
 
-**[Risk: Session management complexity]** → Session-based auth (Archidekt, Moxfield) requires managing cookies, CSRF tokens, session expiration, etc.
+**[Risk: Session management complexity]**: Session-based auth (Archidekt, Moxfield) requires managing cookies, CSRF tokens, session expiration, etc.
 - **Mitigation:** Use requests.Session for cookie persistence, implement session refresh logic, provide clear error messages for expired sessions, document session lifetime expectations.
 
-**[Risk: Dependency on undocumented APIs]** → Archidekt and Moxfield APIs are undocumented and could change without notice.
+**[Risk: Dependency on undocumented APIs]**: Archidekt and Moxfield APIs are undocumented and could change without notice.
 - **Mitigation:** Treat these as "best effort" providers, document their undocumented status, provide fallback to other providers where possible, make it easy to update adapters when APIs change.
 
-**[Risk: Async support delayed]** → Not including async support in v1 may limit adoption by async-native frameworks.
+**[Risk: Async support delayed]**: Not including async support in v1 may limit adoption by async-native frameworks.
 - **Mitigation:** Design the sync interface to be easily wrappable in async (e.g., using asyncio.to_thread or similar), document async usage patterns, prioritize async support for v2.
 
-**[Risk: Provider approval requirements]** → TCGPlayer and Cardmarket require approval, which may limit testing and deployment.
+**[Risk: Provider approval requirements]**: TCGPlayer and Cardmarket require approval, which may limit testing and deployment.
 - **Mitigation:** Document the approval process, provide guidance on obtaining credentials, implement these providers but document they require approval, test with mock data where possible.
 
 ## API Verification Findings
@@ -637,7 +637,7 @@ Based on subagent investigation of all provider APIs (July 2026):
 
 *Parse.bot tiers: Free (5/min), Hobby (20/min), Developer (100/min)
 
-**Key Findings:**
+**Findings:**
 - **Scryfall** is the only provider with a fully public, well-documented API with no auth required
 - **Archidekt** has an undocumented but functional API that we can reverse-engineer using HAR files
 - **Moxfield** requires using the Parse.bot wrapper service (paid tiers for higher limits)
@@ -678,7 +678,7 @@ As this is a new library with no existing users, there is no migration needed. T
 
 4. **Phase 4: Polish and Release**
    - Complete documentation
-   - Add comprehensive examples
+   - Add examples
    - Set up CI/CD
    - Publish to PyPI
 
