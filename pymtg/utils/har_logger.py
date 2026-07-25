@@ -773,6 +773,11 @@ class HARLogger:
         # Convert to JSON with custom serializer for non-serializable objects.
         # ``datetime`` and ``date`` are imported at module level.
         def default_serializer(obj):
+            """Custom JSON serializer for non-serializable objects.
+
+            Handles datetime, date, bytes, and other non-serializable types
+            by converting them to string representations.
+            """
             if isinstance(obj, (datetime, date)):
                 return obj.isoformat()
             elif isinstance(obj, bytes):
