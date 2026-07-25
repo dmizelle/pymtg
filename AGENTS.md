@@ -569,3 +569,9 @@ This project is indexed by GitNexus as **pymtg** (2324 symbols, 3957 relationshi
 | Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
 
 <!-- gitnexus:end -->
+
+# Pyright / Ruff Checks
+
+You must NEVER apply `noqa` comments or change the configuration for pyright or
+ruff. If one of these linters fails, you MUST resolve the issue in the code.
+Do NOT attempt to bypass the linters.
