@@ -24,7 +24,6 @@ import requests
 from pymtg.auth.api_key import APIKeyAuthHandler
 from pymtg.config import DEFAULT_MOXFIELD_URL, PROVIDER_CONFIGS, ProviderConfig
 from pymtg.exceptions import (
-    APIError,
     AuthenticationError,
     InvalidQueryError,
     NetworkError,

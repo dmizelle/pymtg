@@ -18,12 +18,12 @@ import unittest
 
 import requests
 
-logger = logging.getLogger(__name__)
-
 from pymtg.models.card import Card
 from pymtg.models.deck import Deck
 from pymtg.models.enums import Color, Format
 from pymtg.providers.archidekt import Archidekt
+logger = logging.getLogger(__name__)
+
 
 
 class TestArchidektIntegration(unittest.TestCase):
@@ -707,7 +707,7 @@ class TestArchidektIntegration(unittest.TestCase):
 
     def test_get_curated_decks(self):
         """Tests that get_curated_decks returns the user's decks."""
-        deck_id = self._create_test_deck()
+        self._create_test_deck()
         result = self.archidekt.get_curated_decks()
         self.assertIsInstance(result, dict)
         self.assertIn("results", result)

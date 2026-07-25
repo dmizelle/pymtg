@@ -412,7 +412,7 @@ class TestHARLoggerExport:
         os.close(fd)
 
         try:
-            har_json = logger.export(filepath)
+            logger.export(filepath)
 
             # Verify file was created
             assert os.path.exists(filepath)

@@ -418,9 +418,7 @@ class Archidekt(BaseProvider):
                     cookies[name] = str(value)
 
             # Try to get the raw body content
-            body = None
-            if hasattr(response, "_content"):
-                body = response._content
+            body = response._content if hasattr(response, "_content") and response._content is not False else None
 
             # Log the response
             self.har_logger.log_response(

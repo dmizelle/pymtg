@@ -249,14 +249,14 @@ class TestArchidektExceptionEquality:
         pymtg_error = PyMTGError("Test error")
 
         assert archidekt_error != pymtg_error
-        assert type(archidekt_error) != type(pymtg_error)
+        assert type(archidekt_error) is not type(pymtg_error)
 
     def test_archidekt_authentication_error_not_equal_to_base(self):
         """Test ArchidektAuthenticationError is not equal to AuthenticationError."""
         archidekt_error = ArchidektAuthenticationError("Test error")
         auth_error = AuthenticationError("Test error")
 
-        assert type(archidekt_error) != type(auth_error)
+        assert type(archidekt_error) is not type(auth_error)
 
     def test_same_type_same_attributes_identity_equality(self):
         """Test same-type ArchidektError instances use identity equality.
