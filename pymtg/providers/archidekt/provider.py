@@ -3818,7 +3818,7 @@ class Archidekt(BaseProvider):
         Args:
             state: Dictionary of attributes from pickle.
         """
-        self.__dict__.update(state)  # type: ignore[attr-defined]
+        vars(self).update(state)
         # Recreate non-picklable objects excluded by __getstate__
         self._lock = threading.Lock()
         self.rate_limiter = RateLimiter(

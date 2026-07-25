@@ -379,7 +379,9 @@ class OAuth1Handler(BaseAuthHandler):
         # Extract the base media type (strip parameters like
         # '; charset=utf-8') so a charset suffix does not cause form bodies
         # to be silently omitted from the signature base string.
-        media_type = content_type.split(";")[0].strip().lower() if content_type else ""  # type: ignore[arg-type]
+        if isinstance(content_type, bytes):
+            content_type = content_type.decode("utf-8")
+        media_type = content_type.split(";")[0].strip().lower() if content_type else ""
         if media_type != "application/x-www-form-urlencoded":
             return {}
         body = request.body
