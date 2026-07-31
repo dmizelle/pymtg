@@ -63,16 +63,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Rate limit tracking (2/sec for search, 10/sec for others)
     - Error handling for all HTTP errors
   - **Archidekt**: Full implementation
-    - Authentication: login flow with username/password to `/accounts/login/`
-    - Session cookie management with `requests.Session`
-    - CSRF token handling (X-CSRFToken header)
+    - Authentication: JWT login flow with username/password
+    - JWT token management with `requests.Session`
+    - Token refresh logic
     - `get_deck()` using `/api/decks/{id}/` endpoint
     - `get_user_decks()` using `/api/decks/` endpoint
     - `search()` using `/api/cards/` endpoint with generic parameters
     - `search_syntax()` using `/api/cards/` endpoint with `q` parameter
     - Response parsing with color normalization
     - Rate limit tracking (~60/min)
-  - **Moxfield**: Full implementation via Parse.bot wrapper
+  - **Moxfield**: Wrapper implementation via Parse.bot (no public Moxfield API exists)
     - Authentication: Parse.bot API key passed via X-API-Key header
     - `get_deck()` using Parse.bot wrapper endpoints
     - `get_deck_full()` using Parse.bot wrapper endpoints

@@ -168,12 +168,18 @@ for card in scryfall.iter_search(
 | Provider | Status | Authentication | Rate Limits |
 | ---------- | -------- | ---------------- | ------------- |
 | **Scryfall** | ✅ Implemented | None (Public API) | 2/sec search, 10/sec others |
-| **Archidekt** | 🔄 Planned | Session Cookies | ~60/min |
-| **Moxfield** | ✅ Implemented | Parse.bot API Key | ~100/min |
+| **Archidekt** | ✅ Implemented | JWT Authentication | ~60/min |
+| **Moxfield** | ⚠️ Wrapper (Parse.bot) | Parse.bot API Key | ~100/min |
 | **TCGPlayer** | 🔄 Planned | OAuth2 Client Credentials | 10/sec |
 | **Cardmarket** | 🔄 Planned | OAuth 1.0a | 30K-100K/day |
 
-**Note:** The Moxfield provider uses the [Parse.bot](https://parse.bot) third-party scraper service as its backend. You will need a Parse.bot API key to use this provider.
+Moxfield does not have a public API. The Moxfield provider routes all requests through [Parse.bot](https://parse.bot), a third-party scraper service. This means:
+
+- You need a Parse.bot API key, not a Moxfield key.
+- The base URL contains a scraper UUID (`api.parse.bot/scraper/{uuid}/`) that Parse.bot can revoke or rotate at any time.
+- Rate limits and uptime depend on Parse.bot, not Moxfield.
+
+If you need direct Moxfield access, you would have to reverse-engineer their private endpoints, which is fragile and may violate their terms of service.
 
 ## Provider-Specific Usage
 

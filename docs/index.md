@@ -182,6 +182,28 @@ See the [examples directory](./examples/) for complete usage examples:
 - [basic_search.py](./examples/basic_search.py) - Basic search operations
 - [deck_retrieval.py](./examples/deck_retrieval.py) - Deck retrieval and parsing
 
+## API Reference
+
+### Models
+
+- [Card](models/card.md) - Normalized card data
+- [Deck](models/deck.md) - Deck data structure
+- [Set](models/set.md) - Set information
+- [Pricing](models/pricing.md) - Price data from providers
+
+### Providers
+
+- [Scryfall](providers/scryfall.md) - Scryfall API wrapper
+- [Archidekt](providers/archidekt.md) - Archidekt API wrapper
+- [Moxfield](providers/moxfield.md) - Moxfield wrapper (via Parse.bot scraper)
+- [TCGPlayer](providers/tcgplayer.md) - TCGPlayer API wrapper
+- [Cardmarket](providers/cardmarket.md) - Cardmarket API wrapper
+
+### Utilities
+
+- [Aggregator](search/aggregator.md) - Multi-provider search
+- [HTTPClient](utils/http.md) - HTTP client utilities
+- [RateLimiter](utils/rate_limiting.md) - Rate limiting utilities
 
 ## Contributing
 
