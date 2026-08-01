@@ -6,10 +6,8 @@ for interacting with the TCGPlayer API (https://docs.tcgplayer.com).
 TCGPlayer is a major marketplace for trading card games including Magic: The Gathering.
 Their API provides access to catalog data, pricing information, and more.
 
-Note:
-    New developer access to the TCGPlayer API is currently closed.
-    Requires pre-approved application at https://docs.tcgplayer.com
-    This implementation uses the OAuth2 client credentials flow.
+Users supply their own OAuth2 client credentials. This implementation uses
+the OAuth2 client credentials flow.
 """
 
 import copy
@@ -66,7 +64,7 @@ class TCGPlayer(BaseProvider):
     for trading card games including Magic: The Gathering.
 
     TCGPlayer uses OAuth2 client credentials flow for authentication.
-    New developer access is currently closed and requires pre-approval.
+    Pass your own client ID and client secret to the constructor.
 
     Attributes:
         name: Provider name ("tcgplayer").
@@ -79,18 +77,18 @@ class TCGPlayer(BaseProvider):
         client_secret: OAuth2 client secret (if provided).
 
     Note:
-        To use this provider, you must have pre-approved access from TCGPlayer.
-        Apply at https://docs.tcgplayer.com
+        You must supply your own OAuth2 credentials from TCGPlayer.
+        See https://docs.tcgplayer.com for registration details.
 
     Example:
         # Initialize with OAuth2 credentials
         tcgplayer = TCGPlayer(client_id="your_client_id", client_secret="your_client_secret")
 
         # Get a card by ID
-        card = tcgplayer.get_card(product_id=12345)
+        card = tcgplayer.get_card(card_id="12345", pricing=True)
 
         # Search for cards
-        cards = tcgplayer.search(query="Black Lotus", limit=5)
+        cards = tcgplayer.search(name="Black Lotus", limit=5)
 
         # Get pricing for a card
         pricing = tcgplayer.get_pricing(product_id=12345)
