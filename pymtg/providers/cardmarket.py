@@ -8,11 +8,8 @@ Cardmarket is an official European marketplace for trading card games
 including Magic: The Gathering. Their API provides access to catalog
 data, pricing information, and marketplace data.
 
-Note:
-    New developer access to the Cardmarket API is currently closed.
-    Requires a pre-approved application at https://api.cardmarket.com
-
-Cardmarket uses OAuth 1.0a for authentication.
+Users supply their own OAuth 1.0a credentials. Cardmarket uses OAuth 1.0a
+for authentication, which does not support automatic token refresh.
 """
 
 import logging
@@ -46,9 +43,10 @@ class Cardmarket(BaseProvider):
     offers comprehensive catalog, pricing, and marketplace data for
     Magic: The Gathering cards, primarily serving the European market.
 
-    Authentication is required and uses OAuth 1.0a flow.
-    New developer access is currently closed - requires pre-approved application
-    at https://api.cardmarket.com.
+    Authentication is required and uses OAuth 1.0a. Pass your own consumer
+    key, consumer secret, access token, and access token secret to the
+    constructor. OAuth1 does not support automatic token refresh; obtain a
+    new access token from Cardmarket and re-instantiate the provider.
 
     Attributes:
         name: Provider name ("cardmarket").
@@ -59,7 +57,6 @@ class Cardmarket(BaseProvider):
         auth_handler: OAuth1 authentication handler.
 
     Example:
-        # Note: Requires pre-approved Cardmarket developer credentials
         # Create provider with OAuth1 credentials
         cardmarket = Cardmarket(
             consumer_key="your_consumer_key",
@@ -76,11 +73,6 @@ class Cardmarket(BaseProvider):
         cards = cardmarket.search(name="Black Lotus", limit=5)
         for card in cards:
             print(card.name)
-
-    Warning:
-        New Cardmarket developer applications are currently closed. You must
-        have pre-approved credentials to use this provider. See
-         https://api.cardmarket.com for more information.
     """
 
     # Valid Cardmarket search parameters
@@ -141,9 +133,8 @@ class Cardmarket(BaseProvider):
             AuthenticationError: If authentication fails during initialization.
 
         Note:
-            Requires pre-approved Cardmarket developer credentials.
-            New access is currently closed to new developers.
-            All four OAuth1 credentials are required for authentication.
+            You must supply your own OAuth1 credentials from Cardmarket.
+            All four parameters are required for authentication.
         """
         # Initialize thread safety lock
         self._lock = threading.Lock()
@@ -247,7 +238,6 @@ class Cardmarket(BaseProvider):
             AuthenticationError: If authentication fails.
 
         Note:
-            Requires pre-approved Cardmarket developer credentials.
             All four OAuth1 parameters are required.
         """
         with self._lock:

@@ -12,13 +12,13 @@ A unified Python interface to Magic: The Gathering APIs.
 
 ### Features
 
-- **Unified Interface**: Same methods across all providers for consistent usage
-- **Normalized Data Models**: Get the same `Card`, `Deck`, and `Pricing` objects regardless of the source
-- **Provider Support**: Public APIs (Scryfall) and authenticated services
-- **Type Safety**: Full type annotations and Pydantic models for reliable development
-- **Error Handling**: Consistent exception hierarchy across all providers
-- **Rate Limit Awareness**: Automatic respect for each provider's rate limits
-- **Pagination Support**: Easy iteration through large result sets
+- Unified interface: the same methods work across all providers
+- Normalized data models: `Card`, `Deck`, and `Pricing` objects are identical regardless of source
+- Provider support: public APIs (Scryfall) and authenticated services
+- Type safety: full type annotations and Pydantic models
+- Error handling: a single exception hierarchy across all providers
+- Rate limit awareness: automatic respect for each provider's limits
+- Pagination: `iter_search()` iterates through large result sets page by page
 
 ## Installation
 
@@ -150,6 +150,7 @@ mid_cmc_cards = scryfall.search(
 
 ```python
 import pymtg
+from pymtg.models import Color
 
 scryfall = pymtg.Scryfall()
 
@@ -167,11 +168,11 @@ for card in scryfall.iter_search(
 
 | Provider | Status | Authentication | Rate Limits |
 | ---------- | -------- | ---------------- | ------------- |
-| **Scryfall** | ✅ Implemented | None (Public API) | 2/sec search, 10/sec others |
-| **Archidekt** | ✅ Implemented | JWT Authentication | ~60/min |
-| **Moxfield** | ⚠️ Wrapper (Parse.bot) | Parse.bot API Key | ~100/min |
-| **TCGPlayer** | 🔄 Planned | OAuth2 Client Credentials | 10/sec |
-| **Cardmarket** | 🔄 Planned | OAuth 1.0a | 30K-100K/day |
+| Scryfall | Implemented | None (public API) | 2/sec search, 10/sec others |
+| Archidekt | Implemented | JWT | ~60/min |
+| Moxfield | Wrapper (Parse.bot) | Parse.bot API key | ~100/min |
+| TCGPlayer | Implemented | OAuth2 client credentials (user-supplied) | 10/sec |
+| Cardmarket | Implemented | OAuth 1.0a (user-supplied) | 30K-100K/day |
 
 Moxfield does not have a public API. The Moxfield provider routes all requests through [Parse.bot](https://parse.bot), a third-party scraper service. This means:
 
@@ -185,28 +186,110 @@ If you need direct Moxfield access, you would have to reverse-engineer their pri
 
 ### Scryfall
 
-Scryfall has a public API covering all cards, sets, and prices, and doesn't require authentication for most endpoints.
+Scryfall has a public API covering all cards, sets, and prices. It does not require authentication.
 
 ```python
 import pymtg
 
 scryfall = pymtg.Scryfall()
 
-# All Scryfall methods are available immediately
 card = scryfall.get_card("38625902-0567-4f24-85b0-a00843553997")
 cards = scryfall.search(name="Black Lotus")
 ```
+
+### Archidekt
+
+Archidekt uses JWT authentication. Pass your username and password to the constructor.
+
+```python
+import pymtg
+
+archidekt = pymtg.Archidekt(
+    username="your_username",
+    password="your_password",
+)
+
+decks = archidekt.get_user_decks()
+deck = archidekt.get_deck(deck_id="24299438")
+cards = archidekt.search(name="Black Lotus", limit=5)
+```
+
+### Moxfield
+
+Moxfield has no public API. The Moxfield provider routes all requests through [Parse.bot](https://parse.bot), a third-party scraper service. You need a Parse.bot API key, not a Moxfield key.
+
+```python
+import pymtg
+
+moxfield = pymtg.Moxfield(api_key="your-parse-bot-key")
+
+decks = moxfield.get_user_decks()
+deck = moxfield.get_deck(deck_id="deck-uuid-here")
+cards = moxfield.search(name="Black Lotus")
+```
+
+The base URL contains a scraper UUID (`api.parse.bot/scraper/{uuid}/`) that Parse.bot can revoke or rotate at any time. Rate limits and uptime depend on Parse.bot, not Moxfield. If you need direct Moxfield access, you would have to reverse-engineer their private endpoints, which is fragile and may violate their terms of service.
+
+### TCGPlayer
+
+TCGPlayer uses OAuth2 client credentials. Pass your own `client_id` and `client_secret` to the constructor. Authentication is lazy and happens on the first API call.
+
+```python
+import pymtg
+
+tcgplayer = pymtg.TCGPlayer(
+    client_id="your-client-id",
+    client_secret="your-client-secret",
+)
+
+card = tcgplayer.get_card(card_id="12345", pricing=True)
+cards = tcgplayer.search(name="Black Lotus", limit=5)
+```
+
+### Cardmarket
+
+Cardmarket uses OAuth 1.0a. Pass your own consumer key, consumer secret, access token, and access token secret to the constructor.
+
+```python
+import pymtg
+
+cardmarket = pymtg.Cardmarket(
+    consumer_key="your-consumer-key",
+    consumer_secret="your-consumer-secret",
+    access_token="your-access-token",
+    access_token_secret="your-access-token-secret",
+)
+
+card = cardmarket.get_card(card_id="12345")
+cards = cardmarket.search(name="Black Lotus", limit=5)
+```
+
+OAuth1 does not support automatic token refresh. If the access token expires, obtain a new one from Cardmarket and re-instantiate the provider.
 
 ## Data Models
 
 ### Card Model
 
-The `Card` model provides normalized card data across all providers with extensive fields and helper methods.
+The `Card` model normalizes card data across all providers. It exposes fields like `name`, `mana_cost`, `cmc`, `type_line`, `rarity`, `set_name`, `set_code`, `color_identity`, and `pricing`, plus helper methods like `is_creature()`, `is_blue()`, and `is_multicolor()`.
+
+```python
+card = scryfall.get_card("38625902-0567-4f24-85b0-a00843553997")
+
+print(card.name)              # Black Lotus
+print(card.mana_cost)         # {0}
+print(card.cmc)              # 0
+print(card.type_line)         # Artifact
+print(card.rarity)           # rare
+print(card.set_name)         # Beta
+print(card.is_multicolor())  # False
+```
 
 ### Pricing Model
 
+Each `Card` has an optional `pricing` attribute with provider-specific price submodels. Scryfall prices are available without authentication; TCGPlayer and Cardmarket prices require their respective providers.
+
 ```python
-card = scryfall.get_card("some-card-id")
+card = scryfall.get_card("38625902-0567-4f24-85b0-a00843553997")
 
 if card.pricing and card.pricing.scryfall:
     print(f"USD: ${card.pricing.scryfall.usd}")
@@ -215,56 +298,76 @@ if card.pricing and card.pricing.scryfall:
 
 ## Error Handling
 
-`pymtg` provides a consistent exception hierarchy for error handling across all providers.
+All providers raise the same exception hierarchy. The base exception is `PyMTGError`. Subclasses include `NotFoundError`, `RateLimitError`, `AuthenticationError`, `InvalidQueryError`, `APIError`, and `NetworkError`.
+
+```python
+import pymtg
+
+scryfall = pymtg.Scryfall()
+
+try:
+    card = scryfall.get_card("invalid-id")
+except pymtg.NotFoundError as e:
+    print(f"Card not found: {e}")
+except pymtg.RateLimitError as e:
+    print(f"Rate limit exceeded: {e}")
+except pymtg.AuthenticationError as e:
+    print(f"Authentication failed: {e}")
+```
 
 ## Rate Limiting
 
-Each provider has its own rate limits that are automatically tracked and accessible via `get_rate_limit_status()`.
+Each provider tracks its own rate limits internally. The library sleeps automatically to stay within limits. Call `get_rate_limit_status()` on any provider to inspect the current window.
 
-## Project Structure
-
-See the codebase for the full project structure including `auth/`, `models/`, `providers/`, `search/`, and `utils/` packages.
+```python
+status = scryfall.get_rate_limit_status()
+print(status)
+```
 
 ## Development
 
-### Setting Up Development Environment
+### Setting Up a Development Environment
 
 ```bash
-# Clone the repository
-git clone https://github.com/pymtg/pymtg.git
+git clone https://github.com/dmizelle/pymtg.git
 cd pymtg
-
-# Install dependencies
 uv sync
-
-# Install in development mode
 uv pip install -e .
 ```
 
 ### Running Tests
 
 ```bash
-# Run specific test file
-uv run python -m unittest tests.test_providers.test_scryfall -v
+# Run the full suite
+uv run pytest
+
+# Run a single provider's tests
+uv run pytest tests/test_providers/test_scryfall.py -v
+
+# Run with coverage
+uv run pytest --cov=pymtg
+```
+
+### Type Checking and Linting
+
+```bash
+uv run pyright pymtg/
+uv run ruff check pymtg/
 ```
 
 ### Code Style
 
-This project follows strict coding standards as defined in AGENTS.md.
+This project follows the coding standards defined in [AGENTS.md](AGENTS.md): Google-style docstrings on every module, class, and function; PEP 484 type annotations on all public APIs; and no `**kwargs` in function signatures.
 
 ## Contributing
 
-Contributions are welcome! Please fork the repository and submit pull requests.
+Contributions are welcome. Fork the repository and open a pull request. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and workflow details.
 
 ## License
 
-This project is licensed under the MIT License.
+This project is licensed under the MIT License. See [LICENSE](LICENSE).
 
 ## Support
 
-- **Documentation**: See the [docs/](docs/) directory
-- **Examples**: See the [docs/examples/](docs/examples/) directory
-
----
-
-**pymtg v0.1.0** - A unified Python interface to Magic: The Gathering APIs.
+- Documentation: [docs/](docs/) directory
+- Examples: [docs/examples/](docs/examples/) directory

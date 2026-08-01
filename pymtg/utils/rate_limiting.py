@@ -417,7 +417,7 @@ class RateLimiter:
         """
         self._record(provider)
 
-    def guard(self, provider: str):
+    def guard(self, provider: str) -> "RateLimitGuard":
         """Context manager for rate limiting a provider.
 
         This method can be used as a context manager to automatically

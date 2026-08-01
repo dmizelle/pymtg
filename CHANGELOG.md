@@ -81,14 +81,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `search_syntax()` using Parse.bot `/cards/named` endpoint with fuzzy parameter
     - `autocomplete()` using Parse.bot `/cards/autocomplete` endpoint
     - Rate limit tracking (5-100 req/min depending on tier)
-  - **TCGPlayer**: Full implementation (requires approved developer access)
+  - **TCGPlayer**: Full implementation (user-supplied OAuth2 credentials)
     - OAuth2 client credentials flow
     - Token storage and refresh logic
     - `get_card()` using `/v2/catalog/products` endpoint
     - `search()` using `/v2/catalog/products` endpoint
     - Pricing retrieval using `/v2/pricing/product/{productId}` endpoint
     - Rate limit tracking (10 req/s)
-  - **Cardmarket**: Full implementation (requires approved developer access)
+  - **Cardmarket**: Full implementation (user-supplied OAuth 1.0a credentials)
     - OAuth 1.0a flow with `/ws/v2.0/` endpoints
     - Token storage and refresh logic
     - `get_card()` using `/products/find` endpoint
